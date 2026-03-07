@@ -480,9 +480,50 @@ Response:
 
 ## Building CPTs
 
+### Heuristic Registry Layout
+
+RCIE ships heuristics as a **modular, layered registry**. The default configuration uses a **manifest file** (`config/heuristics.manifest.yaml`) that lists layer files to load in order:
+
+```yaml
+# config/heuristics.manifest.yaml
+layers:
+  - path: heuristics/cloud-services.yaml    # Cloud infrastructure CPTs
+  - path: heuristics/physical-infra.yaml    # Physical / latent infrastructure CPTs
+  - path: heuristics/applications.yaml      # Application-layer CPTs
+  - path: heuristics/private.yaml           # Your private overrides (optional)
+    optional: true
+```
+
+**Key concepts:**
+
+| Feature | Behavior |
+|---|---|
+| **Multiple files** | Each `layers` entry is a separate YAML file loaded in order |
+| **Most-specific override** | Later layers override earlier ones at CPT granularity — keyed by `(class, mutation, signal)` |
+| **Lean patching** | An override file only needs the fields it wants to change; everything else is inherited |
+| **Optional layers** | Layers with `optional: true` are silently skipped when absent |
+| **Backward compatible** | Setting `RCIE_HEURISTICS` to a flat YAML list (the old format) still works — the format is auto-detected |
+
+**Example lean patch** — override a single weight without touching anything else:
+
+```yaml
+# config/heuristics/private.yaml
+- class: Container
+  cpts:
+    - mutation: ImageUpdate
+      signal: CrashLoopBackOff
+      table:
+        - [0.85, 0.03]   # Increased from 0.75 based on internal incident data
+        - [0.15, 0.97]
+```
+
+See `config/heuristics/private.yaml.example` for more examples including prior overrides and adding brand-new classes.
+
+> **Environment variable:** `RCIE_HEURISTICS` controls which file to load. Defaults to `config/heuristics.manifest.yaml`. Set it to `config/heuristics.yaml` (the original flat file) for backward compatibility.
+
 ### Step 1: Identify the Resource Class
 
-What type of infrastructure is this? Container, Gateway, KeyVault, AKSCluster, etc. Each class gets its own CPT block in `config/heuristics.yaml`.
+What type of infrastructure is this? Container, Gateway, KeyVault, AKSCluster, etc. Each class gets its own CPT block in one of the layer files under `config/heuristics/` (or in `config/heuristics.yaml` if using the flat format).
 
 ### Step 2: List Mutation→Signal Pairs
 
@@ -537,7 +578,13 @@ Run the demo or inject events via the API to verify the CPT produces expected co
 rcie/
 ├── Cargo.toml                          # Workspace: rcie-engine, rcie-cli
 ├── config/
-│   └── heuristics.yaml                 # CPTs for 22 resource classes
+│   ├── heuristics.manifest.yaml        # Manifest listing heuristic layers to load
+│   ├── heuristics.yaml                 # Flat CPT file (legacy / backward compat)
+│   └── heuristics/
+│       ├── cloud-services.yaml         # Cloud infrastructure CPTs
+│       ├── physical-infra.yaml         # Physical / latent infrastructure CPTs
+│       ├── applications.yaml           # Application-layer CPTs
+│       └── private.yaml.example        # Example private override layer
 ├── prompts/
 │   └── transpiler.md                   # LLM prompt for ARM JSON → graph SQL
 ├── scripts/

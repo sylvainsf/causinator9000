@@ -99,6 +99,10 @@ pub struct PriorConfig {
 
 // ── Modular heuristics manifest ──────────────────────────────────────────
 
+/// Default background failure probability used when a new class is defined
+/// in an override layer without specifying `default_prior`.
+const DEFAULT_PRIOR_P_FAILURE: f64 = 0.005;
+
 /// Manifest that lists heuristic layer files to load in order.
 /// Later layers override earlier ones with most-specific granularity.
 #[derive(Debug, Clone, Deserialize)]
@@ -164,7 +168,9 @@ fn merge_layer(
                         class: entry.class,
                         default_prior: entry
                             .default_prior
-                            .unwrap_or(PriorConfig { p_failure: 0.005 }),
+                            .unwrap_or(PriorConfig {
+                                p_failure: DEFAULT_PRIOR_P_FAILURE,
+                            }),
                         cpts: entry.cpts,
                     },
                 );
@@ -2152,8 +2158,10 @@ mod tests {
                 }],
             }],
         );
-        // Should get the default prior of 0.005
-        assert!((heuristics["Custom"].default_prior.p_failure - 0.005).abs() < 1e-9);
+        // Should get the default prior
+        assert!(
+            (heuristics["Custom"].default_prior.p_failure - DEFAULT_PRIOR_P_FAILURE).abs() < 1e-9
+        );
     }
 
     #[test]
