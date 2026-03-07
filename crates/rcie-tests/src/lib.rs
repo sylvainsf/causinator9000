@@ -189,7 +189,7 @@ impl LatencyStats {
         if latencies.is_empty() {
             return None;
         }
-        latencies.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        latencies.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
         let n = latencies.len();
         let avg = latencies.iter().sum::<f64>() / n as f64;
         Some(Self {
