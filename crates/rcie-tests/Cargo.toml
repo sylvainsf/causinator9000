@@ -21,3 +21,4 @@ serde_json.workspace = true
 chrono.workspace = true
 anyhow.workspace = true
 clap.workspace = true
+percent-encoding = "2.3"

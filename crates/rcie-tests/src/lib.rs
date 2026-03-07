@@ -6,6 +6,7 @@
 //! for testing the RCIE engine's REST API.
 
 use anyhow::{Context, Result};
+use percent_encoding::{NON_ALPHANUMERIC, utf8_percent_encode};
 use serde::{Deserialize, Serialize};
 
 /// Default engine URL.
@@ -129,9 +130,10 @@ impl TestClient {
 
     /// Diagnose a specific node.
     pub async fn diagnose(&self, node_id: &str) -> Result<DiagnosisResponse> {
+        let encoded = utf8_percent_encode(node_id, NON_ALPHANUMERIC).to_string();
         let resp = self
             .client
-            .get(format!("{}/api/diagnosis?target={node_id}", self.base_url))
+            .get(format!("{}/api/diagnosis?target={encoded}", self.base_url))
             .timeout(std::time::Duration::from_secs(10))
             .send()
             .await
@@ -196,8 +198,8 @@ impl LatencyStats {
             count: n,
             avg_ms: avg,
             p50_ms: latencies[n / 2],
-            p95_ms: latencies[(n as f64 * 0.95) as usize],
-            p99_ms: latencies[(n as f64 * 0.99) as usize],
+            p95_ms: latencies[((n as f64 * 0.95) as usize).min(n - 1)],
+            p99_ms: latencies[((n as f64 * 0.99) as usize).min(n - 1)],
             max_ms: latencies[n - 1],
         })
     }
