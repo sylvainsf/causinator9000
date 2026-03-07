@@ -19,7 +19,7 @@ use petgraph::visit::EdgeRef;
 use petgraph::Direction;
 use serde::{Deserialize, Serialize};
 
-use ve::Factor;
+
 
 // ── Types ────────────────────────────────────────────────────────────────
 
@@ -432,7 +432,7 @@ struct SolverState {
     /// Cached latest diagnoses (updated on each inference run)
     cached_diagnoses: HashMap<String, Diagnosis>,
     /// Checkpoint path
-    checkpoint_path: Option<String>,
+    _checkpoint_path: Option<String>,
 }
 
 impl SolverState {
@@ -445,7 +445,7 @@ impl SolverState {
             active_signals: Vec::new(),
             temporal_window: chrono::Duration::minutes(30),
             cached_diagnoses: HashMap::new(),
-            checkpoint_path: Some("data/checkpoint.bin".to_string()),
+            _checkpoint_path: Some("data/checkpoint.bin".to_string()),
         }
     }
 
@@ -592,8 +592,9 @@ impl SolverState {
     /// Checks both:
     ///   1. Whether the ancestor's OWN class CPTs match the signal type
     ///      (e.g., Gateway CertificateRotation → TLSError)
-    ///   2. Whether the target's class CPTs match the mutation type
-    ///      (e.g., ConfigChange on upstream → error_rate on downstream)
+    ///    2. Whether the target's class CPTs match the mutation type
+    ///       (e.g., ConfigChange on upstream → error_rate on downstream)
+    ///
     /// Takes the higher score and applies hop decay.
     fn score_ancestor_mutation(
         &self,
@@ -701,10 +702,10 @@ impl SolverState {
 
             for edge in self.graph.edges_directed(current, Direction::Outgoing) {
                 let neighbor = edge.target();
-                if !visited.contains_key(&neighbor) {
-                    visited.insert(neighbor, current);
+                visited.entry(neighbor).or_insert_with(|| {
                     queue.push_back(neighbor);
-                }
+                    current
+                });
             }
         }
 
@@ -806,7 +807,7 @@ impl SolverState {
                         mutation,
                         ancestor_idx,
                         target_idx,
-                        &active_signals.iter().copied().collect::<Vec<_>>(),
+                        &active_signals.to_vec(),
                     );
                     let path = self.find_path(&ancestor.id, node_id);
                     cause_scores.push((
@@ -1301,13 +1302,11 @@ impl SolverState {
             }
 
             // 3. Direct children (capped) — what's downstream of the failure
-            let mut child_count = 0;
-            for edge in self.graph.edges_directed(start_idx, Direction::Outgoing) {
+            for (child_count, edge) in self.graph.edges_directed(start_idx, Direction::Outgoing).enumerate() {
                 if child_count >= max_children { break; }
                 let child = edge.target();
                 visited_global.insert(child);
                 node_cluster.entry(child).or_insert_with(|| cluster_id.clone());
-                child_count += 1;
             }
 
             // 4. Causal path from diagnosis
@@ -1323,11 +1322,10 @@ impl SolverState {
 
         // Also include nodes that have mutations (even if no signal directly on them)
         for mut_node_id in &mutated {
-            if let Some(&idx) = self.node_index.get(*mut_node_id) {
-                if !visited_global.contains(&idx) {
-                    visited_global.insert(idx);
-                    node_cluster.entry(idx).or_insert_with(|| format!("cluster-{mut_node_id}"));
-                }
+            if let Some(&idx) = self.node_index.get(*mut_node_id)
+                && visited_global.insert(idx)
+            {
+                node_cluster.entry(idx).or_insert_with(|| format!("cluster-{mut_node_id}"));
             }
         }
 
@@ -1437,6 +1435,7 @@ impl SolverState {
     }
 
     /// Restore state from a snapshot.
+    #[allow(clippy::wrong_self_convention)]
     fn from_snapshot(&mut self, snapshot: SolverSnapshot) -> Result<()> {
         self.graph.clear();
         self.node_index.clear();
@@ -1931,7 +1930,7 @@ mod tests {
             timestamp: now,
             properties: serde_json::json!({}),
         });
-        let diag_direct = state.diagnose("ctr-1").unwrap();
+        let _diag_direct = state.diagnose("ctr-1").unwrap();
 
         // Now also add an upstream mutation — it should score lower
         state.active_mutations.push(Mutation {
@@ -1946,7 +1945,7 @@ mod tests {
         let cc = &diag_both.competing_causes;
 
         // Should have multiple candidates
-        assert!(cc.len() >= 1, "should have at least 1 competing cause");
+        assert!(!cc.is_empty(), "should have at least 1 competing cause");
 
         // Direct mutation (0 hops) should score >= upstream (2 hops)
         if cc.len() >= 2 {

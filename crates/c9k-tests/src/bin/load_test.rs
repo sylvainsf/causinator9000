@@ -280,9 +280,8 @@ async fn test_concurrent(cli: &Cli) -> Result<f64> {
                 let region = REGIONS[i % 4];
                 let app = (tid * 7 + i) % 100;
                 let node = pod_node(region, app, 1);
-                match tc.diagnose_timed(&node).await {
-                    Ok((_, ms)) => lats.push(ms),
-                    Err(_) => {} // skip failed requests
+                if let Ok((_, ms)) = tc.diagnose_timed(&node).await {
+                    lats.push(ms);
                 }
             }
             lats

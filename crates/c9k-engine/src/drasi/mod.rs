@@ -19,7 +19,7 @@ use drasi_source_postgres::{PostgresSourceBuilder, TableKeyConfig};
 // FIX 3: Import the result types so we can pattern-match on CQ output.
 // QueryResult contains Vec<ResultDiff>, and ResultDiff::Add { data } holds
 // the actual row data as serde_json::Value.
-use drasi_lib::channels::{QueryResult, ResultDiff};
+use drasi_lib::channels::ResultDiff;
 
 use crate::solver::SolverHandle;
 

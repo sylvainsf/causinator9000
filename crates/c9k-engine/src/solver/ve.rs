@@ -37,12 +37,12 @@ impl Factor {
         let table_size = 1 << n; // 2^n for binary variables
         let mut result_table = vec![1.0; table_size];
 
-        for assignment in 0..table_size {
+        for (assignment, entry) in result_table.iter_mut().enumerate() {
             // Map this assignment to indices in self and other
             let self_idx = self.project_assignment(assignment, &combined_vars);
             let other_idx = other.project_assignment(assignment, &combined_vars);
 
-            result_table[assignment] = self.table[self_idx] * other.table[other_idx];
+            *entry = self.table[self_idx] * other.table[other_idx];
         }
 
         Factor {

@@ -1,6 +1,6 @@
 // Copyright (c) 2026 Sylvain Niles. MIT License.
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
@@ -147,7 +147,6 @@ struct ClassHeuristic {
 
 // ── CPT File Management ──────────────────────────────────────────────────
 
-const CPT_DIR: &str = "config";
 const CPT_FILE: &str = "config/heuristics.manifest.yaml";
 const CPT_VERSIONS_DIR: &str = "config/versions";
 
@@ -177,15 +176,17 @@ fn next_version() -> Result<u32> {
     if let Ok(entries) = std::fs::read_dir(CPT_VERSIONS_DIR) {
         for entry in entries.flatten() {
             let name = entry.file_name().to_string_lossy().to_string();
-            if let Some(num_str) = name.strip_prefix("v").and_then(|s| s.strip_suffix(".yaml")) {
-                if let Ok(n) = num_str.parse::<u32>() {
-                    max = max.max(n);
-                }
+            if let Some(num_str) = name.strip_prefix("v").and_then(|s| s.strip_suffix(".yaml"))
+                && let Ok(n) = num_str.parse::<u32>()
+            {
+                max = max.max(n);
             }
         }
     }
     Ok(max + 1)
 }
+
+
 
 fn save_version(classes: &[ClassHeuristic]) -> Result<u32> {
     let ver = next_version()?;
@@ -412,11 +413,9 @@ async fn main() -> Result<()> {
                 }
 
                 // Version the current config before overwriting
-                if !no_version {
-                    if Path::new(CPT_FILE).exists() {
-                        let current = load_cpts(CPT_FILE)?;
-                        save_version(&current)?;
-                    }
+                if !no_version && Path::new(CPT_FILE).exists() {
+                    let current = load_cpts(CPT_FILE)?;
+                    save_version(&current)?;
                 }
 
                 save_cpts(&new_classes, CPT_FILE)?;
@@ -490,11 +489,9 @@ async fn main() -> Result<()> {
                 if let Ok(entries) = std::fs::read_dir(CPT_VERSIONS_DIR) {
                     for entry in entries.flatten() {
                         let name = entry.file_name().to_string_lossy().to_string();
-                        if let Some(num_str) = name.strip_prefix("v").and_then(|s| s.strip_suffix(".yaml")) {
-                            if let Ok(n) = num_str.parse::<u32>() {
-                                let size = entry.metadata().map(|m| m.len()).unwrap_or(0);
-                                versions.push((n, name, size));
-                            }
+                        if let Some(Ok(n)) = name.strip_prefix("v").and_then(|s| s.strip_suffix(".yaml")).map(|s| s.parse::<u32>()) {
+                            let size = entry.metadata().map(|m| m.len()).unwrap_or(0);
+                            versions.push((n, name, size));
                         }
                     }
                 }
