@@ -246,7 +246,7 @@ async fn post_reload_cpts(
     State(state): State<AppState>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
     let path = std::env::var("RCIE_HEURISTICS")
-        .unwrap_or_else(|_| "config/heuristics.yaml".to_string());
+        .unwrap_or_else(|_| "config/heuristics.manifest.yaml".to_string());
     let count = state
         .solver
         .reload_heuristics(&path)

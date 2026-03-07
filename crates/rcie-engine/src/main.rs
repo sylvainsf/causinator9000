@@ -24,7 +24,7 @@ async fn main() -> Result<()> {
 
     // Load configuration
     let heuristics_path = std::env::var("RCIE_HEURISTICS")
-        .unwrap_or_else(|_| "config/heuristics.yaml".to_string());
+        .unwrap_or_else(|_| "config/heuristics.manifest.yaml".to_string());
     let checkpoint_path = std::env::args()
         .skip_while(|a| a != "--checkpoint")
         .nth(1);

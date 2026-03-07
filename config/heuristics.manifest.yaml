@@ -1,0 +1,27 @@
+# RCIE Heuristic Manifest
+#
+# Lists heuristic layer files to load in order.  Later layers override
+# earlier ones with most-specific granularity:
+#
+#   - A class defined in a later layer merges into the earlier definition.
+#   - default_prior is replaced if the later layer specifies it.
+#   - Individual CPT entries (keyed by mutation + signal) are replaced if
+#     the later layer redefines them; otherwise new entries are appended.
+#
+# This enables "lean patching" — a private layer only needs to specify
+# the exact overrides it wants (e.g. a single weight change), and all
+# other values are inherited from earlier layers.
+#
+# Set RCIE_HEURISTICS to point to this file (or any manifest / flat
+# YAML).  Both formats are auto-detected.
+
+layers:
+  # Public base layers (shipped with RCIE)
+  - path: heuristics/cloud-services.yaml
+  - path: heuristics/physical-infra.yaml
+  - path: heuristics/applications.yaml
+
+  # Private overrides — uncomment or add your own layers here.
+  # Files marked optional: true are silently skipped when absent.
+  # - path: heuristics/private.yaml
+  #   optional: true

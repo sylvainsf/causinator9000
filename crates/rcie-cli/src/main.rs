@@ -148,7 +148,7 @@ struct ClassHeuristic {
 // ── CPT File Management ──────────────────────────────────────────────────
 
 const CPT_DIR: &str = "config";
-const CPT_FILE: &str = "config/heuristics.yaml";
+const CPT_FILE: &str = "config/heuristics.manifest.yaml";
 const CPT_VERSIONS_DIR: &str = "config/versions";
 
 fn load_cpts(path: &str) -> Result<Vec<ClassHeuristic>> {
