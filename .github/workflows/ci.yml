@@ -8,11 +8,14 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
   RUSTFLAGS: -Dwarnings
 
 jobs:
-  check:
-    name: Check & Lint
+  # Fast formatting check — no compilation required, fails instantly on
+  # style violations so authors get feedback before the heavy build starts.
+  fmt:
+    name: Format
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -20,44 +23,35 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
-          components: rustfmt, clippy
-
-      - name: Cache cargo registry & build
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: ${{ runner.os }}-cargo-
+          components: rustfmt
 
       - name: cargo fmt --check
         run: cargo fmt --all -- --check
 
-      - name: cargo clippy
-        run: cargo clippy --workspace --all-targets
-
-  test:
-    name: Test
+  # Single job for clippy + tests.  Both commands compile the workspace, so
+  # running them sequentially lets `cargo test` reuse the artifacts that
+  # clippy already produced — cutting total CI build time roughly in half
+  # compared to two independent parallel jobs that each compile from scratch.
+  # Swatinem/rust-cache keeps compiled dependencies across runs so that only
+  # first-party code is rebuilt on typical PRs.
+  clippy-test:
+    name: Clippy & Test
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
-
-      - name: Cache cargo registry & build
-        uses: actions/cache@v4
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: ${{ runner.os }}-cargo-
+          components: clippy
 
-      - name: Run unit & integration tests
+      - name: Cache dependencies
+        uses: Swatinem/rust-cache@v2
+
+      - name: cargo clippy
+        run: cargo clippy --workspace --all-targets
+
+      - name: cargo test
         run: cargo test --workspace
         env:
           RUST_LOG: info
