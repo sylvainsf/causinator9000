@@ -1,15 +1,8 @@
 // Copyright (c) 2026 Sylvain Niles. MIT License.
 
-mod api;
-mod checkpoint;
-mod drasi;
-mod solver;
-
 use anyhow::Result;
+use c9k_engine::{api, drasi, solver};
 use tracing_subscriber::EnvFilter;
-
-/// Default PostgreSQL port for Causinator 9000 (avoids conflict with other local PG instances)
-pub const PG_PORT: u16 = 5433;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -25,9 +18,7 @@ async fn main() -> Result<()> {
     // Load configuration
     let heuristics_path = std::env::var("C9K_HEURISTICS")
         .unwrap_or_else(|_| "config/heuristics.manifest.yaml".to_string());
-    let checkpoint_path = std::env::args()
-        .skip_while(|a| a != "--checkpoint")
-        .nth(1);
+    let checkpoint_path = std::env::args().skip_while(|a| a != "--checkpoint").nth(1);
 
     // Initialize the solver
     let mut solver = solver::BayesianSolver::new()?;
@@ -43,8 +34,8 @@ async fn main() -> Result<()> {
     }
 
     // Load blueprint graph if available
-    let blueprint_path = std::env::var("C9K_BLUEPRINT")
-        .unwrap_or_else(|_| "data/blueprint.bin".to_string());
+    let blueprint_path =
+        std::env::var("C9K_BLUEPRINT").unwrap_or_else(|_| "data/blueprint.bin".to_string());
     if std::path::Path::new(&blueprint_path).exists() {
         solver.load_blueprint(&blueprint_path)?;
         tracing::info!(path = %blueprint_path, "Loaded blueprint graph");

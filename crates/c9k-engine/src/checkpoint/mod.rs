@@ -20,9 +20,8 @@ pub fn write_checkpoint<T: serde::Serialize>(state: &T, path: &str) -> Result<()
 /// Read solver state from a bincode checkpoint file.
 pub fn read_checkpoint<T: serde::de::DeserializeOwned>(path: &str) -> Result<T> {
     let bytes = std::fs::read(path).context(format!("reading checkpoint from {path}"))?;
-    let (state, _): (T, _) =
-        bincode::serde::decode_from_slice(&bytes, bincode::config::standard())
-            .context("deserializing checkpoint")?;
+    let (state, _): (T, _) = bincode::serde::decode_from_slice(&bytes, bincode::config::standard())
+        .context("deserializing checkpoint")?;
     tracing::info!(path, bytes = bytes.len(), "Checkpoint loaded");
     Ok(state)
 }

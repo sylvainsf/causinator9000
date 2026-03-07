@@ -37,12 +37,12 @@ impl Factor {
         let table_size = 1 << n; // 2^n for binary variables
         let mut result_table = vec![1.0; table_size];
 
-        for assignment in 0..table_size {
+        for (assignment, entry) in result_table.iter_mut().enumerate() {
             // Map this assignment to indices in self and other
             let self_idx = self.project_assignment(assignment, &combined_vars);
             let other_idx = other.project_assignment(assignment, &combined_vars);
 
-            result_table[assignment] = self.table[self_idx] * other.table[other_idx];
+            *entry = self.table[self_idx] * other.table[other_idx];
         }
 
         Factor {
@@ -240,12 +240,7 @@ mod tests {
         let mut evidence = HashMap::new();
         evidence.insert("B".to_string(), 1);
 
-        let result = variable_elimination(
-            &factors,
-            "A",
-            &evidence,
-            &["B".to_string()],
-        );
+        let result = variable_elimination(&factors, "A", &evidence, &["B".to_string()]);
 
         // P(A=0, B=1) = 0.4 * 0.1 = 0.04
         // P(A=1, B=1) = 0.6 * 0.8 = 0.48

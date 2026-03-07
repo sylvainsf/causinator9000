@@ -184,7 +184,9 @@ struct NeighborhoodQuery {
     #[serde(default = "default_depth")]
     depth: usize,
 }
-fn default_depth() -> usize { 2 }
+fn default_depth() -> usize {
+    2
+}
 
 async fn get_neighborhood(
     State(state): State<AppState>,
@@ -266,7 +268,9 @@ struct WindowConfig {
 async fn get_window(
     State(state): State<AppState>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
-    let mins = state.solver.get_temporal_window()
+    let mins = state
+        .solver
+        .get_temporal_window()
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     Ok(Json(serde_json::json!({ "temporal_window_minutes": mins })))
 }
@@ -275,7 +279,9 @@ async fn post_window(
     State(state): State<AppState>,
     Json(body): Json<WindowConfig>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
-    state.solver.set_temporal_window(body.minutes)
+    state
+        .solver
+        .set_temporal_window(body.minutes)
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     Ok(Json(serde_json::json!({
         "status": "updated",
