@@ -1,0 +1,24 @@
+[package]
+name = "c9k-tests"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[lib]
+name = "c9k_tests"
+path = "src/lib.rs"
+
+[[bin]]
+name = "c9k-load-test"
+path = "src/bin/load_test.rs"
+
+[dependencies]
+reqwest.workspace = true
+tokio.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+chrono.workspace = true
+anyhow.workspace = true
+clap.workspace = true
+percent-encoding = "2.3"

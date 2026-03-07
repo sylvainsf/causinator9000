@@ -5,6 +5,10 @@ edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
 
+[lib]
+name = "c9k_engine"
+path = "src/lib.rs"
+
 [[bin]]
 name = "c9k-engine"
 path = "src/main.rs"
