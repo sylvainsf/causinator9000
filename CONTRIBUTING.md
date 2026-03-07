@@ -25,7 +25,7 @@ The solver is only as good as its Conditional Probability Tables. We ship CPTs f
 
 **How to contribute a CPT:**
 
-Add entries to `config/heuristics.yaml` following this format:
+Add entries to the appropriate layer file under `config/heuristics/` (e.g., `containers.yaml` for container resources, `databases.yaml` for data stores, `networking.yaml` for network infrastructure). The format is the same for all files:
 
 ```yaml
 - class: YourResourceClass
@@ -38,6 +38,8 @@ Add entries to `config/heuristics.yaml` following this format:
         - [0.70, 0.05]        # [P(signal | mutation), P(signal | no mutation)]
         - [0.30, 0.95]
 ```
+
+You can also contribute CPTs as a new layer file — just add it to `config/heuristics.manifest.yaml`. For private or org-specific overrides, copy `config/heuristics/private.yaml.example` to `config/heuristics/private.yaml` and uncomment the entry in the manifest. Override layers only need to specify the fields being changed ("lean patching").
 
 **Guidelines:**
 - The likelihood ratio (`table[0][0] / table[0][1]`) is the most important number. Start around 10× for typical cause-effect links
@@ -115,8 +117,8 @@ brew install postgresql@17 rust python3   # macOS
 
 # Setup
 export PATH="/opt/homebrew/opt/postgresql@17/bin:$PATH"
-createdb -p 5433 rcie_poc
-psql -p 5433 rcie_poc < scripts/schema.sql
+createdb -p 5433 c9k_poc
+psql -p 5433 c9k_poc < scripts/schema.sql
 python3 scripts/transpile.py --synthetic
 
 # Build and test
@@ -124,7 +126,7 @@ cargo test
 cargo build --release
 
 # Run engine + demo
-RUST_LOG=info ./target/release/rcie-engine &
+RUST_LOG=info ./target/release/c9k-engine &
 python3 scripts/demo.py
 ```
 

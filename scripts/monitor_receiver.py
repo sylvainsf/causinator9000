@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-RCIE Azure Monitor Webhook Receiver
+Causinator 9000 Azure Monitor Webhook Receiver
 
 Receives Azure Monitor Action Group webhooks and writes signal rows to PostgreSQL.
 This is a bridge script — not part of the engine.
@@ -10,8 +10,8 @@ Usage:
   python scripts/monitor_receiver.py
 
 Environment:
-  RCIE_DATABASE_URL  PostgreSQL connection string (default: postgresql://localhost:5433/rcie_poc)
-  RCIE_RECEIVER_PORT Port to listen on (default: 8082)
+  C9K_DATABASE_URL  PostgreSQL connection string (default: postgresql://localhost:5433/c9k_poc)
+  C9K_RECEIVER_PORT Port to listen on (default: 8082)
 """
 
 import json
@@ -30,10 +30,10 @@ except ImportError:
     print("Install psycopg: pip install 'psycopg[binary]'")
     raise SystemExit(1)
 
-DB_URL = os.environ.get("RCIE_DATABASE_URL", "postgresql://localhost:5433/rcie_poc")
-PORT = int(os.environ.get("RCIE_RECEIVER_PORT", "8082"))
+DB_URL = os.environ.get("C9K_DATABASE_URL", "postgresql://localhost:5433/c9k_poc")
+PORT = int(os.environ.get("C9K_RECEIVER_PORT", "8082"))
 
-app = FastAPI(title="RCIE Azure Monitor Webhook Receiver")
+app = FastAPI(title="Causinator 9000 Azure Monitor Webhook Receiver")
 
 
 class AzureMonitorAlert(BaseModel):

@@ -1,0 +1,34 @@
+# Causinator 9000 Heuristic Manifest
+#
+# Lists heuristic layer files to load in order.  Later layers override
+# earlier ones with most-specific granularity:
+#
+#   - A class defined in a later layer merges into the earlier definition.
+#   - default_prior is replaced if the later layer specifies it.
+#   - Individual CPT entries (keyed by mutation + signal) are replaced if
+#     the later layer redefines them; otherwise new entries are appended.
+#
+# This enables "lean patching" — a private layer only needs to specify
+# the exact overrides it wants (e.g. a single weight change), and all
+# other values are inherited from earlier layers.
+#
+# Set C9K_HEURISTICS to point to this file (or any manifest / flat
+# YAML).  Both formats are auto-detected.
+
+layers:
+  # ── Standard library (shipped with Causinator 9000) ────────────────────────────
+  - path: heuristics/containers.yaml        # Container, ContainerRegistry, AKSCluster
+  - path: heuristics/compute.yaml           # VirtualMachine
+  - path: heuristics/networking.yaml        # VirtualNetwork, SubnetGateway, NetworkInterface, DNS
+  - path: heuristics/routing.yaml           # LoadBalancer, Gateway, HttpRoute
+  - path: heuristics/databases.yaml         # SqlDatabase, MongoDatabase, RedisCache
+  - path: heuristics/identity.yaml          # ManagedIdentity, KeyVault, IdentityProvider, CertAuthority
+  - path: heuristics/messaging.yaml         # MessageQueue
+  - path: heuristics/physical-infra.yaml    # ToRSwitch, AvailabilityZone, PowerDomain
+  - path: heuristics/applications.yaml      # Application, Environment
+
+  # ── Private overrides ───────────────────────────────────────────────
+  # Uncomment or add your own layers here.
+  # Files marked optional: true are silently skipped when absent.
+  # - path: heuristics/private.yaml
+  #   optional: true

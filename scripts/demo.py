@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-RCIE Interactive Demo
+Causinator 9000 Interactive Demo
 
 Realistic scenarios demonstrating Bayesian causal inference on a
 10,120-node infrastructure graph.
@@ -11,7 +11,7 @@ Prereq: Engine running + topology loaded (see README)
 
 import os, sys, time, requests
 
-ENGINE = os.environ.get("RCIE_ENGINE_URL", "http://localhost:8080")
+ENGINE = os.environ.get("C9K_ENGINE_URL", "http://localhost:8080")
 
 # ── ANSI ──────────────────────────────────────────────────────────────────
 B  = "\033[1m";  D = "\033[2m";  R = "\033[0m"
@@ -92,12 +92,12 @@ def show(d, ms):
 # ── Preflight ─────────────────────────────────────────────────────────────
 
 def preflight():
-    banner("RCIE — Reactive Causal Inference Engine")
+    banner("Causinator 9000 — Reactive Causal Inference Engine")
     head("Preflight")
     h = health()
     if not h:
         bad(f"Engine not responding at {ENGINE}")
-        print(f"\n    Start: {B}RUST_LOG=info ./target/release/rcie-engine{R}\n")
+        print(f"\n    Start: {B}RUST_LOG=info ./target/release/c9k-engine{R}\n")
         sys.exit(1)
     good(f"Engine v{h['version']} — {h['nodes']:,} nodes, {h['edges']:,} edges")
     print()

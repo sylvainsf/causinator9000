@@ -13,7 +13,7 @@ import os
 import sys
 import requests
 
-ENGINE = os.environ.get("RCIE_ENGINE_URL", "http://localhost:8080")
+ENGINE = os.environ.get("C9K_ENGINE_URL", "http://localhost:8080")
 
 def main():
     # 1. Health check

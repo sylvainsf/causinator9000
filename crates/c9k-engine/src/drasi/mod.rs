@@ -64,7 +64,7 @@ impl Default for DrasiConfig {
         Self {
             pg_host: "localhost".to_string(),
             pg_port: crate::PG_PORT,
-            pg_database: "rcie_poc".to_string(),
+            pg_database: "c9k_poc".to_string(),
             pg_user: std::env::var("USER").unwrap_or_else(|_| "postgres".to_string()),
             pg_password: String::new(),
             slot_name: "drasi_slot".to_string(),
@@ -127,7 +127,7 @@ pub async fn init_drasi(
 
     // 4. Build DrasiLib
     let drasi = DrasiLib::builder()
-        .with_id("rcie-engine")
+        .with_id("c9k-engine")
         .with_source(pg_source)
         .with_reaction(reaction)
         .with_index_provider(Arc::new(rocksdb_provider))

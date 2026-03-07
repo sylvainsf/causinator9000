@@ -1,4 +1,4 @@
-# RCIE Heuristic Registry — Conditional Probability Tables (CPTs)
+# Causinator 9000 Heuristic Registry — Conditional Probability Tables (CPTs)
 #
 # Each entry maps a resource class to its failure prior and
 # conditional probability tables for mutation→signal relationships.

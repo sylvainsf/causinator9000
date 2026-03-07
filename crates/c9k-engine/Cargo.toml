@@ -1,12 +1,12 @@
 [package]
-name = "rcie-engine"
+name = "c9k-engine"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
 
 [[bin]]
-name = "rcie-engine"
+name = "c9k-engine"
 path = "src/main.rs"
 
 [dependencies]
