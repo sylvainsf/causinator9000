@@ -1,15 +1,8 @@
 // Copyright (c) 2026 Sylvain Niles. MIT License.
 
-mod api;
-mod checkpoint;
-mod drasi;
-mod solver;
-
 use anyhow::Result;
+use rcie_engine::{api, drasi, solver};
 use tracing_subscriber::EnvFilter;
-
-/// Default PostgreSQL port for RCIE (avoids conflict with other local PG instances)
-pub const PG_PORT: u16 = 5433;
 
 #[tokio::main]
 async fn main() -> Result<()> {

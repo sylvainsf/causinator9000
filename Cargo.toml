@@ -3,6 +3,7 @@ resolver = "2"
 members = [
     "crates/rcie-engine",
     "crates/rcie-cli",
+    "crates/rcie-tests",
 ]
 
 [workspace.package]

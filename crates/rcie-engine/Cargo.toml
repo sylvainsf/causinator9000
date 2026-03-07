@@ -5,6 +5,10 @@ edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
 
+[lib]
+name = "rcie_engine"
+path = "src/lib.rs"
+
 [[bin]]
 name = "rcie-engine"
 path = "src/main.rs"

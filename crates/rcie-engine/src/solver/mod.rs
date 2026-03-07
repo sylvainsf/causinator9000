@@ -199,6 +199,31 @@ impl SolverHandle {
         Ok(())
     }
 
+    /// Add a node to the causal DAG.
+    pub fn add_node(&self, node: CausalNode) -> Result<()> {
+        let mut state = self.inner.lock().map_err(|e| anyhow::anyhow!("lock: {e}"))?;
+        state.add_node(node);
+        Ok(())
+    }
+
+    /// Add an edge between two nodes in the causal DAG.
+    pub fn add_edge(&self, edge: CausalEdge, source_id: &str, target_id: &str) -> Result<()> {
+        let mut state = self.inner.lock().map_err(|e| anyhow::anyhow!("lock: {e}"))?;
+        state.add_edge(edge, source_id, target_id)
+    }
+
+    /// Load heuristics (CPTs) from a YAML string.
+    pub fn load_heuristics_str(&self, yaml: &str) -> Result<usize> {
+        let classes: Vec<ClassHeuristic> =
+            serde_yaml_ng::from_str(yaml).context("parsing heuristics YAML")?;
+        let count = classes.len();
+        let mut state = self.inner.lock().map_err(|e| anyhow::anyhow!("lock: {e}"))?;
+        for class in classes {
+            state.heuristics.insert(class.class.clone(), class);
+        }
+        Ok(count)
+    }
+
     /// Reload heuristics (CPTs) from a YAML file.
     pub fn reload_heuristics(&self, path: &str) -> Result<usize> {
         let contents =
