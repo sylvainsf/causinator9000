@@ -211,7 +211,7 @@ This is your signal to add a latent node:
 
 ```bash
 # Inject a mutation on the latent node (assumes the node exists in the graph)
-rcie mutate --node latent-natgw-eastus-prod --mutation GatewayRestart
+c9k mutate --node latent-natgw-eastus-prod --mutation GatewayRestart
 ```
 
 For permanent additions, add the node and edges to your transpiler output or synthetic topology generator so they're included in every graph rebuild.
@@ -306,27 +306,27 @@ Without latent nodes, 50 simultaneous VM failures appear as 50 independent event
 
 ```bash
 # Clone
-git clone https://github.com/sylvainsf/rcie.git
-cd rcie
+git clone https://github.com/sylvainsf/causinator9000.git
+cd causinator9000
 
 # Start PostgreSQL (adjust port if needed)
 export PATH="/opt/homebrew/opt/postgresql@17/bin:$PATH"  # macOS
 pg_ctl -D /opt/homebrew/var/postgresql@17 start
 
 # Create database and schema
-createdb -p 5433 rcie_poc
-psql -p 5433 rcie_poc -c "ALTER SYSTEM SET wal_level = 'logical';"
+createdb -p 5433 c9k_poc
+psql -p 5433 c9k_poc -c "ALTER SYSTEM SET wal_level = 'logical';"
 pg_ctl -D /opt/homebrew/var/postgresql@17 restart
-psql -p 5433 rcie_poc < scripts/schema.sql
-psql -p 5433 rcie_poc -c "SELECT pg_create_logical_replication_slot('drasi_slot', 'pgoutput');"
-psql -p 5433 rcie_poc -c "CREATE PUBLICATION drasi_pub FOR ALL TABLES;"
+psql -p 5433 c9k_poc < scripts/schema.sql
+psql -p 5433 c9k_poc -c "SELECT pg_create_logical_replication_slot('drasi_slot', 'pgoutput');"
+psql -p 5433 c9k_poc -c "CREATE PUBLICATION drasi_pub FOR ALL TABLES;"
 
 # Generate synthetic topology (26k nodes, 52k edges)
 python3 scripts/transpile.py --synthetic
 
 # Build and start engine
 cargo build --release
-RUST_LOG=info ./target/release/rcie-engine
+RUST_LOG=info ./target/release/c9k-engine
 
 # In another terminal — verify
 curl http://localhost:8080/health
@@ -482,7 +482,7 @@ Response:
 
 ### Heuristic Registry Layout
 
-RCIE ships heuristics as a **modular, layered registry**. The default configuration uses a **manifest file** (`config/heuristics.manifest.yaml`) that lists layer files to load in order:
+Causinator 9000 ships heuristics as a **modular, layered registry**. The default configuration uses a **manifest file** (`config/heuristics.manifest.yaml`) that lists layer files to load in order:
 
 ```yaml
 # config/heuristics.manifest.yaml
@@ -508,7 +508,7 @@ layers:
 | **Most-specific override** | Later layers override earlier ones at CPT granularity — keyed by `(class, mutation, signal)` |
 | **Lean patching** | An override file only needs the fields it wants to change; everything else is inherited |
 | **Optional layers** | Layers with `optional: true` are silently skipped when absent |
-| **Backward compatible** | Setting `RCIE_HEURISTICS` to a flat YAML list (the old format) still works — the format is auto-detected |
+| **Backward compatible** | Setting `C9K_HEURISTICS` to a flat YAML list (the old format) still works — the format is auto-detected |
 
 **Example lean patch** — override a single weight without touching anything else:
 
@@ -525,7 +525,7 @@ layers:
 
 See `config/heuristics/private.yaml.example` for more examples including prior overrides and adding brand-new classes.
 
-> **Environment variable:** `RCIE_HEURISTICS` controls which file to load. Defaults to `config/heuristics.manifest.yaml`. Set it to `config/heuristics.yaml` (the original flat file) for backward compatibility.
+> **Environment variable:** `C9K_HEURISTICS` controls which file to load. Defaults to `config/heuristics.manifest.yaml`. Set it to `config/heuristics.yaml` (the original flat file) for backward compatibility.
 
 ### Step 1: Identify the Resource Class
 
@@ -581,8 +581,8 @@ Run the demo or inject events via the API to verify the CPT produces expected co
 ## Project Structure
 
 ```
-rcie/
-├── Cargo.toml                          # Workspace: rcie-engine, rcie-cli
+causinator9000/
+├── Cargo.toml                          # Workspace: c9k-engine, c9k-cli
 ├── config/
 │   ├── heuristics.manifest.yaml        # Manifest listing heuristic layers to load
 │   ├── heuristics.yaml                 # Flat CPT file (legacy / backward compat)
@@ -611,7 +611,7 @@ rcie/
 │   ├── radius_receiver.py              # Radius webhook → PG
 │   └── monitor_receiver.py             # Azure Monitor webhook → PG
 ├── crates/
-│   ├── rcie-engine/                    # Main service
+│   ├── c9k-engine/                    # Main service
 │   │   └── src/
 │   │       ├── main.rs                 # Startup, Drasi init, API launch
 │   │       ├── solver/mod.rs           # LR inference, temporal decay, diagnosis
@@ -619,7 +619,7 @@ rcie/
 │   │       ├── api/mod.rs              # REST + static file serving
 │   │       ├── drasi/mod.rs            # drasi-lib integration
 │   │       └── checkpoint/mod.rs       # Bincode state persistence
-│   └── rcie-cli/                       # CLI binary
+│   └── c9k-cli/                       # CLI binary
 │       └── src/main.rs
 ├── web/
 │   └── index.html                      # Cytoscape.js dashboard (zero-build)

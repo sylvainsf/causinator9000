@@ -25,7 +25,7 @@ The solver is only as good as its Conditional Probability Tables. We ship CPTs f
 
 **How to contribute a CPT:**
 
-Add entries to the appropriate layer file under `config/heuristics/` (e.g., `cloud-services.yaml` for cloud resources, `applications.yaml` for app-layer services). The format is the same for all files:
+Add entries to the appropriate layer file under `config/heuristics/` (e.g., `containers.yaml` for container resources, `databases.yaml` for data stores, `networking.yaml` for network infrastructure). The format is the same for all files:
 
 ```yaml
 - class: YourResourceClass
@@ -117,8 +117,8 @@ brew install postgresql@17 rust python3   # macOS
 
 # Setup
 export PATH="/opt/homebrew/opt/postgresql@17/bin:$PATH"
-createdb -p 5433 rcie_poc
-psql -p 5433 rcie_poc < scripts/schema.sql
+createdb -p 5433 c9k_poc
+psql -p 5433 c9k_poc < scripts/schema.sql
 python3 scripts/transpile.py --synthetic
 
 # Build and test
@@ -126,7 +126,7 @@ cargo test
 cargo build --release
 
 # Run engine + demo
-RUST_LOG=info ./target/release/rcie-engine &
+RUST_LOG=info ./target/release/c9k-engine &
 python3 scripts/demo.py
 ```
 

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-RCIE Load Generator
+Causinator 9000 Load Generator
 
 Writes synthetic mutations and signals directly to PostgreSQL for POC testing.
 Simulates real-world scenarios including ToR switch failures and red herrings.
@@ -12,7 +12,7 @@ Usage:
   python scripts/load_generator.py --flood --rate 50000
 
 Environment:
-  RCIE_DATABASE_URL  PostgreSQL connection string (default: postgresql://localhost:5433/rcie_poc)
+  C9K_DATABASE_URL  PostgreSQL connection string (default: postgresql://localhost:5433/c9k_poc)
 """
 
 import argparse
@@ -30,7 +30,7 @@ except ImportError:
     print("Install psycopg: pip install 'psycopg[binary]'")
     raise SystemExit(1)
 
-DB_URL = os.environ.get("RCIE_DATABASE_URL", "postgresql://localhost:5433/rcie_poc")
+DB_URL = os.environ.get("C9K_DATABASE_URL", "postgresql://localhost:5433/c9k_poc")
 
 
 def get_conn():
@@ -255,7 +255,7 @@ def flood(rate: int, duration: int):
 # ── Main ──────────────────────────────────────────────────────────────────
 
 def main():
-    parser = argparse.ArgumentParser(description="RCIE Load Generator")
+    parser = argparse.ArgumentParser(description="Causinator 9000 Load Generator")
     parser.add_argument(
         "--scenario",
         choices=["tor-failure", "red-herring", "identity-rotation", "slow-poison"],

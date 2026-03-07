@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-RCIE Stress Test Suite
+Causinator 9000 Stress Test Suite
 
 Four tests that probe the real performance boundaries:
 
@@ -28,7 +28,7 @@ from datetime import datetime, timedelta, timezone
 
 import requests
 
-ENGINE = os.environ.get("RCIE_ENGINE_URL", "http://localhost:8080")
+ENGINE = os.environ.get("C9K_ENGINE_URL", "http://localhost:8080")
 SESSION = requests.Session()  # connection pooling
 
 # ── ANSI ──────────────────────────────────────────────────────────────────
@@ -400,7 +400,7 @@ def summary(results):
 # ── Main ──────────────────────────────────────────────────────────────────
 
 def main():
-    parser = argparse.ArgumentParser(description="RCIE Stress Test Suite")
+    parser = argparse.ArgumentParser(description="Causinator 9000 Stress Test Suite")
     parser.add_argument("--test", choices=["fan", "concurrent", "window", "flood", "all"],
                         default="all", help="Which test to run")
     args = parser.parse_args()

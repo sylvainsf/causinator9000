@@ -1,6 +1,6 @@
 // Copyright (c) 2026 Sylvain Niles. MIT License.
 
-//! REST API — Axum HTTP endpoints for RCIE diagnostics + web UI.
+//! REST API — Axum HTTP endpoints for Causinator 9000 diagnostics + web UI.
 
 use std::sync::Arc;
 
@@ -245,7 +245,7 @@ async fn post_clear(
 async fn post_reload_cpts(
     State(state): State<AppState>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
-    let path = std::env::var("RCIE_HEURISTICS")
+    let path = std::env::var("C9K_HEURISTICS")
         .unwrap_or_else(|_| "config/heuristics.manifest.yaml".to_string());
     let count = state
         .solver

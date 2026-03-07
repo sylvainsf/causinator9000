@@ -2,7 +2,7 @@
 
 //! Bayesian Solver — Variable Elimination on petgraph
 //!
-//! Core inference engine for RCIE. Maintains a causal DAG (petgraph),
+//! Core inference engine for Causinator 9000. Maintains a causal DAG (petgraph),
 //! applies CPTs from the heuristic registry, and runs Variable Elimination
 //! to compute posterior probabilities for root-cause identification.
 
@@ -933,7 +933,7 @@ impl SolverState {
 
     /// Export the graph as a DOT/Graphviz string.
     fn export_dot(&self) -> String {
-        let mut dot = String::from("digraph RCIE {\n  rankdir=TB;\n  node [shape=box];\n\n");
+        let mut dot = String::from("digraph Causinator9000 {\n  rankdir=TB;\n  node [shape=box];\n\n");
 
         for idx in self.graph.node_indices() {
             let node = &self.graph[idx];
@@ -1758,7 +1758,7 @@ mod tests {
     fn test_export_dot() {
         let state = make_test_graph();
         let dot = state.export_dot();
-        assert!(dot.contains("digraph RCIE"));
+        assert!(dot.contains("digraph Causinator9000"));
         assert!(dot.contains("tor-1"));
         assert!(dot.contains("vm-1"));
         assert!(dot.contains("ctr-1"));
@@ -2166,7 +2166,7 @@ mod tests {
 
     #[test]
     fn test_load_heuristics_flat_file() {
-        let dir = std::env::temp_dir().join("rcie_test_flat");
+        let dir = std::env::temp_dir().join("c9k_test_flat");
         std::fs::create_dir_all(&dir).unwrap();
         let flat_path = dir.join("flat.yaml");
         std::fs::write(
@@ -2194,7 +2194,7 @@ mod tests {
 
     #[test]
     fn test_load_heuristics_manifest() {
-        let dir = std::env::temp_dir().join("rcie_test_manifest");
+        let dir = std::env::temp_dir().join("c9k_test_manifest");
         std::fs::create_dir_all(&dir).unwrap();
 
         // Base layer
@@ -2263,7 +2263,7 @@ layers:
 
     #[test]
     fn test_load_heuristics_manifest_optional_layer() {
-        let dir = std::env::temp_dir().join("rcie_test_optional");
+        let dir = std::env::temp_dir().join("c9k_test_optional");
         std::fs::create_dir_all(&dir).unwrap();
 
         std::fs::write(
@@ -2302,7 +2302,7 @@ layers:
 
     #[test]
     fn test_load_heuristics_manifest_required_missing_layer_fails() {
-        let dir = std::env::temp_dir().join("rcie_test_required_missing");
+        let dir = std::env::temp_dir().join("c9k_test_required_missing");
         std::fs::create_dir_all(&dir).unwrap();
 
         std::fs::write(

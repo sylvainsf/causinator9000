@@ -3,7 +3,7 @@
 import os
 import requests
 
-E = os.environ.get("RCIE_ENGINE_URL", "http://localhost:8080")
+E = os.environ.get("C9K_ENGINE_URL", "http://localhost:8080")
 requests.post(f"{E}/api/clear")
 
 # Scenario A: KeyVault secret rotation → 3 pods get 403

@@ -8,7 +8,7 @@ mod solver;
 use anyhow::Result;
 use tracing_subscriber::EnvFilter;
 
-/// Default PostgreSQL port for RCIE (avoids conflict with other local PG instances)
+/// Default PostgreSQL port for Causinator 9000 (avoids conflict with other local PG instances)
 pub const PG_PORT: u16 = 5433;
 
 #[tokio::main]
@@ -20,10 +20,10 @@ async fn main() -> Result<()> {
         )
         .init();
 
-    tracing::info!("RCIE Engine starting");
+    tracing::info!("Causinator 9000 Engine starting");
 
     // Load configuration
-    let heuristics_path = std::env::var("RCIE_HEURISTICS")
+    let heuristics_path = std::env::var("C9K_HEURISTICS")
         .unwrap_or_else(|_| "config/heuristics.manifest.yaml".to_string());
     let checkpoint_path = std::env::args()
         .skip_while(|a| a != "--checkpoint")
@@ -43,7 +43,7 @@ async fn main() -> Result<()> {
     }
 
     // Load blueprint graph if available
-    let blueprint_path = std::env::var("RCIE_BLUEPRINT")
+    let blueprint_path = std::env::var("C9K_BLUEPRINT")
         .unwrap_or_else(|_| "data/blueprint.bin".to_string());
     if std::path::Path::new(&blueprint_path).exists() {
         solver.load_blueprint(&blueprint_path)?;
@@ -53,7 +53,7 @@ async fn main() -> Result<()> {
     let solver_handle = solver.handle();
 
     // Initialize drasi-lib runtime (PostgreSQL CDC → CQs → solver)
-    let drasi_enabled = std::env::var("RCIE_DRASI_ENABLED")
+    let drasi_enabled = std::env::var("C9K_DRASI_ENABLED")
         .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
         .unwrap_or(true);
 
@@ -65,17 +65,17 @@ async fn main() -> Result<()> {
             }
             Err(e) => {
                 tracing::warn!(error = %e, "Drasi initialization failed — running without CDC. \
-                    Set RCIE_DRASI_ENABLED=false to suppress this warning.");
+                    Set C9K_DRASI_ENABLED=false to suppress this warning.");
                 None
             }
         }
     } else {
-        tracing::info!("Drasi disabled via RCIE_DRASI_ENABLED=false");
+        tracing::info!("Drasi disabled via C9K_DRASI_ENABLED=false");
         None
     };
 
     // Start REST API
-    let api_addr = std::env::var("RCIE_BIND").unwrap_or_else(|_| "0.0.0.0:8080".to_string());
+    let api_addr = std::env::var("C9K_BIND").unwrap_or_else(|_| "0.0.0.0:8080".to_string());
     tracing::info!(addr = %api_addr, "Starting REST API");
     api::serve(solver_handle, &api_addr).await?;
 

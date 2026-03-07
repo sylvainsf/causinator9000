@@ -1,4 +1,4 @@
-# RCIE Private Heuristic Overrides — Example
+# Causinator 9000 Private Heuristic Overrides — Example
 #
 # This file demonstrates "lean patching".  Only the fields you include
 # are overridden; everything else is inherited from earlier layers.

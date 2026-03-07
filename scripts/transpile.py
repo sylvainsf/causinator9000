@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-RCIE Graph Transpiler — ARM JSON → LLM → PostgreSQL + blueprint.bin
+Causinator 9000 Graph Transpiler — ARM JSON → LLM → PostgreSQL + blueprint.bin
 
 Usage:
   python scripts/transpile.py --input arm-template.json
@@ -24,8 +24,8 @@ from pathlib import Path
 
 # ── Configuration ─────────────────────────────────────────────────────────
 
-PG_PORT = os.environ.get("RCIE_PG_PORT", "5433")
-PG_DB = os.environ.get("RCIE_PG_DB", "rcie_poc")
+PG_PORT = os.environ.get("C9K_PG_PORT", "5433")
+PG_DB = os.environ.get("C9K_PG_DB", "c9k_poc")
 PSQL_CMD = ["psql", "-p", PG_PORT, PG_DB, "-v", "ON_ERROR_STOP=1"]
 
 PROMPT_PATH = Path(__file__).parent.parent / "prompts" / "transpiler.md"
@@ -703,7 +703,7 @@ def generate_synthetic() -> None:
 # ── Main ──────────────────────────────────────────────────────────────────
 
 def main():
-    parser = argparse.ArgumentParser(description="RCIE Graph Transpiler")
+    parser = argparse.ArgumentParser(description="Causinator 9000 Graph Transpiler")
     parser.add_argument("--input", type=str, help="Path to Radius ARM JSON file")
     parser.add_argument(
         "--synthetic", action="store_true", help="Generate 10k-node synthetic topology"
