@@ -17,10 +17,7 @@ use c9k_tests::{InjectMutation, InjectSignal, TestClient};
 #[ignore = "requires running engine"]
 async fn smoke_health_check() {
     let client = TestClient::from_env();
-    let health = client
-        .health()
-        .await
-        .expect("Engine should be responding");
+    let health = client.health().await.expect("Engine should be responding");
 
     assert_eq!(health.status, "ok");
     println!(

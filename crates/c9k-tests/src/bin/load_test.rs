@@ -17,13 +17,13 @@
 //! Prerequisites:
 //!   Engine running with topology loaded.
 
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result};
-use clap::Parser;
 use c9k_tests::{InjectMutation, InjectSignal, LatencyStats, TestClient};
+use clap::Parser;
 
 // ── CLI ──────────────────────────────────────────────────────────────────
 
@@ -110,7 +110,9 @@ impl std::str::FromStr for TestSelection {
             "concurrent" | "conc" => Ok(Self::Concurrent),
             "window" | "large-window" => Ok(Self::Window),
             "flood" | "sustained" => Ok(Self::Flood),
-            _ => Err(format!("unknown test: {s} (try: all, fan, concurrent, window, flood)")),
+            _ => Err(format!(
+                "unknown test: {s} (try: all, fan, concurrent, window, flood)"
+            )),
         }
     }
 }
@@ -185,7 +187,8 @@ async fn test_fanout(cli: &Cli) -> Result<f64> {
     // Diagnose all pods
     println!("  ▸ Diagnose all {} pods", cli.fan_pods);
     let mut latencies = Vec::with_capacity(cli.fan_pods);
-    let mut root_causes: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+    let mut root_causes: std::collections::HashMap<String, usize> =
+        std::collections::HashMap::new();
 
     for app in 0..apps {
         for pod in 0..2 {
@@ -399,8 +402,7 @@ async fn test_large_window(cli: &Cli) -> Result<f64> {
     }
 
     let total_events = cli.window_mutations + cli.window_signals;
-    let stats =
-        LatencyStats::from_measurements(&mut latencies).context("no measurements")?;
+    let stats = LatencyStats::from_measurements(&mut latencies).context("no measurements")?;
     stats.print(&format!("Large window ({total_events} active events)"));
 
     let verdict = if stats.p95_ms < cli.threshold_window {
@@ -596,10 +598,7 @@ async fn main() -> Result<()> {
         .health()
         .await
         .context("Engine not responding — is it running?")?;
-    println!(
-        "✓ Engine: {} nodes, {} edges",
-        health.nodes, health.edges
-    );
+    println!("✓ Engine: {} nodes, {} edges", health.nodes, health.edges);
 
     let mut results: Vec<(&str, f64, f64)> = Vec::new();
 

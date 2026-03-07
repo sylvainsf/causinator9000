@@ -99,17 +99,20 @@ pub async fn init_drasi(
         .with_database(&config.pg_database)
         .with_user(&config.pg_user)
         .with_password(&config.pg_password)
-        .with_tables(vec![
-            "mutations".to_string(),
-            "signals".to_string(),
-        ])
+        .with_tables(vec!["mutations".to_string(), "signals".to_string()])
         .with_slot_name(&config.slot_name)
         .with_publication_name(&config.publication_name)
         // Tell Drasi which column is the PK for each table — without this,
         // the PG WAL decoder can't derive element IDs from replication events.
         .with_table_keys(vec![
-            TableKeyConfig { table: "mutations".to_string(), key_columns: vec!["id".to_string()] },
-            TableKeyConfig { table: "signals".to_string(), key_columns: vec!["id".to_string()] },
+            TableKeyConfig {
+                table: "mutations".to_string(),
+                key_columns: vec!["id".to_string()],
+            },
+            TableKeyConfig {
+                table: "signals".to_string(),
+                key_columns: vec!["id".to_string()],
+            },
         ])
         .build()
         .context("creating PostgreSQL replication source")?;

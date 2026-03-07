@@ -7,7 +7,10 @@ use clap::{Parser, Subcommand};
 use serde::{Deserialize, Serialize};
 
 #[derive(Parser)]
-#[command(name = "c9k", about = "Causinator 9000 CLI — Reactive Causal Inference Engine")]
+#[command(
+    name = "c9k",
+    about = "Causinator 9000 CLI — Reactive Causal Inference Engine"
+)]
 struct Cli {
     /// Engine base URL
     #[arg(long, default_value = "http://localhost:8080", env = "C9K_URL")]
@@ -151,8 +154,7 @@ const CPT_FILE: &str = "config/heuristics.manifest.yaml";
 const CPT_VERSIONS_DIR: &str = "config/versions";
 
 fn load_cpts(path: &str) -> Result<Vec<ClassHeuristic>> {
-    let content = std::fs::read_to_string(path)
-        .context(format!("reading CPT file: {path}"))?;
+    let content = std::fs::read_to_string(path).context(format!("reading CPT file: {path}"))?;
     if path.ends_with(".json") {
         serde_json::from_str(&content).context("parsing JSON CPTs")
     } else {
@@ -186,8 +188,6 @@ fn next_version() -> Result<u32> {
     Ok(max + 1)
 }
 
-
-
 fn save_version(classes: &[ClassHeuristic]) -> Result<u32> {
     let ver = next_version()?;
     let path = format!("{CPT_VERSIONS_DIR}/v{ver}.yaml");
@@ -206,7 +206,9 @@ fn validate_cpts(classes: &[ClassHeuristic]) -> Vec<String> {
             if cpt.table.len() != 2 || cpt.table[0].len() != 2 || cpt.table[1].len() != 2 {
                 warnings.push(format!(
                     "{}.{} → {}: table must be 2×2, got {}×{}",
-                    class.class, cpt.mutation, cpt.signal,
+                    class.class,
+                    cpt.mutation,
+                    cpt.signal,
                     cpt.table.len(),
                     cpt.table.first().map(|r| r.len()).unwrap_or(0)
                 ));
@@ -288,7 +290,13 @@ async fn main() -> Result<()> {
     match cli.command {
         Commands::Check { node_id } => {
             let url = format!("{}/api/diagnosis?target={}", cli.url, node_id);
-            let d: DiagnosisResponse = client.get(&url).send().await?.error_for_status()?.json().await?;
+            let d: DiagnosisResponse = client
+                .get(&url)
+                .send()
+                .await?
+                .error_for_status()?
+                .json()
+                .await?;
 
             println!("Node:       {}", d.target_node);
             println!("Confidence: {:.1}%", d.confidence * 100.0);
@@ -306,7 +314,12 @@ async fn main() -> Result<()> {
             }
         }
 
-        Commands::Inject { node, signal, severity, value } => {
+        Commands::Inject {
+            node,
+            signal,
+            severity,
+            value,
+        } => {
             let r: InjectResponse = client
                 .post(format!("{}/api/signals", cli.url))
                 .json(&serde_json::json!({
@@ -315,7 +328,11 @@ async fn main() -> Result<()> {
                     "value": value,
                     "severity": severity,
                 }))
-                .send().await?.error_for_status()?.json().await?;
+                .send()
+                .await?
+                .error_for_status()?
+                .json()
+                .await?;
             println!("Signal injected: {} ({})", r.id, r.status);
         }
 
@@ -326,31 +343,50 @@ async fn main() -> Result<()> {
                     "node_id": node,
                     "mutation_type": mutation,
                 }))
-                .send().await?.error_for_status()?.json().await?;
+                .send()
+                .await?
+                .error_for_status()?
+                .json()
+                .await?;
             println!("Mutation injected: {} ({})", r.id, r.status);
         }
 
         Commands::Status => {
             let h: HealthResponse = client
                 .get(format!("{}/api/health", cli.url))
-                .send().await?.error_for_status()?.json().await?;
+                .send()
+                .await?
+                .error_for_status()?
+                .json()
+                .await?;
             println!("Status:    {}", h.status);
             println!("Version:   {}", h.version);
-            if let Some(n) = h.nodes { println!("Nodes:     {n}"); }
-            if let Some(e) = h.edges { println!("Edges:     {e}"); }
-            if let Some(m) = h.active_mutations { println!("Mutations: {m} (active)"); }
-            if let Some(s) = h.active_signals { println!("Signals:   {s} (active)"); }
+            if let Some(n) = h.nodes {
+                println!("Nodes:     {n}");
+            }
+            if let Some(e) = h.edges {
+                println!("Edges:     {e}");
+            }
+            if let Some(m) = h.active_mutations {
+                println!("Mutations: {m} (active)");
+            }
+            if let Some(s) = h.active_signals {
+                println!("Signals:   {s} (active)");
+            }
         }
 
         Commands::Graph { island } => {
             let text = client
                 .get(format!("{}/api/graph/{island}", cli.url))
-                .send().await?.error_for_status()?.text().await?;
+                .send()
+                .await?
+                .error_for_status()?
+                .text()
+                .await?;
             println!("{text}");
         }
 
         // ── CPT Commands ─────────────────────────────────────────────
-
         Commands::Cpt { action } => match action {
             CptAction::List => {
                 let classes = load_cpts(CPT_FILE)?;
@@ -359,18 +395,32 @@ async fn main() -> Result<()> {
                     let lr_range: String = if class.cpts.is_empty() {
                         "no entries".into()
                     } else {
-                        let lrs: Vec<f64> = class.cpts.iter().map(|c| {
-                            if c.table[0][1] > 0.0 { c.table[0][0] / c.table[0][1] } else { f64::INFINITY }
-                        }).collect();
+                        let lrs: Vec<f64> = class
+                            .cpts
+                            .iter()
+                            .map(|c| {
+                                if c.table[0][1] > 0.0 {
+                                    c.table[0][0] / c.table[0][1]
+                                } else {
+                                    f64::INFINITY
+                                }
+                            })
+                            .collect();
                         let min = lrs.iter().cloned().fold(f64::INFINITY, f64::min);
                         let max = lrs.iter().cloned().fold(0.0_f64, f64::max);
                         format!("LR {min:.0}×–{max:.0}×")
                     };
-                    println!("  {} ({} entries, {lr_range})", class.class, class.cpts.len());
+                    println!(
+                        "  {} ({} entries, {lr_range})",
+                        class.class,
+                        class.cpts.len()
+                    );
                     for cpt in &class.cpts {
                         let lr = if cpt.table[0][1] > 0.0 {
                             cpt.table[0][0] / cpt.table[0][1]
-                        } else { f64::INFINITY };
+                        } else {
+                            f64::INFINITY
+                        };
                         println!("    {} → {}  (LR = {lr:.1}×)", cpt.mutation, cpt.signal);
                     }
                 }
@@ -378,7 +428,9 @@ async fn main() -> Result<()> {
 
             CptAction::Show { class } => {
                 let classes = load_cpts(CPT_FILE)?;
-                let cls = classes.iter().find(|c| c.class.eq_ignore_ascii_case(&class));
+                let cls = classes
+                    .iter()
+                    .find(|c| c.class.eq_ignore_ascii_case(&class));
                 match cls {
                     Some(c) => {
                         let yaml = serde_yaml_ng::to_string(&[c])?;
@@ -419,11 +471,20 @@ async fn main() -> Result<()> {
                 }
 
                 save_cpts(&new_classes, CPT_FILE)?;
-                println!("Imported {} classes from {file} → {CPT_FILE}", new_classes.len());
+                println!(
+                    "Imported {} classes from {file} → {CPT_FILE}",
+                    new_classes.len()
+                );
                 println!("Reload the engine: c9k cpt reload");
             }
 
-            CptAction::Set { class, mutation, signal, p_present, p_absent } => {
+            CptAction::Set {
+                class,
+                mutation,
+                signal,
+                p_present,
+                p_absent,
+            } => {
                 let mut classes = load_cpts(CPT_FILE)?;
 
                 // Version before modifying
@@ -442,19 +503,33 @@ async fn main() -> Result<()> {
                 };
 
                 // Find or create the entry
-                if let Some(entry) = cls.cpts.iter_mut().find(|e| e.mutation == mutation && e.signal == signal) {
-                    entry.table = vec![vec![p_present, p_absent], vec![1.0 - p_present, 1.0 - p_absent]];
+                if let Some(entry) = cls
+                    .cpts
+                    .iter_mut()
+                    .find(|e| e.mutation == mutation && e.signal == signal)
+                {
+                    entry.table = vec![
+                        vec![p_present, p_absent],
+                        vec![1.0 - p_present, 1.0 - p_absent],
+                    ];
                     println!("Updated: {class}.{mutation} → {signal}");
                 } else {
                     cls.cpts.push(CptEntry {
                         mutation: mutation.clone(),
                         signal: signal.clone(),
-                        table: vec![vec![p_present, p_absent], vec![1.0 - p_present, 1.0 - p_absent]],
+                        table: vec![
+                            vec![p_present, p_absent],
+                            vec![1.0 - p_present, 1.0 - p_absent],
+                        ],
                     });
                     println!("Added: {class}.{mutation} → {signal}");
                 }
 
-                let lr = if p_absent > 0.0 { p_present / p_absent } else { f64::INFINITY };
+                let lr = if p_absent > 0.0 {
+                    p_present / p_absent
+                } else {
+                    f64::INFINITY
+                };
                 println!("  P(signal|mutation) = {p_present}");
                 println!("  P(signal|absent)   = {p_absent}");
                 println!("  Likelihood ratio   = {lr:.1}×");
@@ -463,13 +538,18 @@ async fn main() -> Result<()> {
                 println!("Saved to {CPT_FILE}. Reload: c9k cpt reload");
             }
 
-            CptAction::Remove { class, mutation, signal } => {
+            CptAction::Remove {
+                class,
+                mutation,
+                signal,
+            } => {
                 let mut classes = load_cpts(CPT_FILE)?;
                 save_version(&classes)?;
 
                 if let Some(cls) = classes.iter_mut().find(|c| c.class == class) {
                     let before = cls.cpts.len();
-                    cls.cpts.retain(|e| !(e.mutation == mutation && e.signal == signal));
+                    cls.cpts
+                        .retain(|e| !(e.mutation == mutation && e.signal == signal));
                     if cls.cpts.len() < before {
                         save_cpts(&classes, CPT_FILE)?;
                         println!("Removed: {class}.{mutation} → {signal}");
@@ -489,7 +569,11 @@ async fn main() -> Result<()> {
                 if let Ok(entries) = std::fs::read_dir(CPT_VERSIONS_DIR) {
                     for entry in entries.flatten() {
                         let name = entry.file_name().to_string_lossy().to_string();
-                        if let Some(Ok(n)) = name.strip_prefix("v").and_then(|s| s.strip_suffix(".yaml")).map(|s| s.parse::<u32>()) {
+                        if let Some(Ok(n)) = name
+                            .strip_prefix("v")
+                            .and_then(|s| s.strip_suffix(".yaml"))
+                            .map(|s| s.parse::<u32>())
+                        {
                             let size = entry.metadata().map(|m| m.len()).unwrap_or(0);
                             versions.push((n, name, size));
                         }
@@ -498,12 +582,20 @@ async fn main() -> Result<()> {
                 versions.sort_by_key(|v| v.0);
 
                 if versions.is_empty() {
-                    println!("No versions saved yet. Versions are created automatically on import/set/remove.");
+                    println!(
+                        "No versions saved yet. Versions are created automatically on import/set/remove."
+                    );
                 } else {
                     println!("{} versions:\n", versions.len());
                     for (ver, name, size) in &versions {
-                        let current_marker = if *ver == versions.last().unwrap().0 { " (latest)" } else { "" };
-                        println!("  v{ver}  {CPT_VERSIONS_DIR}/{name}  ({size} bytes){current_marker}");
+                        let current_marker = if *ver == versions.last().unwrap().0 {
+                            " (latest)"
+                        } else {
+                            ""
+                        };
+                        println!(
+                            "  v{ver}  {CPT_VERSIONS_DIR}/{name}  ({size} bytes){current_marker}"
+                        );
                     }
                 }
             }
@@ -524,7 +616,10 @@ async fn main() -> Result<()> {
 
                 let rollback_classes = load_cpts(&version_path)?;
                 save_cpts(&rollback_classes, CPT_FILE)?;
-                println!("Rolled back to version {version} ({} classes)", rollback_classes.len());
+                println!(
+                    "Rolled back to version {version} ({} classes)",
+                    rollback_classes.len()
+                );
                 println!("Reload the engine: c9k cpt reload");
             }
 
@@ -556,9 +651,11 @@ async fn main() -> Result<()> {
                 match load_cpts(&file) {
                     Ok(classes) => {
                         let warnings = validate_cpts(&classes);
-                        println!("Parsed {} classes, {} total entries",
+                        println!(
+                            "Parsed {} classes, {} total entries",
                             classes.len(),
-                            classes.iter().map(|c| c.cpts.len()).sum::<usize>());
+                            classes.iter().map(|c| c.cpts.len()).sum::<usize>()
+                        );
 
                         if warnings.is_empty() {
                             println!("✓ All entries valid");

@@ -10,10 +10,10 @@
 //! These tests run without PostgreSQL or a running engine, making them
 //! suitable for CI/CD pipelines.
 
-use chrono::{Duration, Utc};
 use c9k_engine::solver::{
     BayesianSolver, CausalEdge, CausalNode, EdgeType, Mutation, Signal, SolverHandle,
 };
+use chrono::{Duration, Utc};
 
 // ── Heuristics YAML for test topology ────────────────────────────────────
 
@@ -193,7 +193,12 @@ fn build_golden_topology() -> SolverHandle {
     handle
 }
 
-fn make_mutation(id: &str, node_id: &str, mutation_type: &str, ts: chrono::DateTime<Utc>) -> Mutation {
+fn make_mutation(
+    id: &str,
+    node_id: &str,
+    mutation_type: &str,
+    ts: chrono::DateTime<Utc>,
+) -> Mutation {
     Mutation {
         id: id.to_string(),
         node_id: node_id.to_string(),

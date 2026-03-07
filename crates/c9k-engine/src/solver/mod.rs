@@ -14,12 +14,10 @@ use std::sync::{Arc, Mutex};
 
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
+use petgraph::Direction;
 use petgraph::graph::{DiGraph, NodeIndex};
 use petgraph::visit::EdgeRef;
-use petgraph::Direction;
 use serde::{Deserialize, Serialize};
-
-
 
 // ── Types ────────────────────────────────────────────────────────────────
 
@@ -139,10 +137,7 @@ struct LayerClassEntry {
 ///     Matching entries are replaced; new entries are appended.
 /// - If the class is new, insert it (using a default prior of 0.005
 ///   if none is specified).
-fn merge_layer(
-    heuristics: &mut HashMap<String, ClassHeuristic>,
-    entries: Vec<LayerClassEntry>,
-) {
+fn merge_layer(heuristics: &mut HashMap<String, ClassHeuristic>, entries: Vec<LayerClassEntry>) {
     for entry in entries {
         match heuristics.get_mut(&entry.class) {
             Some(existing) => {
@@ -166,11 +161,9 @@ fn merge_layer(
                     entry.class.clone(),
                     ClassHeuristic {
                         class: entry.class,
-                        default_prior: entry
-                            .default_prior
-                            .unwrap_or(PriorConfig {
-                                p_failure: DEFAULT_PRIOR_P_FAILURE,
-                            }),
+                        default_prior: entry.default_prior.unwrap_or(PriorConfig {
+                            p_failure: DEFAULT_PRIOR_P_FAILURE,
+                        }),
                         cpts: entry.cpts,
                     },
                 );
@@ -197,17 +190,14 @@ fn load_heuristics_from_path(
 
     // Try manifest format first (YAML mapping with "layers" key)
     if let Ok(manifest) = serde_yaml_ng::from_str::<HeuristicsManifest>(&contents) {
-        let base_dir = Path::new(path)
-            .parent()
-            .unwrap_or_else(|| Path::new("."));
+        let base_dir = Path::new(path).parent().unwrap_or_else(|| Path::new("."));
         for layer in &manifest.layers {
             let layer_path = base_dir.join(&layer.path);
             let layer_path_str = layer_path.display().to_string();
             match std::fs::read_to_string(&layer_path) {
                 Ok(layer_contents) => {
-                    let entries: Vec<LayerClassEntry> =
-                        serde_yaml_ng::from_str(&layer_contents)
-                            .context(format!("parsing layer file: {layer_path_str}"))?;
+                    let entries: Vec<LayerClassEntry> = serde_yaml_ng::from_str(&layer_contents)
+                        .context(format!("parsing layer file: {layer_path_str}"))?;
                     tracing::debug!(
                         path = %layer_path_str,
                         classes = entries.len(),
@@ -286,43 +276,64 @@ pub struct SolverHandle {
 impl SolverHandle {
     /// Run inference for a specific node and return the diagnosis.
     pub fn diagnose(&self, node_id: &str) -> Result<Diagnosis> {
-        let state = self.inner.lock().map_err(|e| anyhow::anyhow!("lock: {e}"))?;
+        let state = self
+            .inner
+            .lock()
+            .map_err(|e| anyhow::anyhow!("lock: {e}"))?;
         state.diagnose(node_id)
     }
 
     /// Return all active diagnoses above the confidence threshold.
     pub fn diagnose_all(&self, min_confidence: f64) -> Result<Vec<Diagnosis>> {
-        let state = self.inner.lock().map_err(|e| anyhow::anyhow!("lock: {e}"))?;
+        let state = self
+            .inner
+            .lock()
+            .map_err(|e| anyhow::anyhow!("lock: {e}"))?;
         state.diagnose_all(min_confidence)
     }
 
     /// Ingest a CQ result from drasi (called by ApplicationReaction).
     pub fn ingest_signal(&self, signal: Signal) -> Result<()> {
-        let mut state = self.inner.lock().map_err(|e| anyhow::anyhow!("lock: {e}"))?;
+        let mut state = self
+            .inner
+            .lock()
+            .map_err(|e| anyhow::anyhow!("lock: {e}"))?;
         state.ingest_signal(signal)
     }
 
     /// Ingest a mutation event.
     pub fn ingest_mutation(&self, mutation: Mutation) -> Result<()> {
-        let mut state = self.inner.lock().map_err(|e| anyhow::anyhow!("lock: {e}"))?;
+        let mut state = self
+            .inner
+            .lock()
+            .map_err(|e| anyhow::anyhow!("lock: {e}"))?;
         state.ingest_mutation(mutation)
     }
 
     /// Export the graph as a DOT/Graphviz string.
     pub fn export_dot(&self) -> Result<String> {
-        let state = self.inner.lock().map_err(|e| anyhow::anyhow!("lock: {e}"))?;
+        let state = self
+            .inner
+            .lock()
+            .map_err(|e| anyhow::anyhow!("lock: {e}"))?;
         Ok(state.export_dot())
     }
 
     /// Write a checkpoint to disk.
     pub fn write_checkpoint(&self, path: &str) -> Result<()> {
-        let state = self.inner.lock().map_err(|e| anyhow::anyhow!("lock: {e}"))?;
+        let state = self
+            .inner
+            .lock()
+            .map_err(|e| anyhow::anyhow!("lock: {e}"))?;
         state.write_checkpoint(path)
     }
 
     /// Get counts for health endpoint.
     pub fn stats(&self) -> Result<(usize, usize, usize, usize)> {
-        let state = self.inner.lock().map_err(|e| anyhow::anyhow!("lock: {e}"))?;
+        let state = self
+            .inner
+            .lock()
+            .map_err(|e| anyhow::anyhow!("lock: {e}"))?;
         Ok((
             state.graph.node_count(),
             state.graph.edge_count(),
@@ -333,7 +344,10 @@ impl SolverHandle {
 
     /// Clear all active mutations and signals (for demo/testing).
     pub fn clear_events(&self) -> Result<()> {
-        let mut state = self.inner.lock().map_err(|e| anyhow::anyhow!("lock: {e}"))?;
+        let mut state = self
+            .inner
+            .lock()
+            .map_err(|e| anyhow::anyhow!("lock: {e}"))?;
         state.active_mutations.clear();
         state.active_signals.clear();
         state.cached_diagnoses.clear();
@@ -342,14 +356,20 @@ impl SolverHandle {
 
     /// Add a node to the causal DAG.
     pub fn add_node(&self, node: CausalNode) -> Result<()> {
-        let mut state = self.inner.lock().map_err(|e| anyhow::anyhow!("lock: {e}"))?;
+        let mut state = self
+            .inner
+            .lock()
+            .map_err(|e| anyhow::anyhow!("lock: {e}"))?;
         state.add_node(node);
         Ok(())
     }
 
     /// Add an edge between two nodes in the causal DAG.
     pub fn add_edge(&self, edge: CausalEdge, source_id: &str, target_id: &str) -> Result<()> {
-        let mut state = self.inner.lock().map_err(|e| anyhow::anyhow!("lock: {e}"))?;
+        let mut state = self
+            .inner
+            .lock()
+            .map_err(|e| anyhow::anyhow!("lock: {e}"))?;
         state.add_edge(edge, source_id, target_id)
     }
 
@@ -358,7 +378,10 @@ impl SolverHandle {
         let classes: Vec<ClassHeuristic> =
             serde_yaml_ng::from_str(yaml).context("parsing heuristics YAML")?;
         let count = classes.len();
-        let mut state = self.inner.lock().map_err(|e| anyhow::anyhow!("lock: {e}"))?;
+        let mut state = self
+            .inner
+            .lock()
+            .map_err(|e| anyhow::anyhow!("lock: {e}"))?;
         for class in classes {
             state.heuristics.insert(class.class.clone(), class);
         }
@@ -367,7 +390,10 @@ impl SolverHandle {
 
     /// Reload heuristics (CPTs) from a YAML file or manifest.
     pub fn reload_heuristics(&self, path: &str) -> Result<usize> {
-        let mut state = self.inner.lock().map_err(|e| anyhow::anyhow!("lock: {e}"))?;
+        let mut state = self
+            .inner
+            .lock()
+            .map_err(|e| anyhow::anyhow!("lock: {e}"))?;
         state.heuristics.clear();
         load_heuristics_from_path(&mut state.heuristics, path)?;
         let count = state.heuristics.len();
@@ -377,13 +403,19 @@ impl SolverHandle {
 
     /// Get the current temporal window in minutes.
     pub fn get_temporal_window(&self) -> Result<i64> {
-        let state = self.inner.lock().map_err(|e| anyhow::anyhow!("lock: {e}"))?;
+        let state = self
+            .inner
+            .lock()
+            .map_err(|e| anyhow::anyhow!("lock: {e}"))?;
         Ok(state.temporal_window.num_minutes())
     }
 
     /// Set the temporal window in minutes.
     pub fn set_temporal_window(&self, minutes: i64) -> Result<()> {
-        let mut state = self.inner.lock().map_err(|e| anyhow::anyhow!("lock: {e}"))?;
+        let mut state = self
+            .inner
+            .lock()
+            .map_err(|e| anyhow::anyhow!("lock: {e}"))?;
         state.temporal_window = chrono::Duration::minutes(minutes);
         tracing::info!(minutes, "Temporal window updated");
         Ok(())
@@ -392,26 +424,38 @@ impl SolverHandle {
     /// Export the full graph as Cytoscape.js JSON elements.
     /// Includes node alert status based on active signals/mutations.
     pub fn export_cytoscape(&self) -> Result<serde_json::Value> {
-        let state = self.inner.lock().map_err(|e| anyhow::anyhow!("lock: {e}"))?;
+        let state = self
+            .inner
+            .lock()
+            .map_err(|e| anyhow::anyhow!("lock: {e}"))?;
         Ok(state.export_cytoscape())
     }
 
     /// Export only the subgraphs involved in active alerts (2-hop neighborhoods).
     /// Returns a compact Cytoscape JSON with just the relevant nodes.
     pub fn alert_subgraphs(&self) -> Result<serde_json::Value> {
-        let state = self.inner.lock().map_err(|e| anyhow::anyhow!("lock: {e}"))?;
+        let state = self
+            .inner
+            .lock()
+            .map_err(|e| anyhow::anyhow!("lock: {e}"))?;
         state.alert_subgraphs()
     }
 
     /// Export a neighborhood subgraph around a node (depth hops in each direction).
     pub fn neighborhood(&self, node_id: &str, depth: usize) -> Result<serde_json::Value> {
-        let state = self.inner.lock().map_err(|e| anyhow::anyhow!("lock: {e}"))?;
+        let state = self
+            .inner
+            .lock()
+            .map_err(|e| anyhow::anyhow!("lock: {e}"))?;
         state.neighborhood(node_id, depth)
     }
 
     /// Get all active alerts (nodes with signals) with diagnosis info.
     pub fn alerts(&self) -> Result<Vec<serde_json::Value>> {
-        let state = self.inner.lock().map_err(|e| anyhow::anyhow!("lock: {e}"))?;
+        let state = self
+            .inner
+            .lock()
+            .map_err(|e| anyhow::anyhow!("lock: {e}"))?;
         state.alerts()
     }
 }
@@ -522,10 +566,7 @@ impl SolverState {
     /// At t=15: prior ≈ 0.30 (15 min ago — still plausible)
     /// At t=28: prior ≈ 0.10 (almost expired — unlikely but possible)
     fn temporal_prior(mutation_ts: DateTime<Utc>, signal_ts: DateTime<Utc>) -> f64 {
-        let gap_minutes = (signal_ts - mutation_ts)
-            .num_seconds()
-            .max(0) as f64
-            / 60.0;
+        let gap_minutes = (signal_ts - mutation_ts).num_seconds().max(0) as f64 / 60.0;
         let lambda = 0.055; // decay rate: half-life ≈ 12.6 minutes
         let base_prior = 0.50;
         base_prior * (-lambda * gap_minutes).exp()
@@ -560,9 +601,7 @@ impl SolverState {
             if cpt.mutation != mutation.mutation_type {
                 continue;
             }
-            let signal_matches = signals_on_node
-                .iter()
-                .any(|s| s.signal_type == cpt.signal);
+            let signal_matches = signals_on_node.iter().any(|s| s.signal_type == cpt.signal);
 
             if signal_matches {
                 let conf = Self::lr_confidence(cpt, combined_confidence);
@@ -820,14 +859,14 @@ impl SolverState {
         }
 
         // Sort by confidence descending
-        cause_scores
-            .sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+        cause_scores.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
 
-        let (root_cause, confidence, causal_path) = if let Some((rc, conf, path)) = cause_scores.first() {
-            (Some(rc.clone()), *conf, path.clone())
-        } else {
-            (None, 0.0, vec![])
-        };
+        let (root_cause, confidence, causal_path) =
+            if let Some((rc, conf, path)) = cause_scores.first() {
+                (Some(rc.clone()), *conf, path.clone())
+            } else {
+                (None, 0.0, vec![])
+            };
 
         let competing: Vec<(String, f64)> = cause_scores
             .iter()
@@ -959,7 +998,8 @@ impl SolverState {
 
     /// Export the graph as a DOT/Graphviz string.
     fn export_dot(&self) -> String {
-        let mut dot = String::from("digraph Causinator9000 {\n  rankdir=TB;\n  node [shape=box];\n\n");
+        let mut dot =
+            String::from("digraph Causinator9000 {\n  rankdir=TB;\n  node [shape=box];\n\n");
 
         for idx in self.graph.node_indices() {
             let node = &self.graph[idx];
@@ -987,7 +1027,10 @@ impl SolverState {
             };
             dot.push_str(&format!(
                 "  \"{}\" -> \"{}\" [style={} label=\"{:?}\"];\n",
-                src.id, tgt.id, style, edge_ref.weight().edge_type
+                src.id,
+                tgt.id,
+                style,
+                edge_ref.weight().edge_type
             ));
         }
 
@@ -1077,7 +1120,7 @@ impl SolverState {
         visited.insert(start_idx);
 
         let max_neighbors_per_node = 8; // Cap fan-out to keep the graph readable
-        let max_total_nodes = 40;       // Hard cap on total neighborhood size
+        let max_total_nodes = 40; // Hard cap on total neighborhood size
 
         // BFS in both directions up to depth, with fan-out limits
         while let Some((current, d)) = queue.pop_front() {
@@ -1088,7 +1131,9 @@ impl SolverState {
             // Outgoing (downstream) — capped
             let mut child_count = 0;
             for edge in self.graph.edges_directed(current, Direction::Outgoing) {
-                if child_count >= max_neighbors_per_node { break; }
+                if child_count >= max_neighbors_per_node {
+                    break;
+                }
                 let neighbor = edge.target();
                 if visited.insert(neighbor) {
                     queue.push_back((neighbor, d + 1));
@@ -1098,7 +1143,9 @@ impl SolverState {
 
             // Incoming (upstream) — all parents (usually few)
             for edge in self.graph.edges_directed(current, Direction::Incoming) {
-                if visited.len() >= max_total_nodes { break; }
+                if visited.len() >= max_total_nodes {
+                    break;
+                }
                 let neighbor = edge.source();
                 if visited.insert(neighbor) {
                     queue.push_back((neighbor, d + 1));
@@ -1125,15 +1172,16 @@ impl SolverState {
 
         for &idx in &visited {
             let node = &self.graph[idx];
-            let status = if signaled.contains(node.id.as_str()) && mutated.contains(node.id.as_str()) {
-                "alert"
-            } else if signaled.contains(node.id.as_str()) {
-                "signal"
-            } else if mutated.contains(node.id.as_str()) {
-                "mutation"
-            } else {
-                "normal"
-            };
+            let status =
+                if signaled.contains(node.id.as_str()) && mutated.contains(node.id.as_str()) {
+                    "alert"
+                } else if signaled.contains(node.id.as_str()) {
+                    "signal"
+                } else if mutated.contains(node.id.as_str()) {
+                    "mutation"
+                } else {
+                    "normal"
+                };
             elements.push(serde_json::json!({
                 "group": "nodes",
                 "data": {
@@ -1174,7 +1222,8 @@ impl SolverState {
         let window_start = now - self.temporal_window;
 
         // Group signals by node
-        let mut signal_nodes: std::collections::HashMap<&str, Vec<&Signal>> = std::collections::HashMap::new();
+        let mut signal_nodes: std::collections::HashMap<&str, Vec<&Signal>> =
+            std::collections::HashMap::new();
         for sig in &self.active_signals {
             if sig.timestamp >= window_start {
                 signal_nodes.entry(&sig.node_id).or_default().push(sig);
@@ -1266,7 +1315,9 @@ impl SolverState {
 
             // 1. The signaled node
             visited_global.insert(start_idx);
-            node_cluster.entry(start_idx).or_insert_with(|| cluster_id.clone());
+            node_cluster
+                .entry(start_idx)
+                .or_insert_with(|| cluster_id.clone());
 
             // 2. Walk full ancestor chain; collect all ancestors, then
             //    include those with mutations + the path connecting them.
@@ -1288,7 +1339,9 @@ impl SolverState {
                 for path_node_id in &path {
                     if let Some(&idx) = self.node_index.get(path_node_id.as_str()) {
                         visited_global.insert(idx);
-                        node_cluster.entry(idx).or_insert_with(|| cluster_id.clone());
+                        node_cluster
+                            .entry(idx)
+                            .or_insert_with(|| cluster_id.clone());
                     }
                 }
             }
@@ -1298,15 +1351,25 @@ impl SolverState {
             for edge in self.graph.edges_directed(start_idx, Direction::Incoming) {
                 let parent = edge.source();
                 visited_global.insert(parent);
-                node_cluster.entry(parent).or_insert_with(|| cluster_id.clone());
+                node_cluster
+                    .entry(parent)
+                    .or_insert_with(|| cluster_id.clone());
             }
 
             // 3. Direct children (capped) — what's downstream of the failure
-            for (child_count, edge) in self.graph.edges_directed(start_idx, Direction::Outgoing).enumerate() {
-                if child_count >= max_children { break; }
+            for (child_count, edge) in self
+                .graph
+                .edges_directed(start_idx, Direction::Outgoing)
+                .enumerate()
+            {
+                if child_count >= max_children {
+                    break;
+                }
                 let child = edge.target();
                 visited_global.insert(child);
-                node_cluster.entry(child).or_insert_with(|| cluster_id.clone());
+                node_cluster
+                    .entry(child)
+                    .or_insert_with(|| cluster_id.clone());
             }
 
             // 4. Causal path from diagnosis
@@ -1314,7 +1377,9 @@ impl SolverState {
                 for path_node_id in &diag.causal_path {
                     if let Some(&idx) = self.node_index.get(path_node_id.as_str()) {
                         visited_global.insert(idx);
-                        node_cluster.entry(idx).or_insert_with(|| cluster_id.clone());
+                        node_cluster
+                            .entry(idx)
+                            .or_insert_with(|| cluster_id.clone());
                     }
                 }
             }
@@ -1325,15 +1390,15 @@ impl SolverState {
             if let Some(&idx) = self.node_index.get(*mut_node_id)
                 && visited_global.insert(idx)
             {
-                node_cluster.entry(idx).or_insert_with(|| format!("cluster-{mut_node_id}"));
+                node_cluster
+                    .entry(idx)
+                    .or_insert_with(|| format!("cluster-{mut_node_id}"));
             }
         }
 
         // Collect unique cluster IDs
-        let clusters: std::collections::HashSet<&str> = node_cluster
-            .values()
-            .map(|s| s.as_str())
-            .collect();
+        let clusters: std::collections::HashSet<&str> =
+            node_cluster.values().map(|s| s.as_str()).collect();
 
         let mut elements: Vec<serde_json::Value> = Vec::new();
 
@@ -1357,10 +1422,15 @@ impl SolverState {
             let node = &self.graph[idx];
             let has_signal = signaled.contains(node.id.as_str());
             let has_mutation = mutated.contains(node.id.as_str());
-            let status = if has_signal && has_mutation { "alert" }
-                else if has_signal { "signal" }
-                else if has_mutation { "mutation" }
-                else { "normal" };
+            let status = if has_signal && has_mutation {
+                "alert"
+            } else if has_signal {
+                "signal"
+            } else if has_mutation {
+                "mutation"
+            } else {
+                "normal"
+            };
 
             let parent = node_cluster.get(&idx).cloned();
             let mut data = serde_json::json!({
@@ -1371,14 +1441,18 @@ impl SolverState {
                 "status": status,
             });
             if let Some(p) = parent {
-                data.as_object_mut().unwrap().insert("parent".to_string(), serde_json::json!(p));
+                data.as_object_mut()
+                    .unwrap()
+                    .insert("parent".to_string(), serde_json::json!(p));
             }
             elements.push(serde_json::json!({ "group": "nodes", "data": data }));
         }
 
         // Add edges where both endpoints are in the set
         for edge_ref in self.graph.edge_references() {
-            if visited_global.contains(&edge_ref.source()) && visited_global.contains(&edge_ref.target()) {
+            if visited_global.contains(&edge_ref.source())
+                && visited_global.contains(&edge_ref.target())
+            {
                 let src = &self.graph[edge_ref.source()];
                 let tgt = &self.graph[edge_ref.target()];
                 let w = edge_ref.weight();
@@ -1491,14 +1565,20 @@ impl BayesianSolver {
 
     /// Load heuristics (CPTs) from a YAML file or manifest.
     pub fn load_heuristics(&mut self, path: &str) -> Result<()> {
-        let mut state = self.state.lock().map_err(|e| anyhow::anyhow!("lock: {e}"))?;
+        let mut state = self
+            .state
+            .lock()
+            .map_err(|e| anyhow::anyhow!("lock: {e}"))?;
         load_heuristics_from_path(&mut state.heuristics, path)
     }
 
     /// Load a checkpoint from disk and restore solver state.
     pub fn load_checkpoint(&mut self, path: &str) -> Result<()> {
         let snapshot: SolverSnapshot = crate::checkpoint::read_checkpoint(path)?;
-        let mut state = self.state.lock().map_err(|e| anyhow::anyhow!("lock: {e}"))?;
+        let mut state = self
+            .state
+            .lock()
+            .map_err(|e| anyhow::anyhow!("lock: {e}"))?;
         state.from_snapshot(snapshot)?;
         tracing::info!(
             nodes = state.graph.node_count(),
@@ -1541,7 +1621,10 @@ impl BayesianSolver {
         let node_count = read_u32(&data, &mut cursor)? as usize;
         let edge_count = read_u32(&data, &mut cursor)? as usize;
 
-        let mut state = self.state.lock().map_err(|e| anyhow::anyhow!("lock: {e}"))?;
+        let mut state = self
+            .state
+            .lock()
+            .map_err(|e| anyhow::anyhow!("lock: {e}"))?;
 
         // Read nodes
         for _ in 0..node_count {
@@ -1551,8 +1634,7 @@ impl BayesianSolver {
             let json_len = read_u32(&data, &mut cursor)? as usize;
             let json_bytes = read_bytes(&data, &mut cursor, json_len)?;
             let json_str = String::from_utf8(json_bytes).context("invalid UTF-8 in node JSON")?;
-            let node: CausalNode =
-                serde_json::from_str(&json_str).context("parsing node JSON")?;
+            let node: CausalNode = serde_json::from_str(&json_str).context("parsing node JSON")?;
             state.add_node(node);
         }
 
@@ -1572,8 +1654,7 @@ impl BayesianSolver {
 
             let json_len = read_u32(&data, &mut cursor)? as usize;
             let json_bytes = read_bytes(&data, &mut cursor, json_len)?;
-            let json_str =
-                String::from_utf8(json_bytes).context("invalid UTF-8 in edge JSON")?;
+            let json_str = String::from_utf8(json_bytes).context("invalid UTF-8 in edge JSON")?;
 
             #[derive(Deserialize)]
             struct EdgeJson {
@@ -1584,8 +1665,7 @@ impl BayesianSolver {
                 properties: serde_json::Value,
             }
 
-            let ej: EdgeJson =
-                serde_json::from_str(&json_str).context("parsing edge JSON")?;
+            let ej: EdgeJson = serde_json::from_str(&json_str).context("parsing edge JSON")?;
 
             let edge_type = match ej.edge_type.as_str() {
                 "containment" => EdgeType::Containment,
@@ -1748,7 +1828,11 @@ mod tests {
         let diag = state.diagnose("ctr-1").unwrap();
         // With LR-based inference, ImageUpdate + CrashLoopBackOff should
         // produce high confidence: LR = 0.75/0.03 = 25, posterior ≈ 96%
-        assert!(diag.confidence > 0.8, "confidence should be high: {}", diag.confidence);
+        assert!(
+            diag.confidence > 0.8,
+            "confidence should be high: {}",
+            diag.confidence
+        );
         assert!(diag.root_cause.is_some());
     }
 
@@ -1797,7 +1881,10 @@ mod tests {
             table: vec![vec![0.75, 0.03], vec![0.25, 0.97]],
         };
         let conf = SolverState::lr_confidence(&cpt, 0.5);
-        assert!((conf - 0.9615).abs() < 0.01, "LR confidence should be ~96.2%, got {conf}");
+        assert!(
+            (conf - 0.9615).abs() < 0.01,
+            "LR confidence should be ~96.2%, got {conf}"
+        );
 
         // With lower prior (0.1), posterior should be lower
         let conf_low = SolverState::lr_confidence(&cpt, 0.1);
@@ -1810,20 +1897,28 @@ mod tests {
         // At t=0, prior should be 0.50
         let now = Utc::now();
         let prior_0 = SolverState::temporal_prior(now, now);
-        assert!((prior_0 - 0.50).abs() < 0.01, "at t=0 prior should be 0.50, got {prior_0}");
+        assert!(
+            (prior_0 - 0.50).abs() < 0.01,
+            "at t=0 prior should be 0.50, got {prior_0}"
+        );
 
         // At t=15min, prior should be ~0.22
-        let prior_15 = SolverState::temporal_prior(
-            now - chrono::Duration::minutes(15), now
+        let prior_15 = SolverState::temporal_prior(now - chrono::Duration::minutes(15), now);
+        assert!(
+            prior_15 < 0.30,
+            "at 15min prior should be < 0.30, got {prior_15}"
         );
-        assert!(prior_15 < 0.30, "at 15min prior should be < 0.30, got {prior_15}");
-        assert!(prior_15 > 0.15, "at 15min prior should be > 0.15, got {prior_15}");
+        assert!(
+            prior_15 > 0.15,
+            "at 15min prior should be > 0.15, got {prior_15}"
+        );
 
         // At t=30min, prior should be very low
-        let prior_30 = SolverState::temporal_prior(
-            now - chrono::Duration::minutes(30), now
+        let prior_30 = SolverState::temporal_prior(now - chrono::Duration::minutes(30), now);
+        assert!(
+            prior_30 < 0.15,
+            "at 30min prior should be < 0.15, got {prior_30}"
         );
-        assert!(prior_30 < 0.15, "at 30min prior should be < 0.15, got {prior_30}");
 
         // Decay is monotonic
         assert!(prior_0 > prior_15, "prior should decay over time");
@@ -1870,7 +1965,8 @@ mod tests {
         assert!(
             diag_fresh.confidence > diag_stale.confidence,
             "fresh mutation ({}) should score higher than stale ({})",
-            diag_fresh.confidence, diag_stale.confidence
+            diag_fresh.confidence,
+            diag_stale.confidence
         );
     }
 
@@ -1901,9 +1997,15 @@ mod tests {
 
         let diag = state.diagnose("ctr-1").unwrap();
         // Should find the upstream mutation as root cause
-        assert!(diag.root_cause.is_some(), "should identify upstream root cause");
+        assert!(
+            diag.root_cause.is_some(),
+            "should identify upstream root cause"
+        );
         let rc = diag.root_cause.unwrap();
-        assert!(rc.contains("tor-1"), "root cause should be tor-1, got: {rc}");
+        assert!(
+            rc.contains("tor-1"),
+            "root cause should be tor-1, got: {rc}"
+        );
         assert!(diag.confidence > 0.0, "confidence should be above zero");
     }
 
@@ -1949,8 +2051,16 @@ mod tests {
 
         // Direct mutation (0 hops) should score >= upstream (2 hops)
         if cc.len() >= 2 {
-            let direct_score = cc.iter().find(|(id, _)| id.contains("ctr-1")).map(|(_, c)| *c).unwrap_or(0.0);
-            let upstream_score = cc.iter().find(|(id, _)| id.contains("tor-1")).map(|(_, c)| *c).unwrap_or(0.0);
+            let direct_score = cc
+                .iter()
+                .find(|(id, _)| id.contains("ctr-1"))
+                .map(|(_, c)| *c)
+                .unwrap_or(0.0);
+            let upstream_score = cc
+                .iter()
+                .find(|(id, _)| id.contains("tor-1"))
+                .map(|(_, c)| *c)
+                .unwrap_or(0.0);
             assert!(
                 direct_score >= upstream_score,
                 "direct ({direct_score}) should score >= upstream ({upstream_score}) due to hop attenuation"
@@ -1975,7 +2085,10 @@ mod tests {
 
         let diag = state.diagnose("ctr-1").unwrap();
         assert!(diag.root_cause.is_none(), "no mutation → no root cause");
-        assert!(diag.confidence < 0.01, "confidence should be near zero without mutations");
+        assert!(
+            diag.confidence < 0.01,
+            "confidence should be near zero without mutations"
+        );
     }
 
     #[test]
@@ -2026,10 +2139,14 @@ mod tests {
         let elements = result.as_array().unwrap();
         assert!(!elements.is_empty(), "should have alert subgraph elements");
         // Should include at least the signaled node
-        let nodes: Vec<_> = elements.iter()
+        let nodes: Vec<_> = elements
+            .iter()
             .filter(|e| e["group"] == "nodes" && e["data"]["class"] != "cluster")
             .collect();
-        assert!(nodes.iter().any(|n| n["data"]["id"] == "ctr-1"), "should include signaled node");
+        assert!(
+            nodes.iter().any(|n| n["data"]["id"] == "ctr-1"),
+            "should include signaled node"
+        );
     }
 
     // ── Modular heuristics tests ─────────────────────────────────────────
@@ -2269,11 +2386,8 @@ layers:
         .unwrap();
 
         let mut heuristics = HashMap::new();
-        load_heuristics_from_path(
-            &mut heuristics,
-            dir.join("manifest.yaml").to_str().unwrap(),
-        )
-        .unwrap();
+        load_heuristics_from_path(&mut heuristics, dir.join("manifest.yaml").to_str().unwrap())
+            .unwrap();
 
         assert_eq!(heuristics.len(), 2);
         // Container's CPT should be overridden
@@ -2314,11 +2428,8 @@ layers:
         .unwrap();
 
         let mut heuristics = HashMap::new();
-        load_heuristics_from_path(
-            &mut heuristics,
-            dir.join("manifest.yaml").to_str().unwrap(),
-        )
-        .unwrap();
+        load_heuristics_from_path(&mut heuristics, dir.join("manifest.yaml").to_str().unwrap())
+            .unwrap();
         assert_eq!(heuristics.len(), 1);
         assert!(heuristics.contains_key("VM"));
         std::fs::remove_dir_all(&dir).ok();
@@ -2339,10 +2450,8 @@ layers:
         .unwrap();
 
         let mut heuristics = HashMap::new();
-        let result = load_heuristics_from_path(
-            &mut heuristics,
-            dir.join("manifest.yaml").to_str().unwrap(),
-        );
+        let result =
+            load_heuristics_from_path(&mut heuristics, dir.join("manifest.yaml").to_str().unwrap());
         assert!(result.is_err(), "should fail on missing required layer");
         std::fs::remove_dir_all(&dir).ok();
     }

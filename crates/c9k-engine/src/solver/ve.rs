@@ -240,12 +240,7 @@ mod tests {
         let mut evidence = HashMap::new();
         evidence.insert("B".to_string(), 1);
 
-        let result = variable_elimination(
-            &factors,
-            "A",
-            &evidence,
-            &["B".to_string()],
-        );
+        let result = variable_elimination(&factors, "A", &evidence, &["B".to_string()]);
 
         // P(A=0, B=1) = 0.4 * 0.1 = 0.04
         // P(A=1, B=1) = 0.6 * 0.8 = 0.48
