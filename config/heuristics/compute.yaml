@@ -1,0 +1,31 @@
+# RCIE Heuristic Layer — Compute
+#
+# CPTs for virtual machines and traditional compute resources.
+#
+# CPT table format: [[P(signal_high|mutation), P(signal_high|no_mutation)],
+#                     [P(signal_low|mutation),  P(signal_low|no_mutation)]]
+
+- class: VirtualMachine
+  default_prior:
+    P_failure: 0.002
+  cpts:
+    - mutation: MaintenanceReboot
+      signal: heartbeat
+      table:
+        - [0.95, 0.001]
+        - [0.05, 0.999]
+    - mutation: FirmwareUpdate
+      signal: heartbeat
+      table:
+        - [0.80, 0.001]
+        - [0.20, 0.999]
+    - mutation: FirmwareUpdate
+      signal: error_rate
+      table:
+        - [0.55, 0.04]
+        - [0.45, 0.96]
+    - mutation: DiskResize
+      signal: disk_io_latency
+      table:
+        - [0.60, 0.05]
+        - [0.40, 0.95]

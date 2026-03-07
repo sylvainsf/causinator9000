@@ -1,7 +1,8 @@
 # RCIE Heuristic Layer — Physical / Latent Infrastructure
 #
 # CPTs for physical and latent infrastructure nodes that are
-# typically inferred rather than directly observed.
+# typically inferred rather than directly observed: switches,
+# availability zones, and power domains.
 #
 # CPT table format: [[P(signal_high|mutation), P(signal_high|no_mutation)],
 #                     [P(signal_low|mutation),  P(signal_low|no_mutation)]]
@@ -40,13 +41,3 @@
       table:
         - [0.98, 0.0001]
         - [0.02, 0.9999]
-
-- class: SubnetGateway
-  default_prior:
-    P_failure: 0.001
-  cpts:
-    - mutation: GatewayRestart
-      signal: ConnectionTimeout
-      table:
-        - [0.75, 0.03]
-        - [0.25, 0.97]

@@ -16,12 +16,19 @@
 # YAML).  Both formats are auto-detected.
 
 layers:
-  # Public base layers (shipped with RCIE)
-  - path: heuristics/cloud-services.yaml
-  - path: heuristics/physical-infra.yaml
-  - path: heuristics/applications.yaml
+  # ── Standard library (shipped with RCIE) ────────────────────────────
+  - path: heuristics/containers.yaml        # Container, ContainerRegistry, AKSCluster
+  - path: heuristics/compute.yaml           # VirtualMachine
+  - path: heuristics/networking.yaml        # VirtualNetwork, SubnetGateway, NetworkInterface, DNS
+  - path: heuristics/routing.yaml           # LoadBalancer, Gateway, HttpRoute
+  - path: heuristics/databases.yaml         # SqlDatabase, MongoDatabase, RedisCache
+  - path: heuristics/identity.yaml          # ManagedIdentity, KeyVault, IdentityProvider, CertAuthority
+  - path: heuristics/messaging.yaml         # MessageQueue
+  - path: heuristics/physical-infra.yaml    # ToRSwitch, AvailabilityZone, PowerDomain
+  - path: heuristics/applications.yaml      # Application, Environment
 
-  # Private overrides — uncomment or add your own layers here.
+  # ── Private overrides ───────────────────────────────────────────────
+  # Uncomment or add your own layers here.
   # Files marked optional: true are silently skipped when absent.
   # - path: heuristics/private.yaml
   #   optional: true

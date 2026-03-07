@@ -1,0 +1,21 @@
+# RCIE Heuristic Layer — Messaging & Queues
+#
+# CPTs for message queues, event buses, and streaming platforms.
+#
+# CPT table format: [[P(signal_high|mutation), P(signal_high|no_mutation)],
+#                     [P(signal_low|mutation),  P(signal_low|no_mutation)]]
+
+- class: MessageQueue
+  default_prior:
+    P_failure: 0.002
+  cpts:
+    - mutation: QueuePolicyChange
+      signal: MessageBacklog
+      table:
+        - [0.65, 0.05]
+        - [0.35, 0.95]
+    - mutation: MaintenancePatch
+      signal: ConnectionTimeout
+      table:
+        - [0.55, 0.03]
+        - [0.45, 0.97]

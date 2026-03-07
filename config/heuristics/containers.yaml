@@ -1,0 +1,66 @@
+# RCIE Heuristic Layer — Containers & Orchestration
+#
+# CPTs for container runtimes, registries, and orchestration clusters.
+#
+# CPT table format: [[P(signal_high|mutation), P(signal_high|no_mutation)],
+#                     [P(signal_low|mutation),  P(signal_low|no_mutation)]]
+
+- class: Container
+  default_prior:
+    P_failure: 0.005
+  cpts:
+    - mutation: ImageUpdate
+      signal: CrashLoopBackOff
+      table:
+        - [0.75, 0.03]
+        - [0.25, 0.97]
+    - mutation: ImageUpdate
+      signal: memory_rss
+      table:
+        - [0.60, 0.06]
+        - [0.40, 0.94]
+    - mutation: ConfigChange
+      signal: error_rate
+      table:
+        - [0.65, 0.04]
+        - [0.35, 0.96]
+    - mutation: ScaleEvent
+      signal: memory_rss
+      table:
+        - [0.40, 0.08]
+        - [0.60, 0.92]
+    - mutation: ConfigChange
+      signal: TLSError
+      table:
+        - [0.30, 0.02]
+        - [0.70, 0.98]
+
+- class: ContainerRegistry
+  default_prior:
+    P_failure: 0.001
+  cpts:
+    - mutation: ImagePurge
+      signal: ImagePullError
+      table:
+        - [0.90, 0.01]
+        - [0.10, 0.99]
+
+- class: AKSCluster
+  default_prior:
+    P_failure: 0.003
+  cpts:
+    - mutation: KubernetesUpgrade
+      signal: PodEviction
+      table:
+        - [0.80, 0.05]
+        - [0.20, 0.95]
+    - mutation: NodePoolScale
+      signal: SchedulingFailure
+      table:
+        - [0.55, 0.03]
+        - [0.45, 0.97]
+    - mutation: NetworkPolicyChange
+      signal: ConnectionTimeout
+      table:
+        - [0.65, 0.04]
+        - [0.35, 0.96]

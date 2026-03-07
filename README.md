@@ -487,9 +487,15 @@ RCIE ships heuristics as a **modular, layered registry**. The default configurat
 ```yaml
 # config/heuristics.manifest.yaml
 layers:
-  - path: heuristics/cloud-services.yaml    # Cloud infrastructure CPTs
-  - path: heuristics/physical-infra.yaml    # Physical / latent infrastructure CPTs
-  - path: heuristics/applications.yaml      # Application-layer CPTs
+  - path: heuristics/containers.yaml        # Container, ContainerRegistry, AKSCluster
+  - path: heuristics/compute.yaml           # VirtualMachine
+  - path: heuristics/networking.yaml        # VirtualNetwork, SubnetGateway, NetworkInterface, DNS
+  - path: heuristics/routing.yaml           # LoadBalancer, Gateway, HttpRoute
+  - path: heuristics/databases.yaml         # SqlDatabase, MongoDatabase, RedisCache
+  - path: heuristics/identity.yaml          # ManagedIdentity, KeyVault, IdentityProvider, CertAuthority
+  - path: heuristics/messaging.yaml         # MessageQueue
+  - path: heuristics/physical-infra.yaml    # ToRSwitch, AvailabilityZone, PowerDomain
+  - path: heuristics/applications.yaml      # Application, Environment
   - path: heuristics/private.yaml           # Your private overrides (optional)
     optional: true
 ```
@@ -581,10 +587,16 @@ rcie/
 │   ├── heuristics.manifest.yaml        # Manifest listing heuristic layers to load
 │   ├── heuristics.yaml                 # Flat CPT file (legacy / backward compat)
 │   └── heuristics/
-│       ├── cloud-services.yaml         # Cloud infrastructure CPTs
-│       ├── physical-infra.yaml         # Physical / latent infrastructure CPTs
-│       ├── applications.yaml           # Application-layer CPTs
-│       └── private.yaml.example        # Example private override layer
+│       ├── containers.yaml            # Container, ContainerRegistry, AKSCluster
+│       ├── compute.yaml               # VirtualMachine
+│       ├── networking.yaml            # VirtualNetwork, SubnetGateway, NIC, DNS
+│       ├── routing.yaml               # LoadBalancer, Gateway, HttpRoute
+│       ├── databases.yaml             # SqlDatabase, MongoDatabase, RedisCache
+│       ├── identity.yaml              # ManagedIdentity, KeyVault, IdP, CertAuthority
+│       ├── messaging.yaml             # MessageQueue
+│       ├── physical-infra.yaml        # ToRSwitch, AvailabilityZone, PowerDomain
+│       ├── applications.yaml          # Application, Environment
+│       └── private.yaml.example       # Example private override layer
 ├── prompts/
 │   └── transpiler.md                   # LLM prompt for ARM JSON → graph SQL
 ├── scripts/
