@@ -75,7 +75,7 @@ $$LR = \frac{P(\text{signal} \mid \text{mutation present})}{P(\text{signal} \mid
 
 **Posterior via Bayes' theorem:**
 
-$$P(\text{caused} \mid \text{signal}) = \frac{\mathrm{prior{\_}odds} \times LR}{1 + \mathrm{prior{\_}odds} \times LR}$$
+$$P(\text{caused} \mid \text{signal}) = \frac{\text{prior odds} \times LR}{1 + \text{prior odds} \times LR}$$
 
 **Worked example:** `ImageUpdate → CrashLoopBackOff`, CPT = [0.75, 0.03]:
 
