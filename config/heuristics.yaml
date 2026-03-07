@@ -1,0 +1,354 @@
+# RCIE Heuristic Registry — Conditional Probability Tables (CPTs)
+#
+# Each entry maps a resource class to its failure prior and
+# conditional probability tables for mutation→signal relationships.
+#
+# CPT table format: [[P(signal_high|mutation), P(signal_high|no_mutation)],
+#                     [P(signal_low|mutation),  P(signal_low|no_mutation)]]
+
+- class: Container
+  default_prior:
+    P_failure: 0.005
+  cpts:
+    - mutation: ImageUpdate
+      signal: CrashLoopBackOff
+      table:
+        - [0.75, 0.03]
+        - [0.25, 0.97]
+    - mutation: ImageUpdate
+      signal: memory_rss
+      table:
+        - [0.60, 0.06]
+        - [0.40, 0.94]
+    - mutation: ConfigChange
+      signal: error_rate
+      table:
+        - [0.65, 0.04]
+        - [0.35, 0.96]
+    - mutation: ScaleEvent
+      signal: memory_rss
+      table:
+        - [0.40, 0.08]
+        - [0.60, 0.92]
+    - mutation: ConfigChange
+      signal: TLSError
+      table:
+        - [0.30, 0.02]
+        - [0.70, 0.98]
+
+- class: VirtualMachine
+  default_prior:
+    P_failure: 0.002
+  cpts:
+    - mutation: MaintenanceReboot
+      signal: heartbeat
+      table:
+        - [0.95, 0.001]
+        - [0.05, 0.999]
+    - mutation: FirmwareUpdate
+      signal: heartbeat
+      table:
+        - [0.80, 0.001]
+        - [0.20, 0.999]
+    - mutation: FirmwareUpdate
+      signal: error_rate
+      table:
+        - [0.55, 0.04]
+        - [0.45, 0.96]
+    - mutation: DiskResize
+      signal: disk_io_latency
+      table:
+        - [0.60, 0.05]
+        - [0.40, 0.95]
+
+- class: ManagedIdentity
+  default_prior:
+    P_failure: 0.0005
+  cpts:
+    - mutation: SecretRotation
+      signal: AccessDenied_403
+      table:
+        - [0.85, 0.02]
+        - [0.15, 0.98]
+    - mutation: PolicyChange
+      signal: AuthTimeout
+      table:
+        - [0.70, 0.05]
+        - [0.30, 0.95]
+
+- class: KeyVault
+  default_prior:
+    P_failure: 0.001
+  cpts:
+    - mutation: SecretRotation
+      signal: AccessDenied_403
+      table:
+        - [0.80, 0.02]
+        - [0.20, 0.98]
+    - mutation: AccessPolicyChange
+      signal: AuthTimeout
+      table:
+        - [0.75, 0.03]
+        - [0.25, 0.97]
+    - mutation: FirewallRuleChange
+      signal: ConnectionTimeout
+      table:
+        - [0.70, 0.04]
+        - [0.30, 0.96]
+
+- class: AKSCluster
+  default_prior:
+    P_failure: 0.003
+  cpts:
+    - mutation: KubernetesUpgrade
+      signal: PodEviction
+      table:
+        - [0.80, 0.05]
+        - [0.20, 0.95]
+    - mutation: NodePoolScale
+      signal: SchedulingFailure
+      table:
+        - [0.55, 0.03]
+        - [0.45, 0.97]
+    - mutation: NetworkPolicyChange
+      signal: ConnectionTimeout
+      table:
+        - [0.65, 0.04]
+        - [0.35, 0.96]
+
+- class: RedisCache
+  default_prior:
+    P_failure: 0.002
+  cpts:
+    - mutation: SkuChange
+      signal: ConnectionTimeout
+      table:
+        - [0.70, 0.03]
+        - [0.30, 0.97]
+    - mutation: MaintenancePatch
+      signal: latency_spike
+      table:
+        - [0.60, 0.05]
+        - [0.40, 0.95]
+
+- class: SqlDatabase
+  default_prior:
+    P_failure: 0.002
+  cpts:
+    - mutation: SchemaMigration
+      signal: query_error_rate
+      table:
+        - [0.75, 0.03]
+        - [0.25, 0.97]
+    - mutation: FailoverEvent
+      signal: ConnectionTimeout
+      table:
+        - [0.85, 0.02]
+        - [0.15, 0.98]
+    - mutation: TierChange
+      signal: latency_spike
+      table:
+        - [0.55, 0.06]
+        - [0.45, 0.94]
+
+- class: LoadBalancer
+  default_prior:
+    P_failure: 0.001
+  cpts:
+    - mutation: RuleChange
+      signal: BackendUnhealthy
+      table:
+        - [0.70, 0.05]
+        - [0.30, 0.95]
+    - mutation: ProbeChange
+      signal: heartbeat
+      table:
+        - [0.60, 0.04]
+        - [0.40, 0.96]
+
+- class: VirtualNetwork
+  default_prior:
+    P_failure: 0.0005
+  cpts:
+    - mutation: SubnetChange
+      signal: ConnectionTimeout
+      table:
+        - [0.65, 0.02]
+        - [0.35, 0.98]
+    - mutation: NSGRuleChange
+      signal: ConnectionRefused
+      table:
+        - [0.80, 0.03]
+        - [0.20, 0.97]
+
+- class: Gateway
+  default_prior:
+    P_failure: 0.002
+  cpts:
+    - mutation: CertificateRotation
+      signal: TLSError
+      table:
+        - [0.85, 0.02]
+        - [0.15, 0.98]
+    - mutation: RouteChange
+      signal: error_rate
+      table:
+        - [0.60, 0.05]
+        - [0.40, 0.95]
+
+- class: HttpRoute
+  default_prior:
+    P_failure: 0.001
+  cpts:
+    - mutation: RouteChange
+      signal: error_rate
+      table:
+        - [0.55, 0.04]
+        - [0.45, 0.96]
+
+- class: MessageQueue
+  default_prior:
+    P_failure: 0.002
+  cpts:
+    - mutation: QueuePolicyChange
+      signal: MessageBacklog
+      table:
+        - [0.65, 0.05]
+        - [0.35, 0.95]
+    - mutation: MaintenancePatch
+      signal: ConnectionTimeout
+      table:
+        - [0.55, 0.03]
+        - [0.45, 0.97]
+
+# ── Latent / Physical Infrastructure ──────────────────────────────────
+
+- class: ToRSwitch
+  default_prior:
+    P_failure: 0.0008
+  cpts:
+    - mutation: FirmwareUpdate
+      signal: heartbeat
+      table:
+        - [0.90, 0.001]
+        - [0.10, 0.999]
+    - mutation: PortFlap
+      signal: PacketLoss
+      table:
+        - [0.85, 0.02]
+        - [0.15, 0.98]
+
+- class: AvailabilityZone
+  default_prior:
+    P_failure: 0.0001
+  cpts:
+    - mutation: ZonalIncident
+      signal: heartbeat
+      table:
+        - [0.95, 0.0005]
+        - [0.05, 0.9995]
+
+- class: PowerDomain
+  default_prior:
+    P_failure: 0.00005
+  cpts:
+    - mutation: PowerEvent
+      signal: heartbeat
+      table:
+        - [0.98, 0.0001]
+        - [0.02, 0.9999]
+
+- class: SubnetGateway
+  default_prior:
+    P_failure: 0.001
+  cpts:
+    - mutation: GatewayRestart
+      signal: ConnectionTimeout
+      table:
+        - [0.75, 0.03]
+        - [0.25, 0.97]
+
+- class: Application
+  default_prior:
+    P_failure: 0.003
+  cpts:
+    - mutation: Redeployment
+      signal: error_rate
+      table:
+        - [0.70, 0.05]
+        - [0.30, 0.95]
+
+- class: Environment
+  default_prior:
+    P_failure: 0.001
+  cpts:
+    - mutation: EnvironmentUpdate
+      signal: error_rate
+      table:
+        - [0.50, 0.04]
+        - [0.50, 0.96]
+
+- class: DNS
+  default_prior:
+    P_failure: 0.0003
+  cpts:
+    - mutation: RecordChange
+      signal: ResolutionFailure
+      table:
+        - [0.85, 0.01]
+        - [0.15, 0.99]
+
+- class: IdentityProvider
+  default_prior:
+    P_failure: 0.0005
+  cpts:
+    - mutation: PolicyChange
+      signal: AccessDenied_403
+      table:
+        - [0.80, 0.02]
+        - [0.20, 0.98]
+
+- class: ContainerRegistry
+  default_prior:
+    P_failure: 0.001
+  cpts:
+    - mutation: ImagePurge
+      signal: ImagePullError
+      table:
+        - [0.90, 0.01]
+        - [0.10, 0.99]
+
+- class: NetworkInterface
+  default_prior:
+    P_failure: 0.001
+  cpts:
+    - mutation: IPChange
+      signal: ConnectionTimeout
+      table:
+        - [0.70, 0.03]
+        - [0.30, 0.97]
+
+- class: MongoDatabase
+  default_prior:
+    P_failure: 0.002
+  cpts:
+    - mutation: SchemaMigration
+      signal: query_error_rate
+      table:
+        - [0.70, 0.04]
+        - [0.30, 0.96]
+    - mutation: FailoverEvent
+      signal: ConnectionTimeout
+      table:
+        - [0.80, 0.03]
+        - [0.20, 0.97]
+
+- class: CertAuthority
+  default_prior:
+    P_failure: 0.0002
+  cpts:
+    - mutation: CertificateRotation
+      signal: TLSError
+      table:
+        - [0.90, 0.01]
+        - [0.10, 0.99]
