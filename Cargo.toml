@@ -1,9 +1,9 @@
 [workspace]
 resolver = "2"
 members = [
-    "crates/rcie-engine",
-    "crates/rcie-cli",
-    "crates/rcie-tests",
+    "crates/c9k-engine",
+    "crates/c9k-cli",
+    "crates/c9k-tests",
 ]
 
 [workspace.package]

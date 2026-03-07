@@ -1,9 +1,9 @@
 // Copyright (c) 2026 Sylvain Niles. MIT License.
 
-//! RCIE Test Utilities — shared helpers for HTTP integration and load tests.
+//! Causinator 9000 Test Utilities — shared helpers for HTTP integration and load tests.
 //!
 //! This crate provides common HTTP client wrappers and test helpers
-//! for testing the RCIE engine's REST API.
+//! for testing the Causinator 9000 engine's REST API.
 
 use anyhow::{Context, Result};
 use percent_encoding::{NON_ALPHANUMERIC, utf8_percent_encode};
@@ -14,7 +14,7 @@ pub const DEFAULT_ENGINE_URL: &str = "http://localhost:8080";
 
 /// Get the engine URL from the environment or use the default.
 pub fn engine_url() -> String {
-    std::env::var("RCIE_ENGINE_URL").unwrap_or_else(|_| DEFAULT_ENGINE_URL.to_string())
+    std::env::var("C9K_ENGINE_URL").unwrap_or_else(|_| DEFAULT_ENGINE_URL.to_string())
 }
 
 // ── Request / Response types ─────────────────────────────────────────────
@@ -65,7 +65,7 @@ pub struct DiagnosisResponse {
 
 // ── HTTP Client ──────────────────────────────────────────────────────────
 
-/// RCIE test client for interacting with the engine's REST API.
+/// Causinator 9000 test client for interacting with the engine's REST API.
 pub struct TestClient {
     base_url: String,
     client: reqwest::Client,

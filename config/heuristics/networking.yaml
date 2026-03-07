@@ -1,0 +1,51 @@
+# Causinator 9000 Heuristic Layer — Networking
+#
+# CPTs for virtual networks, subnets, network interfaces, and DNS.
+#
+# CPT table format: [[P(signal_high|mutation), P(signal_high|no_mutation)],
+#                     [P(signal_low|mutation),  P(signal_low|no_mutation)]]
+
+- class: VirtualNetwork
+  default_prior:
+    P_failure: 0.0005
+  cpts:
+    - mutation: SubnetChange
+      signal: ConnectionTimeout
+      table:
+        - [0.65, 0.02]
+        - [0.35, 0.98]
+    - mutation: NSGRuleChange
+      signal: ConnectionRefused
+      table:
+        - [0.80, 0.03]
+        - [0.20, 0.97]
+
+- class: SubnetGateway
+  default_prior:
+    P_failure: 0.001
+  cpts:
+    - mutation: GatewayRestart
+      signal: ConnectionTimeout
+      table:
+        - [0.75, 0.03]
+        - [0.25, 0.97]
+
+- class: NetworkInterface
+  default_prior:
+    P_failure: 0.001
+  cpts:
+    - mutation: IPChange
+      signal: ConnectionTimeout
+      table:
+        - [0.70, 0.03]
+        - [0.30, 0.97]
+
+- class: DNS
+  default_prior:
+    P_failure: 0.0003
+  cpts:
+    - mutation: RecordChange
+      signal: ResolutionFailure
+      table:
+        - [0.85, 0.01]
+        - [0.15, 0.99]

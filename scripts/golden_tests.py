@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-RCIE Golden Test Suite
+Causinator 9000 Golden Test Suite
 
 Pre-scripted scenarios that validate solver correctness by:
 1. Writing known data to PostgreSQL (mutations + signals)
@@ -15,8 +15,8 @@ Usage:
   python scripts/golden_tests.py --setup
 
 Environment:
-  RCIE_DATABASE_URL  PostgreSQL connection (default: postgresql://localhost:5433/rcie_poc)
-  RCIE_ENGINE_URL    Engine REST API URL (default: http://localhost:8080)
+  C9K_DATABASE_URL  PostgreSQL connection (default: postgresql://localhost:5433/c9k_poc)
+  C9K_ENGINE_URL    Engine REST API URL (default: http://localhost:8080)
 """
 
 import argparse
@@ -36,8 +36,8 @@ except ImportError:
     print("Install psycopg: pip install 'psycopg[binary]'")
     raise SystemExit(1)
 
-DB_URL = os.environ.get("RCIE_DATABASE_URL", "postgresql://localhost:5433/rcie_poc")
-ENGINE_URL = os.environ.get("RCIE_ENGINE_URL", "http://localhost:8080")
+DB_URL = os.environ.get("C9K_DATABASE_URL", "postgresql://localhost:5433/c9k_poc")
+ENGINE_URL = os.environ.get("C9K_ENGINE_URL", "http://localhost:8080")
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────
@@ -412,7 +412,7 @@ def run_all_tests():
 
 
 def main():
-    parser = argparse.ArgumentParser(description="RCIE Golden Test Suite")
+    parser = argparse.ArgumentParser(description="Causinator 9000 Golden Test Suite")
     parser.add_argument("--setup", action="store_true", help="Create mini topology before running tests")
     parser.add_argument("--setup-only", action="store_true", help="Create mini topology and exit")
     args = parser.parse_args()
@@ -425,7 +425,7 @@ def main():
 
     if not engine_healthy():
         print(f"ERROR: Engine not responding at {ENGINE_URL}")
-        print("Start the engine first: cargo run --release --bin rcie-engine")
+        print("Start the engine first: cargo run --release --bin c9k-engine")
         sys.exit(1)
 
     sys.exit(run_all_tests())

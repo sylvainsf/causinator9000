@@ -16,7 +16,7 @@ import os
 import requests
 import sys
 
-E = os.environ.get("RCIE_ENGINE_URL", "http://localhost:8080")
+E = os.environ.get("C9K_ENGINE_URL", "http://localhost:8080")
 
 def post(path, json):
     r = requests.post(f"{E}/api/{path}", json=json, timeout=5)

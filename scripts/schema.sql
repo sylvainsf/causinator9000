@@ -1,5 +1,5 @@
--- RCIE POC: PostgreSQL Schema
--- Run: psql rcie_poc < scripts/schema.sql
+-- Causinator 9000: PostgreSQL Schema
+-- Run: psql c9k_poc < scripts/schema.sql
 
 -- Topology (written by LLM transpiler, static for POC)
 CREATE TABLE IF NOT EXISTS nodes (

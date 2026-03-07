@@ -11,7 +11,7 @@
 //! suitable for CI/CD pipelines.
 
 use chrono::{Duration, Utc};
-use rcie_engine::solver::{
+use c9k_engine::solver::{
     BayesianSolver, CausalEdge, CausalNode, EdgeType, Mutation, Signal, SolverHandle,
 };
 

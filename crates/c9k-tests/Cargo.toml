@@ -1,16 +1,16 @@
 [package]
-name = "rcie-tests"
+name = "c9k-tests"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
 
 [lib]
-name = "rcie_tests"
+name = "c9k_tests"
 path = "src/lib.rs"
 
 [[bin]]
-name = "rcie-load-test"
+name = "c9k-load-test"
 path = "src/bin/load_test.rs"
 
 [dependencies]

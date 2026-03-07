@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-RCIE Radius Webhook Receiver
+Causinator 9000 Radius Webhook Receiver
 
 Receives Radius deployment webhooks and writes mutation rows to PostgreSQL.
 This is a bridge script — not part of the engine.
@@ -10,8 +10,8 @@ Usage:
   python scripts/radius_receiver.py
 
 Environment:
-  RCIE_DATABASE_URL  PostgreSQL connection string (default: postgresql://localhost:5433/rcie_poc)
-  RCIE_RECEIVER_PORT Port to listen on (default: 8081)
+  C9K_DATABASE_URL  PostgreSQL connection string (default: postgresql://localhost:5433/c9k_poc)
+  C9K_RECEIVER_PORT Port to listen on (default: 8081)
 """
 
 import json
@@ -30,10 +30,10 @@ except ImportError:
     print("Install psycopg: pip install 'psycopg[binary]'")
     raise SystemExit(1)
 
-DB_URL = os.environ.get("RCIE_DATABASE_URL", "postgresql://localhost:5433/rcie_poc")
-PORT = int(os.environ.get("RCIE_RECEIVER_PORT", "8081"))
+DB_URL = os.environ.get("C9K_DATABASE_URL", "postgresql://localhost:5433/c9k_poc")
+PORT = int(os.environ.get("C9K_RECEIVER_PORT", "8081"))
 
-app = FastAPI(title="RCIE Radius Webhook Receiver")
+app = FastAPI(title="Causinator 9000 Radius Webhook Receiver")
 
 
 class RadiusDeploymentEvent(BaseModel):

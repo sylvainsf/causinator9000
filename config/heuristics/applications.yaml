@@ -1,0 +1,26 @@
+# Causinator 9000 Heuristic Layer — Applications & Environments
+#
+# CPTs for application deployments and environment configuration.
+#
+# CPT table format: [[P(signal_high|mutation), P(signal_high|no_mutation)],
+#                     [P(signal_low|mutation),  P(signal_low|no_mutation)]]
+
+- class: Application
+  default_prior:
+    P_failure: 0.003
+  cpts:
+    - mutation: Redeployment
+      signal: error_rate
+      table:
+        - [0.70, 0.05]
+        - [0.30, 0.95]
+
+- class: Environment
+  default_prior:
+    P_failure: 0.001
+  cpts:
+    - mutation: EnvironmentUpdate
+      signal: error_rate
+      table:
+        - [0.50, 0.04]
+        - [0.50, 0.96]

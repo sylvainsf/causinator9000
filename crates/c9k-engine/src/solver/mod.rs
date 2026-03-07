@@ -2,13 +2,14 @@
 
 //! Bayesian Solver — Variable Elimination on petgraph
 //!
-//! Core inference engine for RCIE. Maintains a causal DAG (petgraph),
+//! Core inference engine for Causinator 9000. Maintains a causal DAG (petgraph),
 //! applies CPTs from the heuristic registry, and runs Variable Elimination
 //! to compute posterior probabilities for root-cause identification.
 
 pub mod ve;
 
 use std::collections::HashMap;
+use std::path::Path;
 use std::sync::{Arc, Mutex};
 
 use anyhow::{Context, Result};
@@ -94,6 +95,146 @@ pub struct ClassHeuristic {
 pub struct PriorConfig {
     #[serde(rename = "P_failure")]
     pub p_failure: f64,
+}
+
+// ── Modular heuristics manifest ──────────────────────────────────────────
+
+/// Default background failure probability used when a new class is defined
+/// in an override layer without specifying `default_prior`.
+const DEFAULT_PRIOR_P_FAILURE: f64 = 0.005;
+
+/// Manifest that lists heuristic layer files to load in order.
+/// Later layers override earlier ones with most-specific granularity.
+#[derive(Debug, Clone, Deserialize)]
+struct HeuristicsManifest {
+    layers: Vec<ManifestLayer>,
+}
+
+/// A single layer entry in a heuristics manifest.
+#[derive(Debug, Clone, Deserialize)]
+struct ManifestLayer {
+    path: String,
+    #[serde(default)]
+    optional: bool,
+}
+
+/// A class entry in a heuristic layer file.
+/// `default_prior` is optional to support lean patching — omit it to
+/// inherit from an earlier layer.
+#[derive(Debug, Clone, Deserialize)]
+struct LayerClassEntry {
+    class: String,
+    #[serde(default)]
+    default_prior: Option<PriorConfig>,
+    #[serde(default)]
+    cpts: Vec<CptEntry>,
+}
+
+/// Merge a set of layer class entries into the heuristics map.
+///
+/// For each entry:
+/// - If the class already exists, merge into it:
+///   - `default_prior` is replaced only if the layer specifies it.
+///   - Individual CPT entries are keyed by `(mutation, signal)`.
+///     Matching entries are replaced; new entries are appended.
+/// - If the class is new, insert it (using a default prior of 0.005
+///   if none is specified).
+fn merge_layer(
+    heuristics: &mut HashMap<String, ClassHeuristic>,
+    entries: Vec<LayerClassEntry>,
+) {
+    for entry in entries {
+        match heuristics.get_mut(&entry.class) {
+            Some(existing) => {
+                if let Some(prior) = entry.default_prior {
+                    existing.default_prior = prior;
+                }
+                for cpt in entry.cpts {
+                    if let Some(pos) = existing
+                        .cpts
+                        .iter()
+                        .position(|c| c.mutation == cpt.mutation && c.signal == cpt.signal)
+                    {
+                        existing.cpts[pos] = cpt;
+                    } else {
+                        existing.cpts.push(cpt);
+                    }
+                }
+            }
+            None => {
+                heuristics.insert(
+                    entry.class.clone(),
+                    ClassHeuristic {
+                        class: entry.class,
+                        default_prior: entry
+                            .default_prior
+                            .unwrap_or(PriorConfig {
+                                p_failure: DEFAULT_PRIOR_P_FAILURE,
+                            }),
+                        cpts: entry.cpts,
+                    },
+                );
+            }
+        }
+    }
+}
+
+/// Load heuristics from a file path.  The format is auto-detected:
+///
+/// - **Manifest** (YAML mapping with a `layers` key): each layer file is
+///   loaded in order, with later layers overriding earlier ones.
+///   Layer paths are resolved relative to the manifest file's directory.
+///
+/// - **Flat list** (YAML sequence): parsed directly as a single layer.
+///
+/// Both formats support lean patching via [`LayerClassEntry`].
+fn load_heuristics_from_path(
+    heuristics: &mut HashMap<String, ClassHeuristic>,
+    path: &str,
+) -> Result<()> {
+    let contents =
+        std::fs::read_to_string(path).context(format!("reading heuristics file: {path}"))?;
+
+    // Try manifest format first (YAML mapping with "layers" key)
+    if let Ok(manifest) = serde_yaml_ng::from_str::<HeuristicsManifest>(&contents) {
+        let base_dir = Path::new(path)
+            .parent()
+            .unwrap_or_else(|| Path::new("."));
+        for layer in &manifest.layers {
+            let layer_path = base_dir.join(&layer.path);
+            let layer_path_str = layer_path.display().to_string();
+            match std::fs::read_to_string(&layer_path) {
+                Ok(layer_contents) => {
+                    let entries: Vec<LayerClassEntry> =
+                        serde_yaml_ng::from_str(&layer_contents)
+                            .context(format!("parsing layer file: {layer_path_str}"))?;
+                    tracing::debug!(
+                        path = %layer_path_str,
+                        classes = entries.len(),
+                        "Loaded heuristic layer"
+                    );
+                    merge_layer(heuristics, entries);
+                }
+                Err(_) if layer.optional => {
+                    tracing::debug!(
+                        path = %layer_path_str,
+                        "Optional heuristic layer not found, skipping"
+                    );
+                }
+                Err(e) => {
+                    return Err(e)
+                        .context(format!("reading heuristic layer file: {layer_path_str}"));
+                }
+            }
+        }
+    } else {
+        // Flat format: YAML list of class entries
+        let entries: Vec<LayerClassEntry> =
+            serde_yaml_ng::from_str(&contents).context("parsing heuristics YAML")?;
+        merge_layer(heuristics, entries);
+    }
+
+    Ok(())
 }
 
 /// Diagnosis result from the solver.
@@ -224,18 +365,12 @@ impl SolverHandle {
         Ok(count)
     }
 
-    /// Reload heuristics (CPTs) from a YAML file.
+    /// Reload heuristics (CPTs) from a YAML file or manifest.
     pub fn reload_heuristics(&self, path: &str) -> Result<usize> {
-        let contents =
-            std::fs::read_to_string(path).context(format!("reading heuristics: {path}"))?;
-        let classes: Vec<ClassHeuristic> =
-            serde_yaml_ng::from_str(&contents).context("parsing heuristics YAML")?;
-        let count = classes.len();
         let mut state = self.inner.lock().map_err(|e| anyhow::anyhow!("lock: {e}"))?;
         state.heuristics.clear();
-        for class in classes {
-            state.heuristics.insert(class.class.clone(), class);
-        }
+        load_heuristics_from_path(&mut state.heuristics, path)?;
+        let count = state.heuristics.len();
         tracing::info!(classes = count, "Heuristics reloaded");
         Ok(count)
     }
@@ -823,7 +958,7 @@ impl SolverState {
 
     /// Export the graph as a DOT/Graphviz string.
     fn export_dot(&self) -> String {
-        let mut dot = String::from("digraph RCIE {\n  rankdir=TB;\n  node [shape=box];\n\n");
+        let mut dot = String::from("digraph Causinator9000 {\n  rankdir=TB;\n  node [shape=box];\n\n");
 
         for idx in self.graph.node_indices() {
             let node = &self.graph[idx];
@@ -1355,20 +1490,10 @@ impl BayesianSolver {
         }
     }
 
-    /// Load heuristics (CPTs) from a YAML file.
+    /// Load heuristics (CPTs) from a YAML file or manifest.
     pub fn load_heuristics(&mut self, path: &str) -> Result<()> {
-        let contents =
-            std::fs::read_to_string(path).context(format!("reading heuristics file: {path}"))?;
-
-        let classes: Vec<ClassHeuristic> =
-            serde_yaml_ng::from_str(&contents).context("parsing heuristics YAML")?;
-
         let mut state = self.state.lock().map_err(|e| anyhow::anyhow!("lock: {e}"))?;
-        for class in classes {
-            state.heuristics.insert(class.class.clone(), class);
-        }
-
-        Ok(())
+        load_heuristics_from_path(&mut state.heuristics, path)
     }
 
     /// Load a checkpoint from disk and restore solver state.
@@ -1658,7 +1783,7 @@ mod tests {
     fn test_export_dot() {
         let state = make_test_graph();
         let dot = state.export_dot();
-        assert!(dot.contains("digraph RCIE"));
+        assert!(dot.contains("digraph Causinator9000"));
         assert!(dot.contains("tor-1"));
         assert!(dot.contains("vm-1"));
         assert!(dot.contains("ctr-1"));
@@ -1906,5 +2031,354 @@ mod tests {
             .filter(|e| e["group"] == "nodes" && e["data"]["class"] != "cluster")
             .collect();
         assert!(nodes.iter().any(|n| n["data"]["id"] == "ctr-1"), "should include signaled node");
+    }
+
+    // ── Modular heuristics tests ─────────────────────────────────────────
+
+    #[test]
+    fn test_merge_layer_new_class() {
+        let mut heuristics = HashMap::new();
+        let entries = vec![LayerClassEntry {
+            class: "Container".into(),
+            default_prior: Some(PriorConfig { p_failure: 0.005 }),
+            cpts: vec![CptEntry {
+                mutation: "ImageUpdate".into(),
+                signal: "CrashLoopBackOff".into(),
+                table: vec![vec![0.75, 0.03], vec![0.25, 0.97]],
+            }],
+        }];
+        merge_layer(&mut heuristics, entries);
+        assert_eq!(heuristics.len(), 1);
+        let ctr = &heuristics["Container"];
+        assert!((ctr.default_prior.p_failure - 0.005).abs() < 1e-9);
+        assert_eq!(ctr.cpts.len(), 1);
+        assert_eq!(ctr.cpts[0].table[0][0], 0.75);
+    }
+
+    #[test]
+    fn test_merge_layer_override_cpt() {
+        let mut heuristics = HashMap::new();
+        // Base layer
+        merge_layer(
+            &mut heuristics,
+            vec![LayerClassEntry {
+                class: "Container".into(),
+                default_prior: Some(PriorConfig { p_failure: 0.005 }),
+                cpts: vec![
+                    CptEntry {
+                        mutation: "ImageUpdate".into(),
+                        signal: "CrashLoopBackOff".into(),
+                        table: vec![vec![0.75, 0.03], vec![0.25, 0.97]],
+                    },
+                    CptEntry {
+                        mutation: "ConfigChange".into(),
+                        signal: "error_rate".into(),
+                        table: vec![vec![0.65, 0.04], vec![0.35, 0.96]],
+                    },
+                ],
+            }],
+        );
+
+        // Override layer — only override one CPT
+        merge_layer(
+            &mut heuristics,
+            vec![LayerClassEntry {
+                class: "Container".into(),
+                default_prior: None, // keep existing prior
+                cpts: vec![CptEntry {
+                    mutation: "ImageUpdate".into(),
+                    signal: "CrashLoopBackOff".into(),
+                    table: vec![vec![0.85, 0.03], vec![0.15, 0.97]],
+                }],
+            }],
+        );
+
+        let ctr = &heuristics["Container"];
+        // Prior should be unchanged
+        assert!((ctr.default_prior.p_failure - 0.005).abs() < 1e-9);
+        // Should still have 2 CPTs
+        assert_eq!(ctr.cpts.len(), 2);
+        // ImageUpdate→CrashLoopBackOff should be overridden
+        let updated = ctr
+            .cpts
+            .iter()
+            .find(|c| c.mutation == "ImageUpdate" && c.signal == "CrashLoopBackOff")
+            .unwrap();
+        assert_eq!(updated.table[0][0], 0.85);
+        // ConfigChange→error_rate should be unchanged
+        let unchanged = ctr
+            .cpts
+            .iter()
+            .find(|c| c.mutation == "ConfigChange")
+            .unwrap();
+        assert_eq!(unchanged.table[0][0], 0.65);
+    }
+
+    #[test]
+    fn test_merge_layer_override_prior() {
+        let mut heuristics = HashMap::new();
+        merge_layer(
+            &mut heuristics,
+            vec![LayerClassEntry {
+                class: "Redis".into(),
+                default_prior: Some(PriorConfig { p_failure: 0.002 }),
+                cpts: vec![],
+            }],
+        );
+        // Override just the prior
+        merge_layer(
+            &mut heuristics,
+            vec![LayerClassEntry {
+                class: "Redis".into(),
+                default_prior: Some(PriorConfig { p_failure: 0.001 }),
+                cpts: vec![],
+            }],
+        );
+        assert!((heuristics["Redis"].default_prior.p_failure - 0.001).abs() < 1e-9);
+    }
+
+    #[test]
+    fn test_merge_layer_append_new_cpt() {
+        let mut heuristics = HashMap::new();
+        merge_layer(
+            &mut heuristics,
+            vec![LayerClassEntry {
+                class: "Container".into(),
+                default_prior: Some(PriorConfig { p_failure: 0.005 }),
+                cpts: vec![CptEntry {
+                    mutation: "ImageUpdate".into(),
+                    signal: "CrashLoopBackOff".into(),
+                    table: vec![vec![0.75, 0.03], vec![0.25, 0.97]],
+                }],
+            }],
+        );
+        // Add a new CPT to an existing class
+        merge_layer(
+            &mut heuristics,
+            vec![LayerClassEntry {
+                class: "Container".into(),
+                default_prior: None,
+                cpts: vec![CptEntry {
+                    mutation: "ConfigChange".into(),
+                    signal: "TLSError".into(),
+                    table: vec![vec![0.30, 0.02], vec![0.70, 0.98]],
+                }],
+            }],
+        );
+        assert_eq!(heuristics["Container"].cpts.len(), 2);
+    }
+
+    #[test]
+    fn test_merge_layer_new_class_without_prior_gets_default() {
+        let mut heuristics = HashMap::new();
+        merge_layer(
+            &mut heuristics,
+            vec![LayerClassEntry {
+                class: "Custom".into(),
+                default_prior: None,
+                cpts: vec![CptEntry {
+                    mutation: "Deploy".into(),
+                    signal: "error_rate".into(),
+                    table: vec![vec![0.60, 0.05], vec![0.40, 0.95]],
+                }],
+            }],
+        );
+        // Should get the default prior
+        assert!(
+            (heuristics["Custom"].default_prior.p_failure - DEFAULT_PRIOR_P_FAILURE).abs() < 1e-9
+        );
+    }
+
+    #[test]
+    fn test_load_heuristics_flat_file() {
+        let dir = std::env::temp_dir().join("c9k_test_flat");
+        std::fs::create_dir_all(&dir).unwrap();
+        let flat_path = dir.join("flat.yaml");
+        std::fs::write(
+            &flat_path,
+            r#"
+- class: TestNode
+  default_prior:
+    P_failure: 0.01
+  cpts:
+    - mutation: Deploy
+      signal: error_rate
+      table:
+        - [0.70, 0.05]
+        - [0.30, 0.95]
+"#,
+        )
+        .unwrap();
+
+        let mut heuristics = HashMap::new();
+        load_heuristics_from_path(&mut heuristics, flat_path.to_str().unwrap()).unwrap();
+        assert_eq!(heuristics.len(), 1);
+        assert!((heuristics["TestNode"].default_prior.p_failure - 0.01).abs() < 1e-9);
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn test_load_heuristics_manifest() {
+        let dir = std::env::temp_dir().join("c9k_test_manifest");
+        std::fs::create_dir_all(&dir).unwrap();
+
+        // Base layer
+        std::fs::write(
+            dir.join("base.yaml"),
+            r#"
+- class: Container
+  default_prior:
+    P_failure: 0.005
+  cpts:
+    - mutation: ImageUpdate
+      signal: CrashLoopBackOff
+      table:
+        - [0.75, 0.03]
+        - [0.25, 0.97]
+"#,
+        )
+        .unwrap();
+
+        // Override layer
+        std::fs::write(
+            dir.join("override.yaml"),
+            r#"
+- class: Container
+  cpts:
+    - mutation: ImageUpdate
+      signal: CrashLoopBackOff
+      table:
+        - [0.90, 0.03]
+        - [0.10, 0.97]
+- class: NewService
+  default_prior:
+    P_failure: 0.004
+  cpts: []
+"#,
+        )
+        .unwrap();
+
+        // Manifest
+        std::fs::write(
+            dir.join("manifest.yaml"),
+            r#"
+layers:
+  - path: base.yaml
+  - path: override.yaml
+"#,
+        )
+        .unwrap();
+
+        let mut heuristics = HashMap::new();
+        load_heuristics_from_path(
+            &mut heuristics,
+            dir.join("manifest.yaml").to_str().unwrap(),
+        )
+        .unwrap();
+
+        assert_eq!(heuristics.len(), 2);
+        // Container's CPT should be overridden
+        assert_eq!(heuristics["Container"].cpts[0].table[0][0], 0.90);
+        // Prior should be unchanged
+        assert!((heuristics["Container"].default_prior.p_failure - 0.005).abs() < 1e-9);
+        // New class should exist
+        assert!(heuristics.contains_key("NewService"));
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn test_load_heuristics_manifest_optional_layer() {
+        let dir = std::env::temp_dir().join("c9k_test_optional");
+        std::fs::create_dir_all(&dir).unwrap();
+
+        std::fs::write(
+            dir.join("base.yaml"),
+            r#"
+- class: VM
+  default_prior:
+    P_failure: 0.002
+  cpts: []
+"#,
+        )
+        .unwrap();
+
+        // Manifest with optional missing file
+        std::fs::write(
+            dir.join("manifest.yaml"),
+            r#"
+layers:
+  - path: base.yaml
+  - path: nonexistent.yaml
+    optional: true
+"#,
+        )
+        .unwrap();
+
+        let mut heuristics = HashMap::new();
+        load_heuristics_from_path(
+            &mut heuristics,
+            dir.join("manifest.yaml").to_str().unwrap(),
+        )
+        .unwrap();
+        assert_eq!(heuristics.len(), 1);
+        assert!(heuristics.contains_key("VM"));
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn test_load_heuristics_manifest_required_missing_layer_fails() {
+        let dir = std::env::temp_dir().join("c9k_test_required_missing");
+        std::fs::create_dir_all(&dir).unwrap();
+
+        std::fs::write(
+            dir.join("manifest.yaml"),
+            r#"
+layers:
+  - path: nonexistent.yaml
+"#,
+        )
+        .unwrap();
+
+        let mut heuristics = HashMap::new();
+        let result = load_heuristics_from_path(
+            &mut heuristics,
+            dir.join("manifest.yaml").to_str().unwrap(),
+        );
+        assert!(result.is_err(), "should fail on missing required layer");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn test_load_real_manifest() {
+        // Test loading the actual shipped manifest file
+        let manifest_path = "config/heuristics.manifest.yaml";
+        if std::path::Path::new(manifest_path).exists() {
+            let mut heuristics = HashMap::new();
+            load_heuristics_from_path(&mut heuristics, manifest_path).unwrap();
+            // Should have all 22 classes from the three layer files
+            assert!(
+                heuristics.len() >= 22,
+                "manifest should load all classes, got {}",
+                heuristics.len()
+            );
+            assert!(heuristics.contains_key("Container"));
+            assert!(heuristics.contains_key("ToRSwitch"));
+            assert!(heuristics.contains_key("CertAuthority"));
+        }
+    }
+
+    #[test]
+    fn test_load_real_flat_file_backward_compat() {
+        // Test backward compatibility with the original flat file
+        let flat_path = "config/heuristics.yaml";
+        if std::path::Path::new(flat_path).exists() {
+            let mut heuristics = HashMap::new();
+            load_heuristics_from_path(&mut heuristics, flat_path).unwrap();
+            assert!(
+                heuristics.len() >= 22,
+                "flat file should load all classes, got {}",
+                heuristics.len()
+            );
+        }
     }
 }

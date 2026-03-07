@@ -7,10 +7,10 @@ use clap::{Parser, Subcommand};
 use serde::{Deserialize, Serialize};
 
 #[derive(Parser)]
-#[command(name = "rcie", about = "Causinator 9000 CLI — Reactive Causal Inference Engine")]
+#[command(name = "c9k", about = "Causinator 9000 CLI — Reactive Causal Inference Engine")]
 struct Cli {
     /// Engine base URL
-    #[arg(long, default_value = "http://localhost:8080", env = "RCIE_URL")]
+    #[arg(long, default_value = "http://localhost:8080", env = "C9K_URL")]
     url: String,
 
     #[command(subcommand)]
@@ -148,7 +148,7 @@ struct ClassHeuristic {
 // ── CPT File Management ──────────────────────────────────────────────────
 
 const CPT_DIR: &str = "config";
-const CPT_FILE: &str = "config/heuristics.yaml";
+const CPT_FILE: &str = "config/heuristics.manifest.yaml";
 const CPT_VERSIONS_DIR: &str = "config/versions";
 
 fn load_cpts(path: &str) -> Result<Vec<ClassHeuristic>> {
@@ -421,7 +421,7 @@ async fn main() -> Result<()> {
 
                 save_cpts(&new_classes, CPT_FILE)?;
                 println!("Imported {} classes from {file} → {CPT_FILE}", new_classes.len());
-                println!("Reload the engine: rcie cpt reload");
+                println!("Reload the engine: c9k cpt reload");
             }
 
             CptAction::Set { class, mutation, signal, p_present, p_absent } => {
@@ -461,7 +461,7 @@ async fn main() -> Result<()> {
                 println!("  Likelihood ratio   = {lr:.1}×");
 
                 save_cpts(&classes, CPT_FILE)?;
-                println!("Saved to {CPT_FILE}. Reload: rcie cpt reload");
+                println!("Saved to {CPT_FILE}. Reload: c9k cpt reload");
             }
 
             CptAction::Remove { class, mutation, signal } => {
@@ -515,7 +515,7 @@ async fn main() -> Result<()> {
                 let version_path = format!("{CPT_VERSIONS_DIR}/v{version}.yaml");
                 if !Path::new(&version_path).exists() {
                     eprintln!("Version {version} not found at {version_path}");
-                    eprintln!("Run 'rcie cpt versions' to see available versions.");
+                    eprintln!("Run 'c9k cpt versions' to see available versions.");
                     std::process::exit(1);
                 }
 
@@ -528,7 +528,7 @@ async fn main() -> Result<()> {
                 let rollback_classes = load_cpts(&version_path)?;
                 save_cpts(&rollback_classes, CPT_FILE)?;
                 println!("Rolled back to version {version} ({} classes)", rollback_classes.len());
-                println!("Reload the engine: rcie cpt reload");
+                println!("Reload the engine: c9k cpt reload");
             }
 
             CptAction::Reload => {

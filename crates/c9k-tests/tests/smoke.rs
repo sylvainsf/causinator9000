@@ -5,13 +5,13 @@
 //! Quick validation that the engine is running, accepts events, and
 //! produces diagnoses. These tests require a running engine instance.
 //!
-//! Run with: cargo test -p rcie-tests --test smoke -- --ignored
+//! Run with: cargo test -p c9k-tests --test smoke -- --ignored
 //!
 //! Prerequisites:
 //!   Engine running with topology loaded.
-//!   Set RCIE_ENGINE_URL if not using default (http://localhost:8080).
+//!   Set C9K_ENGINE_URL if not using default (http://localhost:8080).
 
-use rcie_tests::{InjectMutation, InjectSignal, TestClient};
+use c9k_tests::{InjectMutation, InjectSignal, TestClient};
 
 #[tokio::test]
 #[ignore = "requires running engine"]

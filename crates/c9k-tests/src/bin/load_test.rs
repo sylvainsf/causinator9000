@@ -1,6 +1,6 @@
 // Copyright (c) 2026 Sylvain Niles. MIT License.
 
-//! RCIE Load Test Suite — Rust port of scripts/load_test.py
+//! Causinator 9000 Load Test Suite — Rust port of scripts/load_test.py
 //!
 //! Four stress tests that probe the engine's performance boundaries:
 //!
@@ -10,9 +10,9 @@
 //!   4. Flood:      Sustained injection + diagnosis simultaneously
 //!
 //! Usage:
-//!   cargo run -p rcie-tests --bin rcie-load-test -- --help
-//!   cargo run -p rcie-tests --bin rcie-load-test -- --test all
-//!   cargo run -p rcie-tests --bin rcie-load-test -- --test fan --fan-pods 200
+//!   cargo run -p c9k-tests --bin c9k-load-test -- --help
+//!   cargo run -p c9k-tests --bin c9k-load-test -- --test all
+//!   cargo run -p c9k-tests --bin c9k-load-test -- --test fan --fan-pods 200
 //!
 //! Prerequisites:
 //!   Engine running with topology loaded.
@@ -23,19 +23,19 @@ use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result};
 use clap::Parser;
-use rcie_tests::{InjectMutation, InjectSignal, LatencyStats, TestClient};
+use c9k_tests::{InjectMutation, InjectSignal, LatencyStats, TestClient};
 
 // ── CLI ──────────────────────────────────────────────────────────────────
 
 #[derive(Parser)]
-#[command(name = "rcie-load-test", about = "RCIE Engine Stress Test Suite")]
+#[command(name = "c9k-load-test", about = "Causinator 9000 Stress Test Suite")]
 struct Cli {
     /// Which test to run
     #[arg(long, default_value = "all")]
     test: TestSelection,
 
     /// Engine URL
-    #[arg(long, env = "RCIE_ENGINE_URL", default_value = "http://localhost:8080")]
+    #[arg(long, env = "C9K_ENGINE_URL", default_value = "http://localhost:8080")]
     engine_url: String,
 
     // ── Fan-out parameters ──

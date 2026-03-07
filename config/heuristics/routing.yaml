@@ -1,0 +1,47 @@
+# Causinator 9000 Heuristic Layer — Routing & Load Balancing
+#
+# CPTs for load balancers, API gateways, ingress controllers, and
+# HTTP route resources.
+#
+# CPT table format: [[P(signal_high|mutation), P(signal_high|no_mutation)],
+#                     [P(signal_low|mutation),  P(signal_low|no_mutation)]]
+
+- class: LoadBalancer
+  default_prior:
+    P_failure: 0.001
+  cpts:
+    - mutation: RuleChange
+      signal: BackendUnhealthy
+      table:
+        - [0.70, 0.05]
+        - [0.30, 0.95]
+    - mutation: ProbeChange
+      signal: heartbeat
+      table:
+        - [0.60, 0.04]
+        - [0.40, 0.96]
+
+- class: Gateway
+  default_prior:
+    P_failure: 0.002
+  cpts:
+    - mutation: CertificateRotation
+      signal: TLSError
+      table:
+        - [0.85, 0.02]
+        - [0.15, 0.98]
+    - mutation: RouteChange
+      signal: error_rate
+      table:
+        - [0.60, 0.05]
+        - [0.40, 0.95]
+
+- class: HttpRoute
+  default_prior:
+    P_failure: 0.001
+  cpts:
+    - mutation: RouteChange
+      signal: error_rate
+      table:
+        - [0.55, 0.04]
+        - [0.45, 0.96]
