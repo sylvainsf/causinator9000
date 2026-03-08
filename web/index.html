@@ -570,9 +570,10 @@ function toggleGroup(rootCause) {
     // Unfocus — show all nodes again
     focusedGroup = null;
     if (cy) {
-      cy.nodes().style('opacity', 1).style('display', 'element');
-      cy.edges().style('opacity', 1).style('display', 'element');
-      cy.fit(50);
+      cy.batch(() => {
+        cy.elements().style('display', 'element').style('opacity', 1);
+      });
+      layoutAllTrees();
     }
   } else {
     expandedGroups.clear(); // only one group expanded at a time
@@ -585,32 +586,38 @@ function toggleGroup(rootCause) {
 
 function focusGraphOnGroup(rootCause) {
   if (!cy) return;
-  // Find the group's member node IDs
   const group = alertGroups.find(g => g.root_cause === rootCause);
   if (!group) return;
 
-  const memberIds = new Set(group.affected_nodes || []);
-  // Also add root cause path nodes
+  // Collect all node IDs from this group
+  const memberIds = new Set();
+  if (group.affected_nodes) group.affected_nodes.forEach(id => memberIds.add(id));
   if (group.causal_path) group.causal_path.forEach(id => memberIds.add(id));
+  if (group.members) group.members.forEach(m => memberIds.add(m.node_id));
 
-  // Collect the member nodes and their connected neighborhood (1 hop)
-  const memberNodes = cy.nodes().filter(n => memberIds.has(n.id()));
-  const neighborhood = memberNodes.union(memberNodes.neighborhood());
+  // Find matching nodes in the graph
+  let seedNodes = cy.nodes().filter(n => memberIds.has(n.id()));
 
-  // Hide everything else, show only the focused tree
-  cy.nodes().style('display', 'none');
-  cy.edges().style('display', 'none');
-  neighborhood.nodes().style('display', 'element').style('opacity', 1);
-  neighborhood.edges().style('display', 'element').style('opacity', 1);
-  // Also show edges between visible nodes
-  cy.edges().forEach(e => {
-    if (e.source().style('display') === 'element' && e.target().style('display') === 'element') {
-      e.style('display', 'element');
-    }
+  if (seedNodes.length === 0) {
+    // No matching nodes found — don't hide anything
+    console.warn('focusGraphOnGroup: no matching nodes for', rootCause, memberIds);
+    return;
+  }
+
+  // Get the full connected components containing these nodes
+  const toShow = cy.collection();
+  seedNodes.forEach(n => {
+    toShow.merge(n.component());
+  });
+
+  // Hide everything, show only the focused components
+  cy.batch(() => {
+    cy.elements().style('display', 'none');
+    toShow.style('display', 'element').style('opacity', 1);
   });
 
   // Re-layout just the visible nodes and fit
-  const visible = cy.nodes().filter(n => n.style('display') === 'element');
+  const visible = toShow.nodes();
   if (visible.length > 0) {
     visible.layout({
       name: 'dagre', rankDir: 'TB', nodeSep: 60, rankSep: 80,
