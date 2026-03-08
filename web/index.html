@@ -82,6 +82,15 @@ body { font-family: -apple-system, 'Segoe UI', sans-serif;
 .group-members .card .nid { font-size:11px; }
 .group-members .card .sig { font-size:9px; }
 
+/* ── Island nav ── */
+.island-bar { padding:6px 10px; border-bottom:1px solid var(--border); display:flex; flex-wrap:wrap; gap:4px; align-items:center; }
+.island-bar label { font-size:10px; color:var(--dim); text-transform:uppercase; letter-spacing:1px; margin-right:4px; }
+.island-pill { display:inline-flex; align-items:center; gap:4px; padding:2px 8px; border-radius:10px;
+  border:2px solid; font-size:10px; cursor:pointer; transition:opacity .15s; opacity:0.7; }
+.island-pill:hover, .island-pill.active { opacity:1; font-weight:600; }
+.island-pill .dot { width:8px; height:8px; border-radius:50%; }
+.island-pill .alert-badge { background:#f85149; color:#fff; border-radius:8px; padding:0 5px; font-size:9px; font-weight:700; }
+
 /* ── Graph ── */
 .graph { grid-row:2; position:relative; }
 #cy { width:100%; height:100%; }
@@ -159,6 +168,9 @@ body { font-family: -apple-system, 'Segoe UI', sans-serif;
 </div>
 
 <div class="left">
+  <div class="island-bar" id="islandBar">
+    <label>Islands:</label>
+  </div>
   <div class="left-header">
     <h2>Alerts</h2>
     <button class="sort-btn active" id="sConf" onclick="setSort('confidence')">Conf</button>
@@ -208,6 +220,19 @@ body { font-family: -apple-system, 'Segoe UI', sans-serif;
 const API = '';
 let cy = null, alerts = [], alertGroups = [], sortMode = 'confidence', view = 'alerts', selNode = null;
 let expandedGroups = new Set();
+let islands = [], activeIsland = null;
+
+// Island color palette (distinct hues)
+const ISLAND_COLORS = [
+  '#58a6ff', // blue
+  '#3fb950', // green
+  '#d29922', // yellow
+  '#bc8cff', // purple
+  '#f0883e', // orange
+  '#f47067', // red
+  '#79c0ff', // light blue
+  '#7ee787', // light green
+];
 
 // ── Cytoscape styles ──
 const CY_STYLE = [
@@ -261,10 +286,17 @@ const CY_STYLE = [
 function makeCy(container, elements) {
   if (cy) cy.destroy();
   document.getElementById('graphEmpty').style.display = elements.length ? 'none' : 'block';
+
+  // Build island-colored border styles
+  const islandStyles = ISLAND_COLORS.map((color, i) => ({
+    selector: `node[island=${i}]`,
+    style: { 'border-color': color, 'border-width': 2 },
+  }));
+
   cy = cytoscape({
     container,
     elements,
-    style: CY_STYLE,
+    style: CY_STYLE.concat(islandStyles),
     layout: { name: 'preset' },  // we'll run layout manually
     minZoom: 0.02, maxZoom: 10, wheelSensitivity: 0.3,
   });
@@ -518,7 +550,64 @@ function renderDetail(nodeId, d) {
 }
 
 // ── Polling ──
-async function refresh() { await fetchHealth(); await fetchAlerts(); }
+async function refresh() { await fetchHealth(); await fetchIslands(); await fetchAlerts(); }
+
+// ── Islands ──
+async function fetchIslands() {
+  try { islands = await (await fetch(`${API}/api/islands`)).json(); } catch(e) { islands = []; }
+  renderIslandBar();
+}
+
+function renderIslandBar() {
+  const bar = document.getElementById('islandBar');
+  bar.innerHTML = '<label>Islands:</label>';
+  if (!islands.length) return;
+
+  for (const isl of islands) {
+    const id = isl.island_id;
+    const color = ISLAND_COLORS[id % ISLAND_COLORS.length];
+    const active = activeIsland === id;
+    const alertBadge = isl.alerts > 0 ? `<span class="alert-badge">${isl.alerts}</span>` : '';
+    const label = isl.representative?.label || `Island ${id}`;
+    // Truncate label
+    const shortLabel = label.length > 25 ? label.slice(0, 22) + '…' : label;
+    const pill = document.createElement('div');
+    pill.className = `island-pill${active ? ' active' : ''}`;
+    pill.style.borderColor = color;
+    pill.style.color = active ? '#fff' : color;
+    pill.style.background = active ? color + '22' : 'transparent';
+    pill.innerHTML = `<span class="dot" style="background:${color}"></span>${isl.node_count} · ${shortLabel}${alertBadge}`;
+    pill.title = `${isl.node_count} nodes, ${isl.classes.join(', ')}\n${isl.alerts} alerts, ${isl.signals} signals, ${isl.mutations} mutations`;
+    pill.onclick = () => focusIsland(id);
+    bar.appendChild(pill);
+  }
+}
+
+function focusIsland(islandId) {
+  if (activeIsland === islandId) {
+    activeIsland = null; // toggle off → show all
+  } else {
+    activeIsland = islandId;
+  }
+  renderIslandBar();
+  // If graph is visible, zoom to island nodes
+  if (cy) {
+    if (activeIsland !== null) {
+      const nodes = cy.nodes().filter(n => n.data('island') === activeIsland);
+      if (nodes.length) {
+        cy.nodes().style('opacity', 0.15);
+        cy.edges().style('opacity', 0.08);
+        nodes.style('opacity', 1);
+        nodes.connectedEdges().style('opacity', 1);
+        cy.fit(nodes, 50);
+      }
+    } else {
+      cy.nodes().style('opacity', 1);
+      cy.edges().style('opacity', 1);
+      cy.fit(50);
+    }
+  }
+}
 
 // ── Init ──
 (async () => {

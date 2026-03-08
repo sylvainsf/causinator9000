@@ -350,7 +350,15 @@ async fn get_memory(
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     Ok(Json(serde_json::json!(info)))
 }
-
+async fn get_islands(
+    State(state): State<AppState>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    let islands = state
+        .solver
+        .list_islands()
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    Ok(Json(serde_json::json!(islands)))
+}
 // ── Router ───────────────────────────────────────────────────────────────
 
 pub async fn serve(solver: SolverHandle, addr: &str) -> anyhow::Result<()> {
@@ -374,6 +382,7 @@ pub async fn serve(solver: SolverHandle, addr: &str) -> anyhow::Result<()> {
         .route("/api/graph/load", post(post_graph_load))
         .route("/api/graph/merge", post(post_graph_merge))
         .route("/api/graph/export", get(get_graph_export))
+        .route("/api/islands", get(get_islands))
         .route("/api/memory", get(get_memory))
         // Allow large payloads for graph loading (up to 512MB)
         .layer(DefaultBodyLimit::max(512 * 1024 * 1024))

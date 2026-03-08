@@ -26,6 +26,7 @@ layers:
   - path: heuristics/messaging.yaml         # MessageQueue
   - path: heuristics/physical-infra.yaml    # ToRSwitch, AvailabilityZone, PowerDomain
   - path: heuristics/applications.yaml      # Application, Environment
+  - path: heuristics/ci-pipelines.yaml      # CIPipeline (GitHub Actions, etc.)
 
   # ── Private overrides ───────────────────────────────────────────────
   # Uncomment or add your own layers here.

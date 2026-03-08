@@ -657,6 +657,16 @@ impl SolverHandle {
         Ok(state.export_cytoscape())
     }
 
+    /// List all causal islands (weakly connected components) in the graph.
+    /// Returns a summary of each island: node count, classes, whether it has alerts.
+    pub fn list_islands(&self) -> Result<Vec<serde_json::Value>> {
+        let state = self
+            .inner
+            .lock()
+            .map_err(|e| anyhow::anyhow!("lock: {e}"))?;
+        Ok(state.list_islands())
+    }
+
     /// Export only the subgraphs involved in active alerts (2-hop neighborhoods).
     /// Returns a compact Cytoscape JSON with just the relevant nodes.
     pub fn alert_subgraphs(&self) -> Result<serde_json::Value> {
@@ -1368,9 +1378,13 @@ impl SolverState {
     }
 
     /// Export graph as Cytoscape.js JSON elements array.
+    /// Each node includes an `island` field (component index) for visual grouping.
     fn export_cytoscape(&self) -> serde_json::Value {
         let now = Utc::now();
         let window_start = now - self.temporal_window;
+
+        // Compute connected components (islands)
+        let island_map = self.compute_islands();
 
         // Build sets of nodes with active signals/mutations for status coloring
         let signaled_nodes: std::collections::HashSet<&str> = self
@@ -1404,6 +1418,8 @@ impl SolverState {
                 "normal" // gray
             };
 
+            let island = island_map.get(&idx).copied().unwrap_or(0);
+
             elements.push(serde_json::json!({
                 "group": "nodes",
                 "data": {
@@ -1413,6 +1429,7 @@ impl SolverState {
                     "region": node.region,
                     "rack_id": node.rack_id,
                     "status": status,
+                    "island": island,
                 }
             }));
         }
@@ -1434,6 +1451,133 @@ impl SolverState {
         }
 
         serde_json::json!(elements)
+    }
+
+    /// Compute weakly connected components (islands) using BFS on undirected edges.
+    /// Returns a map from NodeIndex → island_id (0-indexed).
+    fn compute_islands(&self) -> HashMap<NodeIndex, usize> {
+        let mut island_map = HashMap::new();
+        let mut island_id = 0;
+
+        for start in self.graph.node_indices() {
+            if island_map.contains_key(&start) {
+                continue;
+            }
+            // BFS from this unvisited node
+            let mut queue = std::collections::VecDeque::new();
+            queue.push_back(start);
+            island_map.insert(start, island_id);
+
+            while let Some(current) = queue.pop_front() {
+                // Walk both directions (undirected for component detection)
+                for neighbor in self
+                    .graph
+                    .neighbors_directed(current, petgraph::Direction::Outgoing)
+                    .chain(
+                        self.graph
+                            .neighbors_directed(current, petgraph::Direction::Incoming),
+                    )
+                {
+                    if !island_map.contains_key(&neighbor) {
+                        island_map.insert(neighbor, island_id);
+                        queue.push_back(neighbor);
+                    }
+                }
+            }
+            island_id += 1;
+        }
+
+        island_map
+    }
+
+    /// List all causal islands with summary info.
+    fn list_islands(&self) -> Vec<serde_json::Value> {
+        let now = Utc::now();
+        let window_start = now - self.temporal_window;
+
+        let island_map = self.compute_islands();
+
+        // Group nodes by island
+        let mut islands: HashMap<usize, Vec<NodeIndex>> = HashMap::new();
+        for (idx, island_id) in &island_map {
+            islands.entry(*island_id).or_default().push(*idx);
+        }
+
+        // Build sets for alert detection
+        let signaled_nodes: std::collections::HashSet<&str> = self
+            .active_signals
+            .iter()
+            .filter(|s| s.timestamp >= window_start)
+            .map(|s| s.node_id.as_str())
+            .collect();
+        let mutated_nodes: std::collections::HashSet<&str> = self
+            .active_mutations
+            .iter()
+            .filter(|m| m.timestamp >= window_start)
+            .map(|m| m.node_id.as_str())
+            .collect();
+
+        let mut result: Vec<serde_json::Value> = islands
+            .iter()
+            .map(|(island_id, node_indices)| {
+                let classes: std::collections::HashSet<&str> = node_indices
+                    .iter()
+                    .map(|idx| self.graph[*idx].class.as_str())
+                    .collect();
+                let mut class_list: Vec<&str> = classes.into_iter().collect();
+                class_list.sort();
+
+                let alert_count = node_indices
+                    .iter()
+                    .filter(|idx| {
+                        let id = self.graph[**idx].id.as_str();
+                        signaled_nodes.contains(id) && mutated_nodes.contains(id)
+                    })
+                    .count();
+                let signal_count = node_indices
+                    .iter()
+                    .filter(|idx| signaled_nodes.contains(self.graph[**idx].id.as_str()))
+                    .count();
+                let mutation_count = node_indices
+                    .iter()
+                    .filter(|idx| mutated_nodes.contains(self.graph[**idx].id.as_str()))
+                    .count();
+
+                // Pick a representative label from the largest class or first node
+                let representative = node_indices
+                    .iter()
+                    .map(|idx| &self.graph[*idx])
+                    .find(|n| n.class == "CIPipeline" || n.class == "AKSCluster" || n.class == "VirtualMachine" || n.class == "ResourceGroup")
+                    .unwrap_or(&self.graph[node_indices[0]]);
+
+                serde_json::json!({
+                    "island_id": island_id,
+                    "node_count": node_indices.len(),
+                    "classes": class_list,
+                    "alerts": alert_count,
+                    "signals": signal_count,
+                    "mutations": mutation_count,
+                    "representative": {
+                        "id": representative.id,
+                        "label": representative.label,
+                        "class": representative.class,
+                    },
+                })
+            })
+            .collect();
+
+        // Sort: islands with alerts first, then by size descending
+        result.sort_by(|a, b| {
+            let a_alerts = a["alerts"].as_u64().unwrap_or(0);
+            let b_alerts = b["alerts"].as_u64().unwrap_or(0);
+            b_alerts.cmp(&a_alerts).then_with(|| {
+                let a_size = a["node_count"].as_u64().unwrap_or(0);
+                let b_size = b["node_count"].as_u64().unwrap_or(0);
+                b_size.cmp(&a_size)
+            })
+        });
+
+        result
     }
 
     /// Export a neighborhood around a node.
