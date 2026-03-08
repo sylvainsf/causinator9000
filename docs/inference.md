@@ -1,10 +1,10 @@
 # Inference Algorithm
 
-The Causinator 9000 uses **likelihood-ratio Bayesian inference** to determine the probability that each recent mutation caused the observed symptoms.
+The Causinator 9000 uses **likelihood-ratio (LR) Bayesian inference** to determine the probability that each recent **mutation** (a change to infrastructure) caused the observed **signals** (symptoms like errors, timeouts, or crashes).
 
 ## Likelihood Ratio
 
-For each candidate (mutation, signal) pair where a CPT entry matches:
+For each candidate (mutation, signal) pair where a **CPT** (Conditional Probability Table) entry matches:
 
 $$LR = \frac{P(\text{signal} \mid \text{mutation present})}{P(\text{signal} \mid \text{mutation absent})}$$
 

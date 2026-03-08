@@ -2,7 +2,7 @@
 
 *A reactive causal inference engine for cloud infrastructure.*
 
-Given a dependency graph, deployment mutations, and degradation signals, the Causinator 9000 computes the probability that each recent change caused the observed symptoms and traces the causal path through the dependency DAG.
+Given a dependency graph, deployment **mutations** (changes to infrastructure), and degradation **signals** (observed symptoms), the Causinator 9000 computes the probability that each recent change caused the observed symptoms and traces the causal path through the dependency DAG (directed acyclic graph).
 
 Built in Rust. Sub-2ms inference on a 26,000-node graph. Zero external dependencies beyond PostgreSQL.
 
@@ -27,12 +27,12 @@ Built in Rust. Sub-2ms inference on a 26,000-node graph. Zero external dependenc
 
 The Causinator 9000 maintains a **Causal Digital Twin** — a directed acyclic graph (DAG) where nodes are infrastructure resources (containers, gateways, key vaults, AKS clusters, etc.) and edges point from cause → effect (upstream → downstream dependency).
 
-When a degradation signal arrives (error spike, heartbeat loss, memory pressure), the solver:
+When a degradation **signal** arrives (error spike, heartbeat loss, memory pressure), the solver:
 
 1. Walks the target node's **ancestor chain** upstream through the DAG
 2. Finds all **mutations** (deployments, config changes, cert rotations) within the temporal window on those ancestors
-3. Scores each candidate mutation using **likelihood-ratio Bayesian inference** against the node's CPT
-4. Applies **temporal decay** — recent mutations get a higher causal prior
+3. Scores each candidate mutation using **likelihood-ratio (LR) Bayesian inference** against the node's **CPT** (Conditional Probability Table — a lookup table encoding how likely each mutation type is to produce each signal type)
+4. Applies **temporal decay** — recent mutations get a higher causal prior; each resource class has its own decay rate
 5. Applies **hop attenuation** — upstream mutations are discounted by 8% per dependency hop
 6. Returns a ranked list of **competing causes** with confidence scores and causal paths
 
@@ -64,12 +64,12 @@ LLM Transpiler      ──┘     (WAL)                      │
 
 ## The Inference Algorithm
 
-Uses **likelihood-ratio Bayesian inference**: for each (mutation, signal) pair, computes $LR = P(signal \mid mutation) / P(signal \mid no\\ mutation)$, then updates a causal prior via Bayes' theorem. An `ImageUpdate → CrashLoopBackOff` CPT of [0.75, 0.03] gives LR = 25× → 96.2% posterior confidence.
+Uses **likelihood-ratio (LR) Bayesian inference**: for each (mutation, signal) pair, computes $LR = P(signal \mid mutation) / P(signal \mid no\\ mutation)$ from the resource's **CPT** (Conditional Probability Table), then updates a causal prior via Bayes' theorem. An `ImageUpdate → CrashLoopBackOff` CPT of [0.75, 0.03] gives LR = 25× → 96.2% posterior confidence.
 
 Key features:
 - **Per-class temporal decay** — recent mutations score higher; each resource class has its own half-life (Container: 15 min, DNS: 360 min, DenyPolicy: 30 days)
 - **Upstream propagation** — traces mutations through the DAG with 8% hop attenuation
-- **Competing causes** — ranks multiple candidate mutations; latent nodes (FlakyTest, GHCR, Azure OIDC) compete with code changes
+- **Competing causes** — ranks multiple candidate mutations; **latent nodes** (unobserved shared dependencies like GHCR, Azure OIDC, flaky test infrastructure) compete with code changes
 - **Explaining away** — correlated failures on shared infrastructure converge to a single root cause
 
 → [Full inference documentation](docs/inference.md)
@@ -96,7 +96,9 @@ Full pipeline: `make ingest-all`
 
 ## CPTs and Inference
 
-CPTs encode causal relationships between mutations and signals. They're organized as modular YAML layers in `config/heuristics/`:
+**Conditional Probability Tables (CPTs)** encode causal relationships between mutations and signals. Each CPT entry says: "if this mutation happened, how likely is this signal? And how likely is the signal without the mutation?" The ratio of these two values is the **likelihood ratio (LR)** — the core number driving inference.
+
+CPTs are organized as modular YAML layers in `config/heuristics/`:
 
 ```yaml
 - class: Container

@@ -1,6 +1,10 @@
 # Data Sources
 
-Causinator 9000 ingests data from multiple sources that provide topology (nodes + edges), mutations (changes), and signals (symptoms).
+Causinator 9000 ingests data from multiple sources that provide three types of information:
+
+- **Topology** — nodes (infrastructure resources) and edges (dependency/containment relationships) that form the causal graph
+- **Mutations** — changes to infrastructure (deployments, config updates, scaling events) that are potential root causes
+- **Signals** — observed symptoms (errors, timeouts, health degradation) that indicate something is wrong
 
 ## Source Adapters
 

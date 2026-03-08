@@ -1,6 +1,6 @@
 # Conditional Probability Tables (CPTs)
 
-CPTs encode the causal relationship between mutation types and signal types for each resource class. They live in `config/heuristics/` as modular YAML layers.
+**CPTs** (Conditional Probability Tables) encode the causal relationship between **mutation types** (changes that happen to infrastructure) and **signal types** (symptoms that are observed) for each resource class. They are the core knowledge base that drives inference.
 
 ## Structure
 
