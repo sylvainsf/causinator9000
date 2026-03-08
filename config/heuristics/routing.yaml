@@ -26,6 +26,22 @@
       table:
         - [0.60, 0.04]
         - [0.40, 0.96]
+    # From ARM ResourceChanges: backend pool member changes
+    - mutation: LoadBalancerPoolChange
+      signal: BackendUnhealthy
+      table:
+        - [0.75, 0.05]
+        - [0.25, 0.95]
+    - mutation: LoadBalancerPoolChange
+      signal: ConnectionTimeout
+      table:
+        - [0.55, 0.02]
+        - [0.45, 0.98]
+    - mutation: LoadBalancerFrontendChange
+      signal: ConnectionTimeout
+      table:
+        - [0.70, 0.02]
+        - [0.30, 0.98]
 
 - class: Gateway
   default_prior:

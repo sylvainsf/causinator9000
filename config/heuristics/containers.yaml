@@ -55,6 +55,22 @@
       table:
         - [0.68, 0.03]
         - [0.32, 0.97]
+    # From ARM ResourceChanges: container instance config changes
+    - mutation: ContainerConfigChange
+      signal: CrashLoopBackOff
+      table:
+        - [0.60, 0.03]
+        - [0.40, 0.97]
+    - mutation: ContainerConfigChange
+      signal: error_rate
+      table:
+        - [0.55, 0.04]
+        - [0.45, 0.96]
+    - mutation: ContainerConfigChange
+      signal: HTTP_500
+      table:
+        - [0.50, 0.04]
+        - [0.50, 0.96]
 
 - class: ContainerRegistry
   default_prior:

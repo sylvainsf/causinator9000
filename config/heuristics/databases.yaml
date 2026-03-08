@@ -72,3 +72,14 @@
       table:
         - [0.60, 0.05]
         - [0.40, 0.95]
+    # From ARM ResourceChanges: Redis instance/port changes
+    - mutation: RedisInstanceChange
+      signal: ConnectionTimeout
+      table:
+        - [0.75, 0.03]
+        - [0.25, 0.97]
+    - mutation: RedisConfigChange
+      signal: ConnectionTimeout
+      table:
+        - [0.65, 0.03]
+        - [0.35, 0.97]

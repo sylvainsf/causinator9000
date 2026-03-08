@@ -151,24 +151,55 @@ CHANGE_TYPE_MAP = {
 
 # Map common property paths to more specific mutation types
 PROPERTY_MUTATION_MAP = {
+    # VM lifecycle
+    "properties.extended.instanceView.powerState": "PowerStateChange",
+    "properties.provisioningState": "ProvisioningStateChange",
+    # Disk operations
+    "managedBy": "DiskAttachDetach",
+    "properties.diskState": "DiskStateChange",
+    "properties.LastOwnershipUpdateTime": "DiskAttachDetach",
+    # Storage
     "properties.storageProfile": "DiskChange",
     "properties.hardwareProfile": "SKUChange",
+    # Network
     "properties.networkProfile": "NetworkChange",
+    "properties.backendAddressPools": "LoadBalancerPoolChange",
+    "properties.frontendIPConfigurations": "LoadBalancerFrontendChange",
+    # OS / Compute config
     "properties.osProfile": "OSConfigChange",
+    "properties.virtualMachineProfile.extensionProfile": "VMExtensionChange",
+    # SKU and scaling
     "sku": "SKUChange",
+    # Tags
     "tags": "TagChange",
+    "tags.maintenanceafter": "MaintenanceScheduled",
+    # App Service / Container Apps
     "properties.siteConfig": "AppConfigChange",
     "properties.httpsOnly": "SecurityConfigChange",
     "properties.minimumTlsVersion": "SecurityConfigChange",
     "properties.publicNetworkAccess": "SecurityConfigChange",
+    "properties.containers": "ContainerConfigChange",
+    # Networking ACLs
     "properties.networkAcls": "NetworkACLChange",
+    # Identity / Access
     "properties.accessPolicies": "AccessPolicyChange",
+    "identity": "IdentityChange",
+    # Key Vault
     "properties.enableSoftDelete": "SecurityConfigChange",
     "properties.enablePurgeProtection": "SecurityConfigChange",
-    "identity": "IdentityChange",
+    # AKS
     "properties.kubernetesVersion": "KubernetesUpgrade",
     "properties.agentPoolProfiles": "NodePoolChange",
     "properties.addonProfiles": "AKSAddonChange",
+    # Cognitive Services
+    "properties.callRateLimit": "RateLimitChange",
+    "properties.capabilities": "CapabilityChange",
+    # Image Gallery
+    "properties.validationsProfile": "ImageValidationChange",
+    "properties.publishingProfile": "ImagePublishChange",
+    # Redis
+    "properties.instances": "RedisInstanceChange",
+    "properties.staticIP": "RedisConfigChange",
 }
 
 
@@ -222,8 +253,8 @@ def ingest_changes(subscriptions: list[str] | None, hours: int,
 
         mutation_type = classify_change(change_type, changed_props)
 
-        # Skip tag-only changes (noisy)
-        if mutation_type == "TagChange":
+        # Skip tag-only changes and routine power state cycling (noisy)
+        if mutation_type in ("TagChange", "PowerStateChange"):
             continue
 
         if dry_run:
