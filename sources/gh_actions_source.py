@@ -1,32 +1,32 @@
 #!/usr/bin/env python3
 """
-GitHub Actions → Causinator 9000 causal graph adapter.
+GitHub Actions → Causinator 9000 causal graph adapter (v3).
 
 Correct causal model:
-  - MUTATIONS are the things that trigger workflows: commits, PR merges,
-    dependency updates, scheduled cron ticks.  These are the root causes.
-  - SIGNALS are workflow/job failures — the symptoms observed on pipeline nodes.
-  - EDGES connect trigger nodes to the pipeline nodes they affect.
+  - NODES are failed jobs (the unit of observation — "this specific thing broke")
+  - SIGNALS are the classified failure type on the job node
+  - MUTATIONS go on the upstream cause:
+      Code failures → commit node (the code change caused it)
+      Infra failures → latent node (OIDC, GHCR, runner infra)
+      Flaky tests → latent FlakyTest node (competing cause)
+  - EDGES connect causes to job nodes
 
-This means when a commit causes 3 different pipelines to fail, the engine
-traces all 3 failures back to the same commit and groups them.  When a
-transient GHCR outage causes image pull errors across unrelated pipelines,
-the engine traces those to the latent GHCR node instead of the commit.
+Only failed jobs become nodes. Successful runs don't pollute the graph.
 
-Graph structure:
-  commit:9f403647 (CodeChange / DependencyUpdate / Release)
-    ├─→ gh://repo/build              (CIPipeline)  → Signal: BicepBuildError
-    ├─→ gh://repo/functional-tests   (CIPipeline)  → Signal: Timeout
-    └─→ gh://repo/long-running-test  (CIPipeline)  → Signal: HelmChartError
+Graph example:
+  commit://repo/9f403647 ──(CodeChange)──→ job://repo/22797031763/run-functional-tests
+                                            signal: TestFailure
+  latent://azure-oidc    ──(competing)──→ job://repo/22797031763/run-functional-tests
+  latent://flaky-tests   ──(competing)──→ job://repo/22797031763/run-functional-tests
 
-  latent://ghcr.io (ContainerRegistry)
-    └─→ all pipelines that pull/push images
+  latent://azure-oidc    ──(?)──→ job://repo/22798093791/ado
+                                   signal: AzureAuthFailure
+                                   (no known mutation → low confidence)
 
 Usage:
-  python3 sources/gh_actions_source.py --repo project-radius/radius
   python3 sources/gh_actions_source.py --repo project-radius/radius --hours 48
-  python3 sources/gh_actions_source.py --repo project-radius/radius --dry-run
   python3 sources/gh_actions_source.py --repo project-radius/radius -s $AZURE_SUB_ID
+  python3 sources/gh_actions_source.py --repo project-radius/radius --dry-run
 """
 
 import argparse
@@ -41,77 +41,86 @@ from typing import Any
 
 ENGINE = os.environ.get("C9K_ENGINE_URL", "http://localhost:8080")
 
-# ── Trigger event → mutation type mapping ─────────────────────────────────
-
-EVENT_MUTATION_TYPE = {
-    "push": "CodeChange",
-    "pull_request": "PullRequest",
-    "pull_request_target": "PullRequest",
-    "schedule": "ScheduledRun",
-    "workflow_dispatch": "ManualTrigger",
-    "dynamic": "DynamicTrigger",
-    "issue_comment": "IssueComment",
-    "issues": "IssueEvent",
-    "release": "Release",
-    "create": "BranchCreate",
-    "delete": "BranchDelete",
-}
-
-# ── Workflow → pipeline config ────────────────────────────────────────────
-
-PIPELINE_CONFIG = {
-    "Build and Test": {"signal_type": "BuildFailure", "azure_deps": [
-        "providers/microsoft.containerregistry/registries/radius",
-        "providers/microsoft.containerregistry/registries/radiusdev",
-    ]},
-    "Functional Tests (with Cloud Resources)": {"signal_type": "TestFailure", "azure_deps": [
-        "resourcegroups/radiusfunctionaltest",
-        "providers/microsoft.keyvault/vaults/radiuskvvoltest",
-        "providers/microsoft.containerregistry/registries/radius",
-    ]},
-    "Functional Tests (with Non-Cloud Resources)": {"signal_type": "TestFailure", "azure_deps": [
-        "providers/microsoft.containerregistry/registries/radius",
-    ]},
-    "Long-running test on Azure": {"signal_type": "TestFailure", "azure_deps": [
-        "resourcegroups/radlrtest00",
-        "providers/microsoft.containerservice/managedclusters/radlrtest00-aks",
-        "providers/microsoft.containerregistry/registries/radius",
-    ]},
-    "Unit Tests": {"signal_type": "TestFailure", "azure_deps": []},
-    "Release Radius": {"signal_type": "ReleaseFailure", "azure_deps": [
-        "providers/microsoft.containerregistry/registries/radius",
-        "providers/microsoft.keyvault/vaults/radius-accounts",
-    ]},
-    "Nightly rad CLI tests": {"signal_type": "TestFailure", "azure_deps": []},
-    "CodeQL": {"signal_type": "SecurityFinding", "azure_deps": []},
-    "CodeQL Advanced": {"signal_type": "SecurityFinding", "azure_deps": []},
-    "Purge Azure test resources": {"signal_type": "PurgeFailure", "azure_deps": [
-        "resourcegroups/radiusfunctionaltest",
-    ]},
-    "Purge test container images": {"signal_type": "PurgeFailure", "azure_deps": [
-        "providers/microsoft.containerregistry/registries/radius",
-    ]},
-}
-
-# ── Error pattern → signal type classification ──────────────────────────
+# ── Error classification: what signal type does this failure produce? ────
 
 ERROR_PATTERNS = [
-    (r"ErrImagePull|ImagePullBackOff|image.*pull.*fail", "ImagePullError"),
-    (r"timed out|TimeoutException|deadline exceeded", "Timeout"),
-    (r"unauthorized|denied|403|Login failed|auth.*fail", "AzureAuthFailure"),
-    (r"docker.*push.*fail|oras.*push.*fail", "ImagePushError"),
-    (r"helm.*fail|chart.*validation.*fail|no such file.*Chart", "HelmChartError"),
-    (r"bicep.*fail|bicep build.*exit status", "BicepBuildError"),
-    (r"terraform.*fail|terraform.*error", "TerraformError"),
-    (r"Process completed with exit code", "ProcessExitError"),
+    # (regex on error lines + step names, signal_type)
+    # Order matters — first match wins. More specific patterns first.
+    (r"AADSTS\d+|federated identity|Login failed.*az.*exit code|auth-type",
+     "AzureAuthFailure"),
+    (r"ErrImagePull|ImagePullBackOff|image.*pull.*fail",
+     "ImagePullError"),
+    (r"timed out|TimeoutException|deadline exceeded|HTTP request timed out",
+     "Timeout"),
+    (r"docker.*push.*fail|oras.*push.*fail",
+     "ImagePushError"),
+    (r"No task list was present|requireChecklist",
+     "ChecklistMissing"),
+    (r"helm.*fail|chart.*validation.*fail|no such file.*Chart",
+     "HelmChartError"),
+    (r"bicep.*fail|bicep build.*exit status",
+     "BicepBuildError"),
+    (r"Remote workflow failed",
+     "RemoteWorkflowFailure"),
+    (r"Process completed with exit code",
+     "TestFailure"),  # generic — tests are the most common non-specific failure
 ]
 
-# ── Latent infrastructure ────────────────────────────────────────────────
+# ── Failure attribution: is this a code problem or an infra problem? ─────
 
-LATENT_NODES = [
-    {"id": "latent://ghcr.io", "label": "GitHub Container Registry (GHCR)", "class": "ContainerRegistry"},
-    {"id": "latent://github-actions-infra", "label": "GitHub Actions Infrastructure", "class": "CIPlatform"},
-]
+INFRA_SIGNALS = {"AzureAuthFailure", "ImagePullError", "Timeout", "ImagePushError",
+                 "RemoteWorkflowFailure"}
+CODE_SIGNALS = {"TestFailure", "HelmChartError", "BicepBuildError", "ChecklistMissing"}
+# TestFailure also gets a FlakyTest competing cause
+
+# ── Latent infrastructure nodes ──────────────────────────────────────────
+
+LATENT_NODES = {
+    "latent://azure-oidc": {
+        "label": "Azure OIDC / Federated Credentials",
+        "class": "IdentityProvider",
+    },
+    "latent://ghcr.io": {
+        "label": "GitHub Container Registry (GHCR)",
+        "class": "ContainerRegistry",
+    },
+    "latent://github-actions-infra": {
+        "label": "GitHub Actions Infrastructure",
+        "class": "CIPlatform",
+    },
+    "latent://flaky-tests": {
+        "label": "Flaky / Non-deterministic Tests",
+        "class": "FlakyTest",
+    },
+}
+
+# Map infra signal types to which latent node is the likely cause
+SIGNAL_TO_LATENT = {
+    "AzureAuthFailure": "latent://azure-oidc",
+    "ImagePullError": "latent://ghcr.io",
+    "ImagePushError": "latent://ghcr.io",
+    "Timeout": "latent://github-actions-infra",
+    "RemoteWorkflowFailure": "latent://github-actions-infra",
+}
+
+# ── Workflow → Azure resource dependencies ───────────────────────────────
+
+WORKFLOW_AZURE_DEPS = {
+    "Functional Tests (with Cloud Resources)": [
+        "resourcegroups/radiusfunctionaltest",
+        "providers/microsoft.keyvault/vaults/radiuskvvoltest",
+    ],
+    "Long-running test on Azure": [
+        "resourcegroups/radlrtest00",
+        "providers/microsoft.containerservice/managedclusters/radlrtest00-aks",
+    ],
+    "Purge Azure test resources": [
+        "resourcegroups/radiusfunctionaltest",
+    ],
+    "Release Radius": [
+        "providers/microsoft.keyvault/vaults/radius-accounts",
+    ],
+}
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────
@@ -120,9 +129,10 @@ def post_engine(path: str, payload: dict, engine: str) -> dict | None:
     import urllib.request
     url = f"{engine}/api/{path}"
     data = json.dumps(payload).encode()
-    req = urllib.request.Request(url, data=data, headers={"Content-Type": "application/json"})
+    req = urllib.request.Request(url, data=data,
+                                headers={"Content-Type": "application/json"})
     try:
-        with urllib.request.urlopen(req, timeout=5) as resp:
+        with urllib.request.urlopen(req, timeout=10) as resp:
             return json.loads(resp.read())
     except Exception as e:
         print(f"  ERROR posting to {url}: {e}", file=sys.stderr)
@@ -139,8 +149,8 @@ def get_workflow_runs(repo: str, hours: int, limit: int) -> list[dict]:
         sys.exit(1)
     runs = json.loads(result.stdout)
     cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
-    return [r for r in runs if datetime.fromisoformat(
-        r["createdAt"].replace("Z", "+00:00")) >= cutoff]
+    return [r for r in runs
+            if datetime.fromisoformat(r["createdAt"].replace("Z", "+00:00")) >= cutoff]
 
 
 def get_failed_jobs(repo: str, run_id: int) -> list[dict]:
@@ -150,9 +160,9 @@ def get_failed_jobs(repo: str, run_id: int) -> list[dict]:
         return []
     data = json.loads(result.stdout)
     return [
-        {"name": j["name"], "failed_steps": [
-            s["name"] for s in j.get("steps", []) if s.get("conclusion") == "failure"
-        ]}
+        {"name": j["name"],
+         "failed_steps": [s["name"] for s in j.get("steps", [])
+                          if s.get("conclusion") == "failure"]}
         for j in data.get("jobs", []) if j.get("conclusion") == "failure"
     ]
 
@@ -164,18 +174,16 @@ def get_error_lines(repo: str, run_id: int) -> list[str]:
         return []
     errors = []
     for line in result.stdout.split("\n"):
-        if re.search(r"##\[error\]|timed out|image.*pull|ErrImage|unauthorized|denied|"
-                      r"Login failed|helm.*fail|bicep.*fail|Process completed with exit code",
-                      line, re.IGNORECASE):
-            clean = re.sub(r"^.*?\d{4}-\d{2}-\d{2}T[\d:.]+Z\s*", "", line).strip()
+        if re.search(r"##\[error\]", line, re.IGNORECASE):
+            clean = re.sub(r"^.*?##\[error\]", "", line).strip()
             if clean:
                 errors.append(clean)
-    return errors[:10]
+    return errors[:15]
 
 
 def get_commit_info(repo: str, sha: str) -> dict:
-    cmd = ["gh", "api", f"repos/{repo}/commits/{sha}"]
     env = {**os.environ, "GH_PAGER": "cat"}
+    cmd = ["gh", "api", f"repos/{repo}/commits/{sha}"]
     result = subprocess.run(cmd, capture_output=True, text=True, timeout=15, env=env)
     if result.returncode != 0:
         return {"sha": sha[:8], "message": "unknown", "author": "unknown"}
@@ -185,338 +193,316 @@ def get_commit_info(repo: str, sha: str) -> dict:
     return {"sha": sha[:8], "message": msg, "author": author}
 
 
-def classify_error(context: list[str]) -> str:
-    text = " ".join(context)
+def classify_error(error_lines: list[str], failed_steps: list[str]) -> str:
+    """Classify failure into a signal type from actual error messages."""
+    text = " ".join(error_lines) + " " + " ".join(failed_steps)
     for pattern, signal_type in ERROR_PATTERNS:
         if re.search(pattern, text, re.IGNORECASE):
             return signal_type
-    return "ProcessExitError"
+    return "TestFailure"
 
 
-def pipeline_node_id(repo: str, workflow: str) -> str:
-    slug = re.sub(r'[^a-z0-9]+', '-', workflow.lower()).strip('-')
-    return f"gh://{repo}/{slug}"
-
-
-def trigger_node_id(repo: str, sha: str) -> str:
-    return f"commit://{repo}/{sha[:8]}"
-
-
-def detect_commit_mutation_type(commit_info: dict, event: str) -> str:
-    """
-    Classify the mutation type from commit message, author, and event.
-
-    Dependabot PRs get specific sub-types because different kinds of
-    dependency updates have very different failure probabilities:
-      DepMajorBump    - semver major version change (high risk)
-      DepMinorBump    - semver minor/patch change (moderate risk)
-      DepGroupUpdate  - multi-package group update like "30 updates" (high risk)
-      DepActionsBump  - GitHub Actions version bumps (low risk, infra only)
-      DependencyUpdate - can't classify further (moderate risk)
-    """
+def detect_mutation_type(commit_info: dict, event: str) -> str:
+    """Classify the code change type from commit message + author."""
     msg = commit_info.get("message", "")
     msg_lower = msg.lower()
     author = commit_info.get("author", "").lower()
 
-    # ── Dependabot / dependency updates ──
-    if "dependabot" in author or ("bump" in msg_lower and ("group" in msg_lower or "updates" in msg_lower or "from" in msg_lower)):
-        # GitHub Actions version bumps (e.g. "Bump the github-actions group")
+    if "dependabot" in author:
         if "github-actions" in msg_lower:
             return "DepActionsBump"
-
-        # Group updates with multiple packages (e.g. "with 30 updates")
         count_match = re.search(r'with\s+(\d+)\s+update', msg_lower)
-        if count_match:
-            count = int(count_match.group(1))
-            if count >= 5:
-                return "DepGroupUpdate"  # high risk: many packages at once
-
-        # Try to detect semver bump type from "from X to Y"
-        version_match = re.search(r'from\s+v?(\d+)\.(\d+)(?:\.\d+)?\s+to\s+v?(\d+)\.(\d+)', msg)
+        if count_match and int(count_match.group(1)) >= 5:
+            return "DepGroupUpdate"
+        version_match = re.search(
+            r'from\s+v?(\d+)\.\d+\S*\s+to\s+v?(\d+)\.\d+', msg)
+        if version_match and int(version_match.group(2)) > int(version_match.group(1)):
+            return "DepMajorBump"
         if version_match:
-            from_major, from_minor = int(version_match.group(1)), int(version_match.group(2))
-            to_major, to_minor = int(version_match.group(3)), int(version_match.group(4))
-            if to_major > from_major:
-                return "DepMajorBump"
-            else:
-                return "DepMinorBump"
-
-        # Go-dependencies group (often large)
+            return "DepMinorBump"
         if "go-dependencies" in msg_lower:
             return "DepGroupUpdate"
-
         return "DependencyUpdate"
 
-    # ── Release commits ──
     if "release" in msg_lower or event == "release":
         return "Release"
-
-    # ── Reverts ──
     if "revert" in msg_lower:
         return "Revert"
+    return "CodeChange"
 
-    # ── PR merges ──
-    if event in ("push",) and "merge" in msg_lower and ("pull request" in msg_lower or "#" in msg):
-        return "PRMerge"
 
-    # ── Scheduled / cron ──
-    if event == "schedule":
-        return "ScheduledRun"
+def job_node_id(repo: str, run_id: int, job_name: str) -> str:
+    slug = re.sub(r'[^a-z0-9]+', '-', job_name.lower()).strip('-')
+    return f"job://{repo}/{run_id}/{slug}"
 
-    return EVENT_MUTATION_TYPE.get(event, "CodeChange")
+
+def commit_node_id(repo: str, sha: str) -> str:
+    return f"commit://{repo}/{sha[:8]}"
 
 
 # ── Main pipeline ────────────────────────────────────────────────────────
 
-def build_topology(repo: str, engine: str, sub_id: str | None, runs: list[dict]) -> None:
-    """Build the causal graph: trigger nodes → pipeline nodes → Azure resources."""
+def process_failures(repo: str, runs: list[dict], engine: str,
+                     sub_id: str | None, dry_run: bool) -> tuple[int, int, int]:
+    """
+    Process failed runs into the causal graph.
+
+    For each failed job:
+    1. Create a job node (the thing that broke)
+    2. Classify the error → signal type
+    3. Determine attribution:
+       - Infra signal → edge from latent node, signal on job, no code mutation
+       - Code signal → edge from commit node, mutation on commit, signal on job
+       - TestFailure → both commit AND flaky-test as competing causes
+    4. Emit mutations + signals to engine
+
+    Returns (nodes_created, mutations, signals).
+    """
     nodes = []
     edges = []
-    seen_nodes = set()
+    mutations_to_send = []
+    signals_to_send = []
+    commit_cache = {}  # sha → commit_info
+    seen_commit_nodes = set()
 
-    # Latent infrastructure nodes
-    for ln in LATENT_NODES:
-        nodes.append({"id": ln["id"], "label": ln["label"], "class": ln["class"],
-                       "region": "github", "rack_id": None,
-                       "properties": {"source": "gh-actions", "latent": True}})
+    # Ensure latent nodes exist
+    for lid, linfo in LATENT_NODES.items():
+        nodes.append({
+            "id": lid, "label": linfo["label"], "class": linfo["class"],
+            "region": "github", "rack_id": None,
+            "properties": {"source": "gh-actions", "latent": True},
+        })
 
-    # Pipeline nodes (one per workflow)
-    for wf_name, cfg in PIPELINE_CONFIG.items():
-        nid = pipeline_node_id(repo, wf_name)
-        if nid in seen_nodes:
-            continue
-        seen_nodes.add(nid)
-        nodes.append({"id": nid, "label": f"{wf_name} ({repo.split('/')[-1]})",
-                       "class": "CIPipeline", "region": "github", "rack_id": None,
-                       "properties": {"source": "gh-actions", "workflow": wf_name}})
+    failed_runs = [r for r in runs if r["conclusion"] == "failure"]
 
-        # Pipeline → Azure resource edges
-        if sub_id:
-            for dep in cfg.get("azure_deps", []):
-                target = f"/subscriptions/{sub_id}/{dep}".lower()
-                edges.append({"id": f"edge-{nid[-30:]}-{dep[-30:]}",
-                              "source_id": nid, "target_id": target,
-                              "edge_type": "dependency", "properties": {}})
-
-        # Latent GHCR → pipelines that use container images
-        if any(d for d in cfg.get("azure_deps", []) if "containerregistry" in d.lower()):
-            edges.append({"id": f"edge-ghcr-{nid[-30:]}",
-                          "source_id": "latent://ghcr.io", "target_id": nid,
-                          "edge_type": "dependency", "properties": {}})
-
-        # Latent GH infra → all pipelines
-        edges.append({"id": f"edge-ghinfra-{nid[-30:]}",
-                      "source_id": "latent://github-actions-infra", "target_id": nid,
-                      "edge_type": "dependency", "properties": {}})
-
-    # Trigger nodes — one per distinct (event, headSha) pair
-    triggers = {}
-    for run in runs:
+    for run in failed_runs:
+        run_id = run["databaseId"]
         sha = run["headSha"]
-        event = run["event"]
-        key = (event, sha[:8])
-        if key not in triggers:
-            triggers[key] = run
+        sha8 = sha[:8]
+        wf = run["workflowName"]
+        branch = run.get("headBranch", "")
+        event = run.get("event", "")
 
-    for (event, sha8), run in triggers.items():
-        nid = trigger_node_id(repo, run["headSha"])
-        if nid in seen_nodes:
-            continue
-        seen_nodes.add(nid)
+        # Get commit info (cached)
+        if sha8 not in commit_cache:
+            commit_cache[sha8] = get_commit_info(repo, sha) if not dry_run else {
+                "sha": sha8, "message": "...", "author": "..."}
+        commit_info = commit_cache[sha8]
+        mut_type = detect_mutation_type(commit_info, event)
 
-        commit_info = get_commit_info(repo, run["headSha"])
-        mut_type = detect_commit_mutation_type(commit_info, event)
-        label = f"{sha8}: {commit_info['message'][:60]}"
-        cls = "Commit" if event in ("push", "pull_request", "pull_request_target") else "Trigger"
+        # Get failed jobs and errors
+        failed_jobs = get_failed_jobs(repo, run_id) if not dry_run else []
+        error_lines = get_error_lines(repo, run_id) if not dry_run else []
 
-        nodes.append({"id": nid, "label": label, "class": cls,
-                       "region": "github", "rack_id": None,
-                       "properties": {"source": "gh-actions", "event": event,
-                                      "sha": run["headSha"][:8], "branch": run["headBranch"],
-                                      "author": commit_info["author"],
-                                      "mutation_type": mut_type}})
-
-    # Trigger → pipeline edges (one per run's trigger → workflow)
-    seen_edges = set()
-    for run in runs:
-        src = trigger_node_id(repo, run["headSha"])
-        tgt = pipeline_node_id(repo, run["workflowName"])
-        ekey = (src, tgt)
-        if ekey in seen_edges:
-            continue
-        seen_edges.add(ekey)
-        edges.append({"id": f"edge-{src[-25:]}-{tgt[-25:]}",
-                      "source_id": src, "target_id": tgt,
-                      "edge_type": "dependency", "properties": {}})
-
-    # Also handle workflows not in PIPELINE_CONFIG
-    for run in runs:
-        nid = pipeline_node_id(repo, run["workflowName"])
-        if nid not in seen_nodes:
-            seen_nodes.add(nid)
-            nodes.append({"id": nid, "label": f"{run['workflowName']} ({repo.split('/')[-1]})",
-                           "class": "CIPipeline", "region": "github", "rack_id": None,
-                           "properties": {"source": "gh-actions"}})
-            edges.append({"id": f"edge-ghinfra-{nid[-30:]}",
-                          "source_id": "latent://github-actions-infra", "target_id": nid,
-                          "edge_type": "dependency", "properties": {}})
-
-    result = post_engine("graph/merge", {"nodes": nodes, "edges": edges}, engine)
-    if result:
-        print(f"  Topology: {result.get('new_nodes', 0)} new nodes, "
-              f"{result.get('new_edges', 0)} new edges", file=sys.stderr)
-
-
-def ingest_events(repo: str, runs: list[dict], engine: str, dry_run: bool) -> tuple[int, int]:
-    """
-    Ingest mutations (on trigger/commit nodes) and signals (on pipeline nodes).
-
-    Returns (mutations_count, signals_count).
-    """
-    mutations = 0
-    signals = 0
-
-    # Group runs by trigger
-    trigger_groups = defaultdict(list)
-    for run in runs:
-        key = (run["event"], run["headSha"][:8])
-        trigger_groups[key].append(run)
-
-    for (event, sha8), group_runs in trigger_groups.items():
-        # One mutation per trigger
-        trigger_nid = trigger_node_id(repo, group_runs[0]["headSha"])
-        commit_info = get_commit_info(repo, group_runs[0]["headSha"])
-        mut_type = detect_commit_mutation_type(commit_info, event)
+        if not failed_jobs and not dry_run:
+            # Fallback: create a single job node for the whole run
+            failed_jobs = [{"name": wf, "failed_steps": []}]
 
         if dry_run:
-            fails = [r for r in group_runs if r["conclusion"] == "failure"]
-            icon = "✗" if fails else "✓"
-            print(f"  {icon} [{event}] {sha8} {commit_info['message'][:60]}")
-            print(f"    mutation: {mut_type} on {trigger_nid}")
-            print(f"    triggered {len(group_runs)} workflows, {len(fails)} failed")
-        else:
-            result = post_engine("mutations", {
-                "node_id": trigger_nid,
-                "mutation_type": mut_type,
-                "source": f"gh-actions/{repo}",
-                "properties": {
-                    "sha": group_runs[0]["headSha"][:8],
-                    "branch": group_runs[0]["headBranch"],
-                    "event": event,
-                    "author": commit_info["author"],
-                    "message": commit_info["message"][:200],
-                    "workflows_triggered": len(group_runs),
-                },
-            }, engine)
-            if result:
-                mutations += 1
-
-        # Signals on failed pipeline nodes
-        for run in group_runs:
-            if run["conclusion"] != "failure":
-                continue
-
-            pipeline_nid = pipeline_node_id(repo, run["workflowName"])
-            failed_jobs = get_failed_jobs(repo, run["databaseId"])
-            error_lines = get_error_lines(repo, run["databaseId"]) if not dry_run else []
-
-            if failed_jobs:
-                for job in failed_jobs:
-                    all_context = job["failed_steps"] + error_lines
-                    signal_type = classify_error(all_context)
-
-                    if dry_run:
-                        print(f"      SIGNAL: {signal_type} on {pipeline_nid} — {job['name']}")
-                        for step in job["failed_steps"]:
-                            print(f"        step: {step}")
-                    else:
-                        result = post_engine("signals", {
-                            "node_id": pipeline_nid,
-                            "signal_type": signal_type,
-                            "severity": "critical",
-                            "properties": {
-                                "run_id": run["databaseId"],
-                                "job": job["name"],
-                                "failed_steps": job["failed_steps"],
-                                "error_lines": error_lines[:5],
-                                "trigger_sha": sha8,
-                                "workflow": run["workflowName"],
-                            },
-                        }, engine)
-                        if result:
-                            signals += 1
+            # For dry run, just show what we'd do
+            signal_type = classify_error(error_lines, [])
+            is_infra = signal_type in INFRA_SIGNALS
+            print(f"\n  Run #{run_id} [{wf}] sha={sha8} event={event}")
+            print(f"    Signal: {signal_type} ({'INFRA' if is_infra else 'CODE'})")
+            if is_infra:
+                latent = SIGNAL_TO_LATENT.get(signal_type, "latent://github-actions-infra")
+                print(f"    → latent cause: {latent}")
             else:
-                # No job detail — generic signal
-                signal_type = classify_error(error_lines) if error_lines else \
-                    PIPELINE_CONFIG.get(run["workflowName"], {}).get("signal_type", "WorkflowFailure")
-                if dry_run:
-                    print(f"      SIGNAL: {signal_type} on {pipeline_nid}")
-                else:
-                    result = post_engine("signals", {
-                        "node_id": pipeline_nid,
-                        "signal_type": signal_type,
-                        "severity": "critical",
-                        "properties": {
-                            "run_id": run["databaseId"],
-                            "trigger_sha": sha8,
-                            "workflow": run["workflowName"],
-                        },
-                    }, engine)
-                    if result:
-                        signals += 1
+                print(f"    → code cause: commit://{repo}/{sha8} ({mut_type})")
+                if signal_type == "TestFailure":
+                    print(f"    → competing: latent://flaky-tests")
+            continue
 
-    return mutations, signals
+        for job in failed_jobs:
+            job_name = job["name"]
+            all_context = error_lines + job["failed_steps"]
+            signal_type = classify_error(all_context, job["failed_steps"])
+            is_infra = signal_type in INFRA_SIGNALS
+
+            # Create job node
+            jid = job_node_id(repo, run_id, job_name)
+            job_label = f"{wf}: {job_name}"
+            nodes.append({
+                "id": jid, "label": job_label, "class": "CIJob",
+                "region": "github", "rack_id": None,
+                "properties": {
+                    "source": "gh-actions",
+                    "run_id": run_id,
+                    "workflow": wf,
+                    "job": job_name,
+                    "failed_steps": job["failed_steps"],
+                    "commit": sha8,
+                    "branch": branch,
+                    "event": event,
+                    "author": commit_info.get("author", ""),
+                    "commit_message": commit_info.get("message", "")[:120],
+                },
+            })
+
+            # Azure resource edges for cloud-interacting workflows
+            if sub_id:
+                for dep in WORKFLOW_AZURE_DEPS.get(wf, []):
+                    target = f"/subscriptions/{sub_id}/{dep}".lower()
+                    edges.append({
+                        "id": f"edge-{jid[-25:]}-{dep[-25:]}",
+                        "source_id": jid, "target_id": target,
+                        "edge_type": "dependency", "properties": {},
+                    })
+
+            if is_infra:
+                # Infra failure: edge from latent node → job
+                latent = SIGNAL_TO_LATENT.get(signal_type, "latent://github-actions-infra")
+                edges.append({
+                    "id": f"edge-{latent[-20:]}-{jid[-30:]}",
+                    "source_id": latent, "target_id": jid,
+                    "edge_type": "dependency", "properties": {},
+                })
+                # Signal on the job node (no mutation — we don't know what changed)
+                signals_to_send.append({
+                    "node_id": jid,
+                    "signal_type": signal_type,
+                    "severity": "critical",
+                    "properties": {
+                        "run_id": run_id, "job": job_name,
+                        "failed_steps": job["failed_steps"],
+                        "error_lines": error_lines[:5],
+                    },
+                })
+            else:
+                # Code failure: commit node → job, mutation on commit
+                cid = commit_node_id(repo, sha)
+                if cid not in seen_commit_nodes:
+                    seen_commit_nodes.add(cid)
+                    commit_label = f"{sha8}: {commit_info['message'][:60]}"
+                    nodes.append({
+                        "id": cid, "label": commit_label, "class": "Commit",
+                        "region": "github", "rack_id": None,
+                        "properties": {
+                            "source": "gh-actions",
+                            "sha": sha8, "branch": branch,
+                            "author": commit_info.get("author", ""),
+                            "event": event,
+                        },
+                    })
+                    # Mutation: the code change
+                    mutations_to_send.append({
+                        "node_id": cid,
+                        "mutation_type": mut_type,
+                        "source": f"gh-actions/{repo}",
+                        "properties": {
+                            "sha": sha8, "branch": branch,
+                            "author": commit_info.get("author", ""),
+                            "message": commit_info.get("message", "")[:200],
+                        },
+                    })
+
+                # Edge: commit → job
+                edges.append({
+                    "id": f"edge-{cid[-20:]}-{jid[-30:]}",
+                    "source_id": cid, "target_id": jid,
+                    "edge_type": "dependency", "properties": {},
+                })
+
+                # Signal on the job node
+                signals_to_send.append({
+                    "node_id": jid,
+                    "signal_type": signal_type,
+                    "severity": "critical",
+                    "properties": {
+                        "run_id": run_id, "job": job_name,
+                        "failed_steps": job["failed_steps"],
+                        "error_lines": error_lines[:5],
+                        "trigger_sha": sha8,
+                    },
+                })
+
+                # Competing cause: flaky tests (for TestFailure only)
+                if signal_type == "TestFailure":
+                    edges.append({
+                        "id": f"edge-flaky-{jid[-30:]}",
+                        "source_id": "latent://flaky-tests",
+                        "target_id": jid,
+                        "edge_type": "dependency", "properties": {},
+                    })
+                    # Add a mutation on flaky-tests so the engine can compete
+                    mutations_to_send.append({
+                        "node_id": "latent://flaky-tests",
+                        "mutation_type": "FlakyTestRun",
+                        "source": f"gh-actions/{repo}",
+                        "properties": {"note": "Competing cause for test failures"},
+                    })
+
+    if dry_run:
+        return 0, 0, 0
+
+    # Merge topology
+    result = post_engine("graph/merge", {"nodes": nodes, "edges": edges}, engine)
+    new_nodes = result.get("new_nodes", 0) if result else 0
+    new_edges = result.get("new_edges", 0) if result else 0
+    print(f"  Topology: {new_nodes} new nodes, {new_edges} new edges", file=sys.stderr)
+
+    # Send mutations
+    mut_count = 0
+    for m in mutations_to_send:
+        if post_engine("mutations", m, engine):
+            mut_count += 1
+
+    # Send signals
+    sig_count = 0
+    for s in signals_to_send:
+        if post_engine("signals", s, engine):
+            sig_count += 1
+
+    return new_nodes, mut_count, sig_count
 
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Ingest GitHub Actions as causal graph: commits/triggers as mutations, "
-                    "workflow failures as signals.",
+        description="Ingest GitHub Actions failures as causal graph: "
+                    "failed jobs as nodes, classified errors as signals, "
+                    "commits or infra as upstream mutations.",
     )
     parser.add_argument("--repo", "-r", required=True,
                         help="GitHub repository (owner/name)")
     parser.add_argument("--hours", type=int, default=24,
                         help="Look back N hours (default: 24)")
-    parser.add_argument("--limit", type=int, default=100,
-                        help="Max runs to fetch (default: 100)")
+    parser.add_argument("--limit", type=int, default=200,
+                        help="Max runs to fetch (default: 200)")
     parser.add_argument("--subscription", "-s",
-                        help="Azure subscription ID for linking cloud-test workflows to ARG resources")
+                        help="Azure subscription ID for linking to ARG resources")
     parser.add_argument("--engine", default=ENGINE,
                         help=f"Engine URL (default: {ENGINE})")
     parser.add_argument("--dry-run", action="store_true",
-                        help="Show what would be ingested without sending to engine")
+                        help="Show classification without ingesting")
     args = parser.parse_args()
 
-    # Verify gh CLI
-    result = subprocess.run(["gh", "auth", "status"], capture_output=True, text=True, timeout=10)
+    result = subprocess.run(["gh", "auth", "status"],
+                            capture_output=True, text=True, timeout=10)
     if result.returncode != 0:
-        print("ERROR: Not authenticated. Run `gh auth login` first.", file=sys.stderr)
+        print("ERROR: Run `gh auth login` first.", file=sys.stderr)
         sys.exit(1)
 
-    print(f"Fetching workflow runs from {args.repo} (last {args.hours}h)...", file=sys.stderr)
+    print(f"Fetching runs from {args.repo} (last {args.hours}h)...", file=sys.stderr)
     runs = get_workflow_runs(args.repo, hours=args.hours, limit=args.limit)
-    print(f"  → {len(runs)} runs in window", file=sys.stderr)
-
-    if not runs:
-        print("No runs found.", file=sys.stderr)
-        return
 
     from collections import Counter
     conclusions = Counter(r["conclusion"] for r in runs)
-    triggers = len(set((r["event"], r["headSha"][:8]) for r in runs))
-    print(f"  → {conclusions}", file=sys.stderr)
-    print(f"  → {triggers} distinct triggers", file=sys.stderr)
+    failed = [r for r in runs if r["conclusion"] == "failure"]
+    print(f"  {len(runs)} runs: {dict(conclusions)}", file=sys.stderr)
+    print(f"  {len(failed)} failures to process", file=sys.stderr)
 
-    if not args.dry_run:
-        print("Building causal topology...", file=sys.stderr)
-        build_topology(args.repo, args.engine, args.subscription, runs)
+    if not failed:
+        print("No failures found.", file=sys.stderr)
+        return
 
-    mutations, signals = ingest_events(args.repo, runs, args.engine, dry_run=args.dry_run)
+    nodes, muts, sigs = process_failures(
+        args.repo, runs, args.engine, args.subscription, args.dry_run)
 
     if args.dry_run:
-        print(f"\nDry run: {mutations} trigger mutations, {signals} failure signals", file=sys.stderr)
+        print(f"\nDry run complete.", file=sys.stderr)
     else:
-        print(f"\nIngested: {mutations} mutations (triggers), {signals} signals (failures)", file=sys.stderr)
+        print(f"\nIngested: {nodes} nodes, {muts} mutations, {sigs} signals",
+              file=sys.stderr)
 
 
 if __name__ == "__main__":

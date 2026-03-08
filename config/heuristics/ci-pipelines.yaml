@@ -1,256 +1,169 @@
-# Causinator 9000 Heuristic Layer — CI/CD Pipelines
+# Causinator 9000 Heuristic Layer — CI/CD
 #
-# Causal model:
-#   Commit/Trigger nodes are upstream (the CAUSE/mutation).
-#   CIPipeline nodes are downstream (where SIGNALS appear).
-#   Edges: commit → pipeline (dependency)
+# Node model:
+#   CIJob     — a specific failed job execution (the observation point)
+#   Commit    — a code change that triggered the job (upstream cause)
+#   FlakyTest — latent competing cause for non-deterministic test failures
+#   CIPlatform — GitHub Actions runner infrastructure (latent)
 #
-# Signal types are classified from actual GH Actions error logs:
-#   Timeout          - HTTP/operation timeouts (transient infra)
-#   ImagePullError   - Container image pull failures (GHCR/ACR)
-#   ImagePushError   - Container image push failures
-#   AzureAuthFailure - az login / credential failures
-#   HelmChartError   - Helm chart validation failures
-#   BicepBuildError  - Bicep template compilation failures
-#   ProcessExitError - Generic non-zero exit code
-#   BuildFailure     - Build step failure
-#   TestFailure      - Test step failure
-#   ReleaseFailure   - Release pipeline failure
+# Signal types (classified from actual GH Actions error logs):
+#   TestFailure       — test step exited non-zero (most common)
+#   AzureAuthFailure  — az login / OIDC credential failure
+#   ImagePullError    — container image pull failure
+#   ImagePushError    — container image push failure
+#   Timeout           — HTTP or operation timeout
+#   ChecklistMissing  — PR checklist not present
+#   HelmChartError    — Helm chart validation failure
+#   BicepBuildError   — Bicep template build failure
+#   RemoteWorkflowFailure — dispatched workflow failed
 
-# ── Commit / Trigger nodes (the root causes) ────────────────────────────
+# ── CIJob: where signals appear (the failed job execution) ──────────────
 
-# Code changes — the most common root cause of CI failures
-- class: Commit
+- class: CIJob
   default_prior:
-    P_failure: 0.01
+    P_failure: 0.02
     decay_half_life_minutes: 30
   cpts:
-    # A code change is very likely to be the cause of a downstream build failure
-    - mutation: CodeChange
-      signal: BuildFailure
-      table:
-        - [0.75, 0.02]
-        - [0.25, 0.98]
+    # Code change → test failure (strong: code changes break tests)
     - mutation: CodeChange
       signal: TestFailure
       table:
-        - [0.70, 0.03]
-        - [0.30, 0.97]
+        - [0.72, 0.03]
+        - [0.28, 0.97]
     - mutation: CodeChange
+      signal: BicepBuildError
+      table:
+        - [0.70, 0.02]
+        - [0.30, 0.98]
+    - mutation: CodeChange
+      signal: HelmChartError
+      table:
+        - [0.65, 0.03]
+        - [0.35, 0.97]
+    # Code change is unlikely to cause infra failures
+    - mutation: CodeChange
+      signal: AzureAuthFailure
+      table:
+        - [0.05, 0.02]
+        - [0.95, 0.98]
+    - mutation: CodeChange
+      signal: Timeout
+      table:
+        - [0.10, 0.08]
+        - [0.90, 0.92]
+    - mutation: CodeChange
+      signal: ImagePullError
+      table:
+        - [0.03, 0.06]
+        - [0.97, 0.94]
+    # Release commits — release process is risky
+    - mutation: Release
+      signal: TestFailure
+      table:
+        - [0.60, 0.03]
+        - [0.40, 0.97]
+    - mutation: Release
       signal: BicepBuildError
       table:
         - [0.65, 0.02]
         - [0.35, 0.98]
-    - mutation: CodeChange
-      signal: HelmChartError
+    - mutation: Release
+      signal: RemoteWorkflowFailure
       table:
-        - [0.60, 0.03]
-        - [0.35, 0.97]
-    - mutation: CodeChange
-      signal: ProcessExitError
-      table:
-        - [0.55, 0.05]
-        - [0.45, 0.95]
-    # A code change is unlikely to cause auth failures or image pull errors
-    - mutation: CodeChange
-      signal: AzureAuthFailure
-      table:
-        - [0.10, 0.02]
-        - [0.90, 0.98]
-    - mutation: CodeChange
-      signal: Timeout
-      table:
-        - [0.15, 0.08]
-        - [0.85, 0.92]
-    - mutation: CodeChange
-      signal: ImagePullError
-      table:
-        - [0.05, 0.06]
-        - [0.95, 0.94]
-    # PR merge — slightly lower than direct code change
-    - mutation: PRMerge
-      signal: BuildFailure
-      table:
-        - [0.70, 0.02]
-        - [0.30, 0.98]
-    - mutation: PRMerge
+        - [0.50, 0.03]
+        - [0.50, 0.97]
+    # ── Dependabot: dependency updates ──
+    # Major version bump — high risk of breaking changes
+    - mutation: DepMajorBump
       signal: TestFailure
       table:
-        - [0.65, 0.03]
-        - [0.35, 0.97]
-    - mutation: PRMerge
-      signal: ProcessExitError
+        - [0.82, 0.03]
+        - [0.18, 0.97]
+    - mutation: DepMajorBump
+      signal: BicepBuildError
       table:
-        - [0.50, 0.05]
-        - [0.50, 0.95]
-    # Release — release process failures
-    - mutation: Release
-      signal: ReleaseFailure
+        - [0.75, 0.02]
+        - [0.25, 0.98]
+    # Group update (many packages at once) — high risk
+    - mutation: DepGroupUpdate
+      signal: TestFailure
       table:
-        - [0.80, 0.01]
-        - [0.20, 0.99]
-    - mutation: Release
-      signal: BuildFailure
-      table:
-        - [0.50, 0.02]
-        - [0.50, 0.98]
-    - mutation: Release
+        - [0.68, 0.03]
+        - [0.32, 0.97]
+    - mutation: DepGroupUpdate
       signal: BicepBuildError
       table:
         - [0.60, 0.02]
         - [0.40, 0.98]
-    # Revert — should actually FIX things, low causal probability
-    - mutation: Revert
-      signal: BuildFailure
-      table:
-        - [0.10, 0.02]
-        - [0.90, 0.98]
-    - mutation: Revert
-      signal: TestFailure
-      table:
-        - [0.10, 0.03]
-        - [0.90, 0.97]
-    # ── Dependabot: dependency updates ──────────────────────────────────
-    # Major version bumps are the #1 cause of dependabot-induced failures.
-    # Go module updates with 30 packages are more likely to break than 1.
-    - mutation: DepMajorBump
-      signal: BuildFailure
-      table:
-        - [0.85, 0.02]
-        - [0.15, 0.98]
-    - mutation: DepMajorBump
-      signal: TestFailure
-      table:
-        - [0.80, 0.03]
-        - [0.20, 0.97]
-    - mutation: DepMajorBump
-      signal: ProcessExitError
-      table:
-        - [0.70, 0.05]
-        - [0.30, 0.95]
-    # Minor/patch bumps — moderate risk
-    - mutation: DepMinorBump
-      signal: BuildFailure
-      table:
-        - [0.45, 0.02]
-        - [0.55, 0.98]
+    # Minor/patch bump — moderate risk
     - mutation: DepMinorBump
       signal: TestFailure
       table:
         - [0.40, 0.03]
         - [0.60, 0.97]
-    # Multi-package group updates (e.g. "30 updates") — higher risk
-    - mutation: DepGroupUpdate
-      signal: BuildFailure
-      table:
-        - [0.70, 0.02]
-        - [0.30, 0.98]
-    - mutation: DepGroupUpdate
+    # GH Actions version bump — low risk (infra, not code)
+    - mutation: DepActionsBump
       signal: TestFailure
       table:
-        - [0.65, 0.03]
-        - [0.35, 0.97]
-    - mutation: DepGroupUpdate
-      signal: ProcessExitError
-      table:
-        - [0.55, 0.05]
-        - [0.45, 0.95]
-    # GitHub Actions version bumps — low risk (infra, not code)
-    - mutation: DepActionsBump
-      signal: BuildFailure
-      table:
-        - [0.20, 0.02]
-        - [0.80, 0.98]
+        - [0.15, 0.03]
+        - [0.85, 0.97]
     - mutation: DepActionsBump
       signal: Timeout
       table:
-        - [0.15, 0.08]
-        - [0.85, 0.92]
-    - mutation: DepActionsBump
-      signal: ProcessExitError
-      table:
-        - [0.30, 0.05]
-        - [0.70, 0.95]
-    # Generic dependency update (can't classify further)
-    - mutation: DependencyUpdate
-      signal: BuildFailure
-      table:
-        - [0.55, 0.02]
-        - [0.45, 0.98]
+        - [0.20, 0.08]
+        - [0.80, 0.92]
+    # Generic dependency update
     - mutation: DependencyUpdate
       signal: TestFailure
       table:
         - [0.50, 0.03]
         - [0.50, 0.97]
-    - mutation: DependencyUpdate
-      signal: ProcessExitError
-      table:
-        - [0.40, 0.05]
-        - [0.60, 0.95]
-
-# Scheduled/cron triggers — not a code change, just a timer
-- class: Trigger
-  default_prior:
-    P_failure: 0.005
-    decay_half_life_minutes: 120
-  cpts:
-    # A scheduled run is unlikely to be the "cause" — the cause is whatever
-    # code state it ran against. Low LR so the engine looks upstream.
-    - mutation: ScheduledRun
+    # Revert — should fix things, not break them
+    - mutation: Revert
       signal: TestFailure
       table:
-        - [0.20, 0.03]
-        - [0.80, 0.97]
-    - mutation: ScheduledRun
-      signal: Timeout
+        - [0.08, 0.03]
+        - [0.92, 0.97]
+    # PR checklist — the PR itself is the direct cause
+    - mutation: CodeChange
+      signal: ChecklistMissing
       table:
-        - [0.15, 0.08]
-        - [0.85, 0.92]
-    - mutation: ScheduledRun
-      signal: ProcessExitError
+        - [0.90, 0.01]
+        - [0.10, 0.99]
+    # Flaky test — competing cause for TestFailure
+    # Moderate LR: flaky tests are a real thing but not every failure
+    - mutation: FlakyTestRun
+      signal: TestFailure
       table:
-        - [0.20, 0.05]
-        - [0.80, 0.95]
-    - mutation: IssueEvent
-      signal: AzureAuthFailure
-      table:
-        - [0.10, 0.02]
-        - [0.90, 0.98]
+        - [0.35, 0.03]
+        - [0.65, 0.97]
 
-# ── CI Pipeline nodes (where signals appear) ─────────────────────────────
+# ── Commit: upstream code change node ────────────────────────────────────
 
-- class: CIPipeline
+- class: Commit
   default_prior:
-    P_failure: 0.02
+    P_failure: 0.01
     decay_half_life_minutes: 30
+  cpts: []
+
+# ── FlakyTest: latent competing cause ────────────────────────────────────
+# These have a constant low-grade "mutation" (FlakyTestRun) that competes
+# with commit-based causes for test failures. If the same test fails on
+# multiple runs of the same code, the flaky cause wins.
+
+- class: FlakyTest
+  default_prior:
+    P_failure: 0.03
+    decay_half_life_minutes: 480
   cpts:
-    # These are for direct mutations on the pipeline node itself
-    # (e.g. workflow file changes, runner config changes).
-    # Most failures will be diagnosed via upstream commit nodes.
-    - mutation: WorkflowChange
-      signal: BuildFailure
-      table:
-        - [0.80, 0.02]
-        - [0.20, 0.98]
-    - mutation: WorkflowChange
+    - mutation: FlakyTestRun
       signal: TestFailure
       table:
-        - [0.70, 0.03]
-        - [0.30, 0.97]
-    - mutation: WorkflowChange
-      signal: Timeout
-      table:
-        - [0.50, 0.08]
-        - [0.50, 0.92]
-    - mutation: WorkflowChange
-      signal: ProcessExitError
-      table:
-        - [0.60, 0.05]
-        - [0.40, 0.95]
+        - [0.35, 0.03]
+        - [0.65, 0.97]
 
-# ── Latent infrastructure nodes ──────────────────────────────────────────
+# ── CIPlatform: GitHub Actions runner infrastructure ─────────────────────
 
-# GitHub Actions runner infrastructure — transient failures
 - class: CIPlatform
   default_prior:
     P_failure: 0.005
@@ -262,7 +175,7 @@
         - [0.70, 0.05]
         - [0.30, 0.95]
     - mutation: RunnerUpdate
-      signal: ProcessExitError
+      signal: TestFailure
       table:
-        - [0.50, 0.05]
-        - [0.50, 0.95]
+        - [0.20, 0.03]
+        - [0.80, 0.97]
