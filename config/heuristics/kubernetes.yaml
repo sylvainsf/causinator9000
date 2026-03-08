@@ -1,0 +1,109 @@
+# Causinator 9000 Heuristic Layer — Kubernetes
+#
+# CPTs for Kubernetes resources: pods, deployments, namespaces.
+# These are the resources visible from inside an AKS cluster
+# (below the AKS-as-a-node level from ARG).
+#
+# Signal types from K8s events:
+#   CrashLoopBackOff     — container restarting repeatedly
+#   ImagePullError       — failed to pull container image
+#   OOMKilled            — container killed by OOM
+#   PodPending           — pod stuck in Pending (no node available)
+#   PodError             — generic pod error
+#   PodEviction          — pod evicted (resource pressure)
+#   SchedulingFailure    — scheduler can't place the pod
+#   HealthCheckFailed    — liveness/readiness probe failing
+#   VolumeMountFailure   — PV/PVC mount failed
+#   ConfigError          — container config error
+#   FailedCreate         — controller failed to create pod
+#   MetricsUnavailable   — metrics server unreachable
+
+- class: KubernetesNamespace
+  default_prior:
+    P_failure: 0.0001
+    decay_half_life_minutes: 120
+  cpts:
+    - mutation: NamespaceUpdate
+      signal: PodPending
+      table:
+        - [0.30, 0.02]
+        - [0.70, 0.98]
+
+# Container class already exists in containers.yaml but we add
+# K8s-specific mutation→signal mappings via lean patching
+- class: Container
+  cpts:
+    # Deployment rollout → CrashLoopBackOff (bad image/config)
+    - mutation: ImagePull
+      signal: CrashLoopBackOff
+      table:
+        - [0.40, 0.03]
+        - [0.60, 0.97]
+    - mutation: ContainerCreated
+      signal: CrashLoopBackOff
+      table:
+        - [0.50, 0.03]
+        - [0.50, 0.97]
+    - mutation: ContainerCreated
+      signal: OOMKilled
+      table:
+        - [0.45, 0.02]
+        - [0.55, 0.98]
+    - mutation: ContainerCreated
+      signal: ConfigError
+      table:
+        - [0.60, 0.02]
+        - [0.40, 0.98]
+    # Scale event → scheduling failure (not enough nodes)
+    - mutation: ScaleEvent
+      signal: SchedulingFailure
+      table:
+        - [0.70, 0.03]
+        - [0.30, 0.97]
+    - mutation: ScaleEvent
+      signal: PodPending
+      table:
+        - [0.65, 0.02]
+        - [0.35, 0.98]
+    # Pod eviction — usually resource pressure (memory/disk)
+    - mutation: PodCreated
+      signal: PodEviction
+      table:
+        - [0.25, 0.01]
+        - [0.75, 0.99]
+    # Volume mount failures
+    - mutation: ContainerCreated
+      signal: VolumeMountFailure
+      table:
+        - [0.55, 0.02]
+        - [0.45, 0.98]
+    # Health check failures after container start
+    - mutation: ContainerStarted
+      signal: HealthCheckFailed
+      table:
+        - [0.60, 0.05]
+        - [0.40, 0.95]
+
+- class: AKSCluster
+  cpts:
+    # AKS-level mutations affecting pods
+    - mutation: KubernetesUpgrade
+      signal: PodEviction
+      table:
+        - [0.80, 0.05]
+        - [0.20, 0.95]
+    - mutation: KubernetesUpgrade
+      signal: PodPending
+      table:
+        - [0.60, 0.02]
+        - [0.40, 0.98]
+    - mutation: NodePoolChange
+      signal: SchedulingFailure
+      table:
+        - [0.70, 0.03]
+        - [0.30, 0.97]
+    - mutation: NodePoolChange
+      signal: PodPending
+      table:
+        - [0.65, 0.02]
+        - [0.35, 0.98]

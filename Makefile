@@ -114,6 +114,12 @@ ingest-azure-policy:  ## Ingest Azure deny-policy violations as latent causal no
 ingest-azure-policy-dry:  ## Dry run — show deny policy violations
 	python3 sources/azure_policy_source.py --dry-run
 
+ingest-k8s:  ## Ingest Kubernetes cluster state (pods, events, signals)
+	python3 sources/k8s_source.py
+
+ingest-k8s-dry:  ## Dry run — show K8s cluster state
+	python3 sources/k8s_source.py --dry-run
+
 clear:  ## Clear all mutations and signals (keeps graph)
 	curl -s -X POST $(ENGINE_URL)/api/clear -H 'Content-Type: application/json' -d '{}' | python3 -m json.tool
 
@@ -167,13 +173,16 @@ health:  ## Quick health check
 
 # ── Real-time Receivers ──────────────────────────────────────────────────
 
-.PHONY: webhook-gh webhook-azure
+.PHONY: webhook-gh webhook-azure watch-k8s
 
 webhook-gh:  ## Start GitHub webhook receiver (real-time CI failure ingestion)
 	python3 sources/gh_webhook_receiver.py --port $(GH_WEBHOOK_PORT)
 
 webhook-azure:  ## Start Azure Event Grid receiver (real-time resource mutations/health)
 	python3 sources/eventgrid_receiver.py
+
+watch-k8s:  ## Stream K8s events in real-time from configured cluster
+	python3 sources/k8s_source.py --watch
 
 # ── Dashboard ────────────────────────────────────────────────────────────
 

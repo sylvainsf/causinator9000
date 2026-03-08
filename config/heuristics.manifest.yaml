@@ -27,6 +27,7 @@ layers:
   - path: heuristics/physical-infra.yaml    # ToRSwitch, AvailabilityZone, PowerDomain
   - path: heuristics/applications.yaml      # Application, Environment
   - path: heuristics/ci-pipelines.yaml      # CIJob, Commit, FlakyTest, CIPlatform
+  - path: heuristics/kubernetes.yaml        # KubernetesNamespace, Container (K8s signals), AKSCluster
 
   # ── Private overrides ───────────────────────────────────────────────
   # Uncomment or add your own layers here.
