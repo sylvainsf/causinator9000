@@ -417,11 +417,13 @@ Click "Neighborhood" in the top bar or the "Show Neighborhood" button in the det
 
 ### Alert Groups
 
-When multiple alerts share a common root cause, the dashboard collapses them into **incident groups**. Instead of seeing 9 individual alert cards, you see 3 groups — one per root cause — with a count badge and expandable member list.
+When multiple alerts share a common root cause, the dashboard collapses them into **incident groups**. Instead of seeing 12 individual alert cards, you see 4 groups — one per root cause — with a count badge and expandable member list.
+
+The critical insight: **grouping is by root cause, not by signal type.** Two KeyVault rotations happening simultaneously both produce `AccessDenied_403` signals, but because they trace to different root causes (`kv-eastus-01` vs `kv-centralus-01`), they appear as two separate incident groups. A naive approach that groups by signal type would merge them into one group, hiding the fact that two independent incidents need two independent responses.
 
 ![Alert groups collapsed by shared root cause](docs/screenshots/alert-groups.png)
 
-*9 alerts from 3 simultaneous incidents collapse into 3 groups: a KeyVault secret rotation affecting 5 pods (AccessDenied_403), a CertAuthority rotation affecting 3 pods (TLSError), and a direct ImageUpdate crash (CrashLoopBackOff). Click a group to expand and see each individual alert card.*
+*12 alerts from 4 simultaneous incidents collapse into 4 groups. Two groups both show AccessDenied_403 — but they're separate incidents caused by different KeyVault rotations in different regions. The engine traces each alert to its own root cause rather than lumping same-signal alerts together. Click a group to expand individual alert cards.*
 
 To seed the alert groups demo:
 
