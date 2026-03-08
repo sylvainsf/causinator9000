@@ -14,7 +14,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use tower_http::services::ServeDir;
 
-use crate::solver::{GraphPayload, Mutation, Signal, SolverHandle};
+use crate::solver::{AlertGroup, GraphPayload, Mutation, Signal, SolverHandle};
 
 // ── State ────────────────────────────────────────────────────────────────
 
@@ -219,6 +219,16 @@ async fn get_alert_graph(
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
 }
 
+async fn get_alert_groups(
+    State(state): State<AppState>,
+) -> Result<Json<Vec<AlertGroup>>, (StatusCode, String)> {
+    state
+        .solver
+        .alert_groups()
+        .map(Json)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
+}
+
 async fn health(State(state): State<AppState>) -> Json<HealthResponse> {
     let (nodes, edges, mutations, signals) = state.solver.stats().unwrap_or((0, 0, 0, 0));
     Json(HealthResponse {
@@ -340,6 +350,7 @@ pub async fn serve(solver: SolverHandle, addr: &str) -> anyhow::Result<()> {
         .route("/api/graph/{island_id}", get(get_graph))
         .route("/api/neighborhood", get(get_neighborhood))
         .route("/api/alerts", get(get_alerts))
+        .route("/api/alert-groups", get(get_alert_groups))
         .route("/api/alert-graph", get(get_alert_graph))
         .route("/api/reload-cpts", post(post_reload_cpts))
         .route("/api/window", get(get_window).post(post_window))

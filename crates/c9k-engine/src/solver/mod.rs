@@ -238,6 +238,38 @@ pub struct Diagnosis {
     pub timestamp: DateTime<Utc>,
 }
 
+/// A group of alerts sharing the same root cause.
+/// Collapses N individual alerts into a single incident.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AlertGroup {
+    /// The shared root cause (e.g., "kv-eastus-01 (SecretRotation)")
+    pub root_cause: String,
+    /// Highest confidence score among all members
+    pub confidence: f64,
+    /// Number of affected nodes
+    pub count: usize,
+    /// All signal types observed across the group
+    pub signal_types: Vec<String>,
+    /// Causal path from root cause to affected nodes (from first member)
+    pub causal_path: Vec<String>,
+    /// Most recent signal timestamp in the group
+    pub latest_signal: String,
+    /// List of affected node IDs
+    pub affected_nodes: Vec<String>,
+    /// Full diagnosis details for each affected node
+    pub members: Vec<AlertMember>,
+}
+
+/// Individual alert within a group.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AlertMember {
+    pub node_id: String,
+    pub confidence: f64,
+    pub signal_types: Vec<String>,
+    pub signal_count: usize,
+    pub latest_signal: String,
+}
+
 // ── Blueprint (binary interchange format from transpiler) ────────────────
 
 /// Serializable representation of the full graph for blueprint.bin.
@@ -557,6 +589,105 @@ impl SolverHandle {
             .lock()
             .map_err(|e| anyhow::anyhow!("lock: {e}"))?;
         state.alerts()
+    }
+
+    /// Get alerts grouped by root cause. Each group contains:
+    /// - root_cause: the shared root cause ID
+    /// - confidence: the highest confidence in the group
+    /// - members: array of individual alert nodes with their details
+    /// - count: number of affected nodes
+    /// - signal_types: set of all signal types in the group
+    ///
+    /// Alerts with no root cause are grouped under "unknown".
+    pub fn alert_groups(&self) -> Result<Vec<AlertGroup>> {
+        let state = self.inner.lock().map_err(|e| anyhow::anyhow!("lock: {e}"))?;
+        let alerts = state.alerts()?;
+
+        // Group by root_cause
+        let mut groups: HashMap<String, Vec<serde_json::Value>> = HashMap::new();
+        for alert in alerts {
+            let rc = alert["root_cause"]
+                .as_str()
+                .unwrap_or("unknown")
+                .to_string();
+            groups.entry(rc).or_default().push(alert);
+        }
+
+        // Build typed AlertGroup objects
+        let mut result: Vec<AlertGroup> = groups
+            .into_iter()
+            .map(|(root_cause, members)| {
+                let count = members.len();
+                let max_confidence = members
+                    .iter()
+                    .map(|m| m["confidence"].as_f64().unwrap_or(0.0))
+                    .fold(0.0_f64, f64::max);
+
+                let signal_types: Vec<String> = {
+                    let mut set = std::collections::HashSet::new();
+                    for m in &members {
+                        if let Some(arr) = m["signal_types"].as_array() {
+                            for v in arr {
+                                if let Some(s) = v.as_str() { set.insert(s.to_string()); }
+                            }
+                        }
+                    }
+                    let mut v: Vec<String> = set.into_iter().collect();
+                    v.sort();
+                    v
+                };
+
+                let latest_signal = members
+                    .iter()
+                    .filter_map(|m| m["latest_signal"].as_str())
+                    .max()
+                    .unwrap_or("")
+                    .to_string();
+
+                let causal_path: Vec<String> = members
+                    .first()
+                    .and_then(|m| m["causal_path"].as_array())
+                    .map(|arr| arr.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect())
+                    .unwrap_or_default();
+
+                let affected_nodes: Vec<String> = members
+                    .iter()
+                    .filter_map(|m| m["node_id"].as_str().map(|s| s.to_string()))
+                    .collect();
+
+                let typed_members: Vec<AlertMember> = members
+                    .iter()
+                    .map(|m| AlertMember {
+                        node_id: m["node_id"].as_str().unwrap_or("").to_string(),
+                        confidence: m["confidence"].as_f64().unwrap_or(0.0),
+                        signal_types: m["signal_types"]
+                            .as_array()
+                            .map(|a| a.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect())
+                            .unwrap_or_default(),
+                        signal_count: m["signal_count"].as_u64().unwrap_or(0) as usize,
+                        latest_signal: m["latest_signal"].as_str().unwrap_or("").to_string(),
+                    })
+                    .collect();
+
+                AlertGroup {
+                    root_cause,
+                    confidence: max_confidence,
+                    count,
+                    signal_types,
+                    causal_path,
+                    latest_signal,
+                    affected_nodes,
+                    members: typed_members,
+                }
+            })
+            .collect();
+
+        // Sort by confidence descending
+        result.sort_by(|a, b| {
+            b.confidence.partial_cmp(&a.confidence).unwrap_or(std::cmp::Ordering::Equal)
+        });
+
+        Ok(result)
     }
 }
 

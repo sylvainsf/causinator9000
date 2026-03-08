@@ -63,6 +63,25 @@ body { font-family: -apple-system, 'Segoe UI', sans-serif;
 .card .ago { font-size:9px; color:var(--dim); margin-top:1px; }
 .no-alerts { color:var(--dim); text-align:center; padding:40px 10px; font-size:12px; line-height:1.6; }
 
+/* ── Alert Groups ── */
+.group { margin-bottom:8px; }
+.group-header { background:var(--bg); border:1px solid var(--border); border-radius:6px;
+  padding:8px 10px; cursor:pointer; transition:border-color .15s; }
+.group-header:hover { border-color:var(--accent); }
+.group-header.expanded { border-bottom-left-radius:0; border-bottom-right-radius:0; border-color:var(--accent); }
+.group-rc { font-size:12px; font-weight:600; color:var(--purple); display:flex; align-items:center; gap:6px; }
+.group-rc .badge { background:var(--red); color:#fff; font-size:9px; font-weight:700;
+  padding:1px 6px; border-radius:8px; min-width:18px; text-align:center; }
+.group-rc .badge.md { background:var(--orange); }
+.group-rc .badge.lo { background:var(--dim); }
+.group-sig { font-size:10px; color:var(--dim); margin-top:2px; }
+.group-expand { font-size:9px; color:var(--dim); float:right; }
+.group-members { border:1px solid var(--accent); border-top:none; border-radius:0 0 6px 6px;
+  padding:4px; background:var(--surface); }
+.group-members .card { margin-bottom:3px; padding:6px 8px; }
+.group-members .card .nid { font-size:11px; }
+.group-members .card .sig { font-size:9px; }
+
 /* ── Graph ── */
 .graph { grid-row:2; position:relative; }
 #cy { width:100%; height:100%; }
@@ -146,19 +165,11 @@ body { font-family: -apple-system, 'Segoe UI', sans-serif;
     <button class="sort-btn" id="sTime" onclick="setSort('time')">Time</button>
   </div>
   <div class="filter-bar">
-    <div class="filter-row">
-      <div>
-        <label>Node class</label>
-        <select id="filterClass" onchange="renderAlerts()">
-          <option value="">All classes</option>
-        </select>
-      </div>
-      <div>
-        <label>Signal type</label>
-        <select id="filterSignal" onchange="renderAlerts()">
-          <option value="">All signals</option>
-        </select>
-      </div>
+    <div>
+      <label>Signal type</label>
+      <select id="filterSignal" onchange="renderAlerts()">
+        <option value="">All signals</option>
+      </select>
     </div>
   </div>
   <div class="alerts-scroll" id="alertsList"></div>
@@ -195,7 +206,8 @@ body { font-family: -apple-system, 'Segoe UI', sans-serif;
 
 <script>
 const API = '';
-let cy = null, alerts = [], sortMode = 'confidence', view = 'alerts', selNode = null;
+let cy = null, alerts = [], alertGroups = [], sortMode = 'confidence', view = 'alerts', selNode = null;
+let expandedGroups = new Set();
 
 // ── Cytoscape styles ──
 const CY_STYLE = [
@@ -280,36 +292,19 @@ async function fetchHealth() {
 }
 
 async function fetchAlerts() {
+  try { alertGroups = await (await fetch(`${API}/api/alert-groups`)).json(); } catch(e) { alertGroups = []; }
   try { alerts = await (await fetch(`${API}/api/alerts`)).json(); } catch(e) { alerts = []; }
   updateFilterOptions();
   renderAlerts();
 }
 
 function updateFilterOptions() {
-  // Collect unique node classes and signal types from alerts
-  const classes = new Set();
   const sigTypes = new Set();
-  for (const a of alerts) {
-    // Extract class from node_id pattern or root_cause
-    const nid = a.node_id || '';
-    if (nid.startsWith('pod-')) classes.add('Container');
-    else if (nid.startsWith('vm-')) classes.add('VirtualMachine');
-    else if (nid.startsWith('gw-') || nid.startsWith('appgw-')) classes.add('Gateway');
-    else if (nid.startsWith('kv-')) classes.add('KeyVault');
-    else if (nid.startsWith('aks-')) classes.add('AKSCluster');
-    else if (nid.startsWith('mi-')) classes.add('ManagedIdentity');
-    else classes.add('Other');
-
-    if (Array.isArray(a.signal_types)) {
-      for (const st of a.signal_types) sigTypes.add(st);
+  for (const g of alertGroups) {
+    if (Array.isArray(g.signal_types)) {
+      for (const st of g.signal_types) sigTypes.add(st);
     }
   }
-
-  const selClass = document.getElementById('filterClass');
-  const curClass = selClass.value;
-  selClass.innerHTML = '<option value="">All classes</option>' +
-    [...classes].sort().map(c => `<option value="${c}"${c===curClass?' selected':''}>${c}</option>`).join('');
-
   const selSig = document.getElementById('filterSignal');
   const curSig = selSig.value;
   selSig.innerHTML = '<option value="">All signals</option>' +
@@ -368,53 +363,75 @@ async function loadNeighborhood(nodeId, depth) {
 // ── Alerts ──
 function renderAlerts() {
   const list = document.getElementById('alertsList');
-  const classFilter = document.getElementById('filterClass').value;
   const sigFilter = document.getElementById('filterSignal').value;
 
-  // Apply filters
-  let filtered = [...alerts];
-  if (classFilter) {
-    filtered = filtered.filter(a => {
-      const nid = a.node_id || '';
-      const nodeClass = nid.startsWith('pod-') ? 'Container' :
-        nid.startsWith('vm-') ? 'VirtualMachine' :
-        (nid.startsWith('gw-') || nid.startsWith('appgw-')) ? 'Gateway' :
-        nid.startsWith('kv-') ? 'KeyVault' :
-        nid.startsWith('aks-') ? 'AKSCluster' :
-        nid.startsWith('mi-') ? 'ManagedIdentity' : 'Other';
-      return nodeClass === classFilter;
-    });
-  }
-  if (sigFilter) {
-    filtered = filtered.filter(a =>
-      Array.isArray(a.signal_types) && a.signal_types.includes(sigFilter));
-  }
-
-  if (!filtered.length) {
-    const msg = alerts.length
-      ? 'No alerts match the current filters.'
-      : 'No active alerts.<br><br>Use the API to inject<br>mutations and signals.';
-    list.innerHTML = `<div class="no-alerts">${msg}</div>`;
+  if (!alertGroups.length) {
+    list.innerHTML = '<div class="no-alerts">No active alerts.<br><br>Inject mutations and signals<br>to see grouped incidents.</div>';
     return;
   }
 
-  filtered.sort(sortMode === 'confidence'
-    ? (a,b) => b.confidence - a.confidence
-    : (a,b) => new Date(b.latest_signal) - new Date(a.latest_signal));
+  // Filter groups by signal type
+  let groups = alertGroups;
+  if (sigFilter) {
+    groups = groups.filter(g => g.signal_types && g.signal_types.includes(sigFilter));
+  }
 
-  list.innerHTML = filtered.map(a => {
-    const p = (a.confidence*100).toFixed(1);
-    const cls = a.confidence>=.7?'hi':a.confidence>=.3?'md':'lo';
-    const types = Array.isArray(a.signal_types) ? [...a.signal_types].join(', ') : '';
-    const s = a.node_id===selNode?' sel':'';
-    return `<div class="card${s}" onclick="selectAlert('${a.node_id}')">
-      <div class="nid">${a.node_id}</div>
-      <div class="sig">${types} ×${a.signal_count}</div>
-      <div class="bar-row"><div class="bar"><div class="bar-fill ${cls}" style="width:${p}%"></div></div><span class="pct" style="color:var(--${cls==='hi'?'red':cls==='md'?'orange':'dim'})">${p}%</span></div>
-      ${a.root_cause?`<div class="rc">⤷ ${a.root_cause}</div>`:''}
-      <div class="ago">${timeAgo(a.latest_signal)}</div>
-    </div>`;
+  // Sort groups
+  if (sortMode === 'confidence') {
+    groups.sort((a,b) => b.confidence - a.confidence);
+  } else {
+    groups.sort((a,b) => (b.latest_signal||'').localeCompare(a.latest_signal||''));
+  }
+
+  if (!groups.length) {
+    list.innerHTML = '<div class="no-alerts">No groups match filters.</div>';
+    return;
+  }
+
+  list.innerHTML = groups.map(g => {
+    const p = (g.confidence*100).toFixed(1);
+    const cls = g.confidence>=.7?'hi':g.confidence>=.3?'md':'lo';
+    const expanded = expandedGroups.has(g.root_cause);
+    const sigStr = (g.signal_types||[]).join(', ');
+    const ago = timeAgo(g.latest_signal);
+
+    let html = `<div class="group">`;
+    html += `<div class="group-header${expanded?' expanded':''}" onclick="toggleGroup('${escHtml(g.root_cause)}')">`;
+    html += `<div class="group-rc"><span class="badge ${cls}">${g.count}</span> ${escHtml(g.root_cause)}</div>`;
+    html += `<div class="bar-row"><div class="bar"><div class="bar-fill ${cls}" style="width:${p}%"></div></div><span class="pct" style="color:var(--${cls==='hi'?'red':cls==='md'?'orange':'dim'})">${p}%</span></div>`;
+    html += `<div class="group-sig">${sigStr} · ${ago}<span class="group-expand">${expanded?'▾':'▸'} ${g.count} node${g.count>1?'s':''}</span></div>`;
+    html += `</div>`;
+
+    if (expanded && g.members) {
+      html += `<div class="group-members">`;
+      for (const m of g.members) {
+        const mp = (m.confidence*100).toFixed(1);
+        const mc = m.confidence>=.7?'hi':m.confidence>=.3?'md':'lo';
+        const mSig = (m.signal_types||[]).join(', ');
+        const sel = m.node_id===selNode?' sel':'';
+        html += `<div class="card${sel}" onclick="selectAlert('${m.node_id}')">
+          <div class="nid">${m.node_id}</div>
+          <div class="sig">${mSig} ×${m.signal_count}</div>
+          <div class="bar-row"><div class="bar"><div class="bar-fill ${mc}" style="width:${mp}%"></div></div><span class="pct" style="color:var(--${mc==='hi'?'red':mc==='md'?'orange':'dim'})">${mp}%</span></div>
+        </div>`;
+      }
+      html += `</div>`;
+    }
+
+    html += `</div>`;
+    return html;
   }).join('');
+}
+
+function escHtml(s) { return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+function toggleGroup(rootCause) {
+  if (expandedGroups.has(rootCause)) {
+    expandedGroups.delete(rootCause);
+  } else {
+    expandedGroups.add(rootCause);
+  }
+  renderAlerts();
 }
 
 function timeAgo(iso) {
