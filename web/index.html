@@ -595,35 +595,57 @@ function focusGraphOnGroup(rootCause) {
   if (group.causal_path) group.causal_path.forEach(id => memberIds.add(id));
   if (group.members) group.members.forEach(m => memberIds.add(m.node_id));
 
-  // Find matching nodes in the graph
+  // Find matching nodes — try exact match first, then partial match
   let seedNodes = cy.nodes().filter(n => memberIds.has(n.id()));
-
   if (seedNodes.length === 0) {
-    // No matching nodes found — don't hide anything
-    console.warn('focusGraphOnGroup: no matching nodes for', rootCause, memberIds);
-    return;
+    // Try partial match (node IDs might have cluster- prefix)
+    seedNodes = cy.nodes().filter(n => {
+      const nid = n.id();
+      for (const mid of memberIds) {
+        if (nid === mid || nid.endsWith(mid) || mid.endsWith(nid)) return true;
+      }
+      return false;
+    });
+  }
+  if (seedNodes.length === 0) return; // nothing to show
+
+  // BFS from seed nodes to find all connected nodes (ignoring compound parents)
+  const toShowIds = new Set();
+  const queue = [];
+  seedNodes.forEach(n => { toShowIds.add(n.id()); queue.push(n); });
+  while (queue.length > 0) {
+    const n = queue.shift();
+    n.neighborhood().nodes().forEach(nb => {
+      if (!toShowIds.has(nb.id()) && nb.data('class') !== 'cluster') {
+        toShowIds.add(nb.id());
+        queue.push(nb);
+      }
+    });
   }
 
-  // Get the full connected components containing these nodes
-  const toShow = cy.collection();
-  seedNodes.forEach(n => {
-    toShow.merge(n.component());
+  // Also include cluster parents of visible nodes
+  const toShow = cy.nodes().filter(n => toShowIds.has(n.id()));
+  toShow.forEach(n => {
+    const parent = n.parent();
+    if (parent.length) toShowIds.add(parent.id());
   });
+  const allToShow = cy.nodes().filter(n => toShowIds.has(n.id()));
+  const edgesToShow = cy.edges().filter(e =>
+    toShowIds.has(e.source().id()) && toShowIds.has(e.target().id()));
 
-  // Hide everything, show only the focused components
   cy.batch(() => {
     cy.elements().style('display', 'none');
-    toShow.style('display', 'element').style('opacity', 1);
+    allToShow.style('display', 'element').style('opacity', 1);
+    edgesToShow.style('display', 'element').style('opacity', 1);
   });
 
-  // Re-layout just the visible nodes and fit
-  const visible = toShow.nodes();
-  if (visible.length > 0) {
-    visible.layout({
+  // Re-layout visible nodes
+  if (allToShow.length > 0) {
+    allToShow.filter(n => n.data('class') !== 'cluster').layout({
       name: 'dagre', rankDir: 'TB', nodeSep: 60, rankSep: 80,
       fit: false, padding: 0,
     }).run();
-    cy.fit(visible, 60);
+    cy.fit(allToShow, 60);
   }
 }
 
