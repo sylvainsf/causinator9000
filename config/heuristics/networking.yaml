@@ -25,6 +25,11 @@
       table:
         - [0.80, 0.03]
         - [0.20, 0.97]
+    - mutation: PolicyEnforcement
+      signal: PolicyViolation
+      table:
+        - [0.95, 0.001]
+        - [0.05, 0.999]
 
 - class: SubnetGateway
   default_prior:
@@ -36,6 +41,11 @@
       table:
         - [0.75, 0.03]
         - [0.25, 0.97]
+    - mutation: PolicyEnforcement
+      signal: PolicyViolation
+      table:
+        - [0.95, 0.001]
+        - [0.05, 0.999]
 
 - class: NetworkInterface
   default_prior:

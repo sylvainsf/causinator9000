@@ -40,6 +40,11 @@
       table:
         - [0.88, 0.02]
         - [0.12, 0.98]
+    - mutation: PolicyEnforcement
+      signal: PolicyViolation
+      table:
+        - [0.95, 0.001]
+        - [0.05, 0.999]
 
 - class: MongoDatabase
   default_prior:

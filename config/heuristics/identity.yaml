@@ -38,6 +38,12 @@
       table:
         - [0.80, 0.02]
         - [0.20, 0.98]
+    # Policy enforcement on upstream deny policy → violation on this KV
+    - mutation: PolicyEnforcement
+      signal: PolicyViolation
+      table:
+        - [0.95, 0.001]
+        - [0.05, 0.999]
     - mutation: AccessPolicyChange
       signal: AuthTimeout
       table:
