@@ -62,6 +62,14 @@ ERROR_PATTERNS = [
      "BicepBuildError"),
     (r"Remote workflow failed",
      "RemoteWorkflowFailure"),
+    (r"Dependabot encountered an error",
+     "DependabotUpdateFailure"),
+    (r"No files were found with the provided path.*No artifacts",
+     "ArtifactUploadFailure"),
+    (r"Run make test|Run Unit Tests|unit tests",
+     "UnitTestFailure"),
+    (r"Generating tests for.*devcontainer|devcontainers",
+     "DevContainerTestFailure"),
     (r"Process completed with exit code",
      "TestFailure"),  # generic — tests are the most common non-specific failure
 ]
@@ -69,8 +77,9 @@ ERROR_PATTERNS = [
 # ── Failure attribution: is this a code problem or an infra problem? ─────
 
 INFRA_SIGNALS = {"AzureAuthFailure", "ImagePullError", "Timeout", "ImagePushError",
-                 "RemoteWorkflowFailure"}
-CODE_SIGNALS = {"TestFailure", "HelmChartError", "BicepBuildError", "ChecklistMissing"}
+                 "RemoteWorkflowFailure", "DependabotUpdateFailure", "ArtifactUploadFailure"}
+CODE_SIGNALS = {"TestFailure", "HelmChartError", "BicepBuildError", "ChecklistMissing",
+                "UnitTestFailure", "DevContainerTestFailure"}
 # TestFailure also gets a FlakyTest competing cause
 
 # ── Latent infrastructure nodes ──────────────────────────────────────────
