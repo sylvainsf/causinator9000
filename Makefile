@@ -157,6 +157,13 @@ islands:  ## Show causal islands (connected components with alerts)
 health:  ## Quick health check
 	@curl -sf $(ENGINE_URL)/api/health > /dev/null && echo "✓ Engine OK" || echo "✗ Engine not responding"
 
+# ── Real-time Receivers ──────────────────────────────────────────────────
+
+.PHONY: webhook-gh
+
+webhook-gh:  ## Start GitHub webhook receiver (real-time CI failure ingestion)
+	python3 sources/gh_webhook_receiver.py --port 8090
+
 # ── Dashboard ────────────────────────────────────────────────────────────
 
 .PHONY: open
