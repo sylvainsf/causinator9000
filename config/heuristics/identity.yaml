@@ -38,6 +38,17 @@
       table:
         - [0.80, 0.02]
         - [0.20, 0.98]
+    # Certificate rotation → TLS errors on downstream services
+    - mutation: CertificateRotation
+      signal: TLSError
+      table:
+        - [0.88, 0.02]
+        - [0.12, 0.98]
+    - mutation: CertificateRotation
+      signal: ConnectionTimeout
+      table:
+        - [0.60, 0.03]
+        - [0.40, 0.97]
     # Policy enforcement on upstream deny policy → violation on this KV
     - mutation: PolicyEnforcement
       signal: PolicyViolation
