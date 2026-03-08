@@ -438,7 +438,7 @@ python3 scripts/screenshot_data.py
 
 ### Temporal Window Control
 
-The temporal window (default: 30 minutes) controls how far back the solver looks for candidate mutations. Adjust it in real time using the input in the top bar — type a value in minutes and click "Set." The change takes effect immediately for all subsequent diagnoses.
+The temporal window (default: 24 hours) controls how far back the solver looks for candidate mutations. Adjust it in real time using the input in the top bar — type a value in minutes and click "Set." The change takes effect immediately for all subsequent diagnoses.
 
 ### Dashboard Seeding
 
@@ -471,7 +471,7 @@ All endpoints are available under both `/api/` and root paths.
 | `/api/signals` | POST | Inject a signal: `{"node_id": "...", "signal_type": "...", "severity": "..."}` |
 | `/api/clear` | POST | Clear all active mutations and signals |
 | `/api/reload-cpts` | POST | Hot-reload CPTs from disk without restart |
-| `/api/window` | GET/POST | Get or set temporal window in minutes (`{"minutes": 30}`) |
+| `/api/window` | GET/POST | Get or set temporal window in minutes (`{"minutes": 1440}`) |
 | `/api/memory` | GET | Solver memory info: node/edge/index counts |
 
 ### Example: Inject and Diagnose

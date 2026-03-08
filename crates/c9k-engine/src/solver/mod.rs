@@ -93,6 +93,19 @@ pub struct ClassHeuristic {
 pub struct PriorConfig {
     #[serde(rename = "P_failure")]
     pub p_failure: f64,
+    /// Half-life of temporal decay in minutes. Controls how quickly a
+    /// mutation's causal prior decays over time for this resource class.
+    ///
+    /// Fast classes (Container, ToRSwitch): 15-30 min — deploy issues show up immediately.
+    /// Medium classes (AKSCluster, Gateway): 60-120 min — propagation takes a while.
+    /// Slow classes (DNS, CertAuthority, KeyVault): 240-480 min — TTLs and rotation delays.
+    /// Storage classes (SqlDatabase, Disk): 120-240 min — cascading IO failures.
+    #[serde(default = "default_half_life")]
+    pub decay_half_life_minutes: f64,
+}
+
+fn default_half_life() -> f64 {
+    DEFAULT_HALF_LIFE_MINUTES
 }
 
 // ── Modular heuristics manifest ──────────────────────────────────────────
@@ -100,6 +113,10 @@ pub struct PriorConfig {
 /// Default background failure probability used when a new class is defined
 /// in an override layer without specifying `default_prior`.
 const DEFAULT_PRIOR_P_FAILURE: f64 = 0.005;
+
+/// Default temporal decay half-life in minutes.
+/// Used when a class doesn't specify `decay_half_life_minutes`.
+const DEFAULT_HALF_LIFE_MINUTES: f64 = 60.0;
 
 /// Manifest that lists heuristic layer files to load in order.
 /// Later layers override earlier ones with most-specific granularity.
@@ -163,6 +180,7 @@ fn merge_layer(heuristics: &mut HashMap<String, ClassHeuristic>, entries: Vec<La
                         class: entry.class,
                         default_prior: entry.default_prior.unwrap_or(PriorConfig {
                             p_failure: DEFAULT_PRIOR_P_FAILURE,
+                            decay_half_life_minutes: DEFAULT_HALF_LIFE_MINUTES,
                         }),
                         cpts: entry.cpts,
                     },
@@ -464,6 +482,82 @@ impl SolverHandle {
         Ok((state.graph.node_count(), edge_count))
     }
 
+    /// Merge a graph payload into the existing graph (additive, no clear).
+    /// New nodes are added; existing nodes are skipped (keep current).
+    /// New edges are added; duplicate edges are skipped.
+    /// Returns (total_nodes, total_edges, new_nodes, new_edges).
+    pub fn merge_graph(&self, payload: GraphPayload) -> Result<(usize, usize, usize, usize)> {
+        let mut state = self.inner.lock().map_err(|e| anyhow::anyhow!("lock: {e}"))?;
+
+        let mut new_nodes = 0;
+        for node in &payload.nodes {
+            if !state.node_index.contains_key(&node.id) {
+                state.add_node(node.clone());
+                new_nodes += 1;
+            }
+        }
+
+        // Build a set of existing edges for dedup
+        let existing_edges: std::collections::HashSet<(String, String, String)> = state
+            .graph
+            .edge_references()
+            .map(|e| {
+                let src = state.graph[e.source()].id.clone();
+                let tgt = state.graph[e.target()].id.clone();
+                let etype = format!("{:?}", e.weight().edge_type).to_lowercase();
+                (src, tgt, etype)
+            })
+            .collect();
+
+        let mut new_edges = 0;
+        for edge in &payload.edges {
+            let key = (
+                edge.source_id.clone(),
+                edge.target_id.clone(),
+                edge.edge_type.clone(),
+            );
+            if existing_edges.contains(&key) {
+                continue;
+            }
+            // Skip edges referencing unknown nodes
+            if !state.node_index.contains_key(&edge.source_id)
+                || !state.node_index.contains_key(&edge.target_id)
+            {
+                continue;
+            }
+            let edge_type = match edge.edge_type.as_str() {
+                "containment" => EdgeType::Containment,
+                "dependency" => EdgeType::Dependency,
+                "connection" => EdgeType::Connection,
+                _ => EdgeType::Dependency,
+            };
+            state.add_edge(
+                CausalEdge {
+                    id: edge.id.clone(),
+                    edge_type,
+                    properties: edge.properties.clone(),
+                },
+                &edge.source_id,
+                &edge.target_id,
+            )?;
+            new_edges += 1;
+        }
+
+        tracing::info!(
+            total_nodes = state.graph.node_count(),
+            total_edges = state.graph.edge_count(),
+            new_nodes,
+            new_edges,
+            "Graph merged from payload"
+        );
+        Ok((
+            state.graph.node_count(),
+            state.graph.edge_count(),
+            new_nodes,
+            new_edges,
+        ))
+    }
+
     /// Export the current graph as a structured `GraphPayload`.
     pub fn export_graph(&self) -> Result<GraphPayload> {
         let state = self.inner.lock().map_err(|e| anyhow::anyhow!("lock: {e}"))?;
@@ -702,7 +796,7 @@ struct SolverState {
     active_mutations: Vec<Mutation>,
     /// Active signals within the temporal window
     active_signals: Vec<Signal>,
-    /// Temporal window duration (default: 30 minutes)
+    /// Temporal window duration (default: 24 hours)
     temporal_window: chrono::Duration,
     /// Cached latest diagnoses (updated on each inference run)
     cached_diagnoses: HashMap<String, Diagnosis>,
@@ -718,7 +812,7 @@ impl SolverState {
             heuristics: HashMap::new(),
             active_mutations: Vec::new(),
             active_signals: Vec::new(),
-            temporal_window: chrono::Duration::minutes(30),
+            temporal_window: chrono::Duration::hours(24),
             cached_diagnoses: HashMap::new(),
             _checkpoint_path: Some("data/checkpoint.bin".to_string()),
         }
@@ -792,13 +886,16 @@ impl SolverState {
     /// Mutations near the edge of the temporal window get a lower prior,
     /// reflecting that older changes are less likely to be the immediate cause.
     ///
-    /// Decay curve: prior = 0.50 × e^(-λt) where t = gap in minutes, λ = decay rate.
-    /// At t=0:  prior = 0.50 (just happened — 50/50)
-    /// At t=15: prior ≈ 0.30 (15 min ago — still plausible)
-    /// At t=28: prior ≈ 0.10 (almost expired — unlikely but possible)
-    fn temporal_prior(mutation_ts: DateTime<Utc>, signal_ts: DateTime<Utc>) -> f64 {
+    /// Decay curve: prior = 0.50 × e^(-λt) where t = gap in minutes,
+    /// λ = ln(2) / half_life_minutes.
+    ///
+    /// The half-life is per-class:
+    ///   Container (15 min): at t=15min prior ≈ 0.25, at t=1h prior ≈ 0.03
+    ///   AKSCluster (60 min): at t=1h prior ≈ 0.25, at t=4h prior ≈ 0.03
+    ///   DNS (240 min):  at t=4h prior ≈ 0.25, at t=16h prior ≈ 0.03
+    fn temporal_prior(mutation_ts: DateTime<Utc>, signal_ts: DateTime<Utc>, half_life_minutes: f64) -> f64 {
         let gap_minutes = (signal_ts - mutation_ts).num_seconds().max(0) as f64 / 60.0;
-        let lambda = 0.055; // decay rate: half-life ≈ 12.6 minutes
+        let lambda = (2.0_f64).ln() / half_life_minutes;
         let base_prior = 0.50;
         base_prior * (-lambda * gap_minutes).exp()
     }
@@ -817,13 +914,14 @@ impl SolverState {
             None => return 0.0,
         };
 
-        // Compute temporal prior: recent mutations get 0.50, stale ones decay
+        // Compute temporal prior using the class-specific half-life
         let latest_signal_ts = signals_on_node
             .iter()
             .map(|s| s.timestamp)
             .max()
             .unwrap_or_else(Utc::now);
-        let causal_prior = Self::temporal_prior(mutation.timestamp, latest_signal_ts);
+        let half_life = heuristic.default_prior.decay_half_life_minutes;
+        let causal_prior = Self::temporal_prior(mutation.timestamp, latest_signal_ts, half_life);
 
         let mut combined_confidence = causal_prior;
         let mut any_match = false;
@@ -1987,7 +2085,7 @@ mod tests {
             "ToRSwitch".into(),
             ClassHeuristic {
                 class: "ToRSwitch".into(),
-                default_prior: PriorConfig { p_failure: 0.0008 },
+                default_prior: PriorConfig { p_failure: 0.0008, decay_half_life_minutes: DEFAULT_HALF_LIFE_MINUTES },
                 cpts: vec![CptEntry {
                     mutation: "FirmwareUpdate".into(),
                     signal: "heartbeat".into(),
@@ -1999,7 +2097,7 @@ mod tests {
             "VirtualMachine".into(),
             ClassHeuristic {
                 class: "VirtualMachine".into(),
-                default_prior: PriorConfig { p_failure: 0.002 },
+                default_prior: PriorConfig { p_failure: 0.002, decay_half_life_minutes: DEFAULT_HALF_LIFE_MINUTES },
                 cpts: vec![CptEntry {
                     mutation: "MaintenanceReboot".into(),
                     signal: "heartbeat".into(),
@@ -2011,7 +2109,7 @@ mod tests {
             "Container".into(),
             ClassHeuristic {
                 class: "Container".into(),
-                default_prior: PriorConfig { p_failure: 0.005 },
+                default_prior: PriorConfig { p_failure: 0.005, decay_half_life_minutes: DEFAULT_HALF_LIFE_MINUTES },
                 cpts: vec![CptEntry {
                     mutation: "ImageUpdate".into(),
                     signal: "CrashLoopBackOff".into(),
@@ -2125,35 +2223,55 @@ mod tests {
 
     #[test]
     fn test_temporal_prior_decay() {
-        // At t=0, prior should be 0.50
         let now = Utc::now();
-        let prior_0 = SolverState::temporal_prior(now, now);
+        let hl = 60.0; // 60-minute half-life for this test
+
+        // At t=0, prior should be 0.50
+        let prior_0 = SolverState::temporal_prior(now, now, hl);
         assert!(
             (prior_0 - 0.50).abs() < 0.01,
             "at t=0 prior should be 0.50, got {prior_0}"
         );
 
-        // At t=15min, prior should be ~0.22
-        let prior_15 = SolverState::temporal_prior(now - chrono::Duration::minutes(15), now);
+        // At t=1 half-life (60min), prior should be ~0.25
+        let prior_1hl = SolverState::temporal_prior(now - chrono::Duration::minutes(60), now, hl);
         assert!(
-            prior_15 < 0.30,
-            "at 15min prior should be < 0.30, got {prior_15}"
-        );
-        assert!(
-            prior_15 > 0.15,
-            "at 15min prior should be > 0.15, got {prior_15}"
+            (prior_1hl - 0.25).abs() < 0.02,
+            "at 1 half-life prior should be ~0.25, got {prior_1hl}"
         );
 
-        // At t=30min, prior should be very low
-        let prior_30 = SolverState::temporal_prior(now - chrono::Duration::minutes(30), now);
+        // At t=2 half-lives (120min), prior should be ~0.125
+        let prior_2hl = SolverState::temporal_prior(now - chrono::Duration::minutes(120), now, hl);
         assert!(
-            prior_30 < 0.15,
-            "at 30min prior should be < 0.15, got {prior_30}"
+            (prior_2hl - 0.125).abs() < 0.02,
+            "at 2 half-lives prior should be ~0.125, got {prior_2hl}"
+        );
+
+        // Different half-life: 15 min (fast, like Container class)
+        let fast_hl = 15.0;
+        let prior_fast_15 = SolverState::temporal_prior(now - chrono::Duration::minutes(15), now, fast_hl);
+        assert!(
+            (prior_fast_15 - 0.25).abs() < 0.02,
+            "fast class at 15min should be ~0.25, got {prior_fast_15}"
+        );
+
+        // Same 15 min gap but with slow half-life (240 min, like DNS)
+        let slow_hl = 240.0;
+        let prior_slow_15 = SolverState::temporal_prior(now - chrono::Duration::minutes(15), now, slow_hl);
+        assert!(
+            prior_slow_15 > 0.45,
+            "slow class at 15min should be >0.45, got {prior_slow_15}"
+        );
+
+        // Key test: same gap, different half-life → fast decays much more
+        assert!(
+            prior_slow_15 > prior_fast_15 * 1.5,
+            "slow class should retain much more prior than fast: {prior_slow_15} vs {prior_fast_15}"
         );
 
         // Decay is monotonic
-        assert!(prior_0 > prior_15, "prior should decay over time");
-        assert!(prior_15 > prior_30, "prior should decay over time");
+        assert!(prior_0 > prior_1hl, "prior should decay over time");
+        assert!(prior_1hl > prior_2hl, "prior should decay over time");
     }
 
     #[test]
@@ -2181,14 +2299,14 @@ mod tests {
         });
         let diag_fresh = state.diagnose("ctr-1").unwrap();
 
-        // Reset and use stale mutation (25 min ago)
+        // Reset and use stale mutation (8 hours ago)
         state.active_mutations.clear();
         state.active_mutations.push(Mutation {
             id: "m-stale".into(),
             node_id: "ctr-1".into(),
             mutation_type: "ImageUpdate".into(),
             source: "test".into(),
-            timestamp: now - chrono::Duration::minutes(25),
+            timestamp: now - chrono::Duration::hours(8),
             properties: serde_json::json!({}),
         });
         let diag_stale = state.diagnose("ctr-1").unwrap();
@@ -2387,7 +2505,7 @@ mod tests {
         let mut heuristics = HashMap::new();
         let entries = vec![LayerClassEntry {
             class: "Container".into(),
-            default_prior: Some(PriorConfig { p_failure: 0.005 }),
+            default_prior: Some(PriorConfig { p_failure: 0.005, decay_half_life_minutes: DEFAULT_HALF_LIFE_MINUTES }),
             cpts: vec![CptEntry {
                 mutation: "ImageUpdate".into(),
                 signal: "CrashLoopBackOff".into(),
@@ -2410,7 +2528,7 @@ mod tests {
             &mut heuristics,
             vec![LayerClassEntry {
                 class: "Container".into(),
-                default_prior: Some(PriorConfig { p_failure: 0.005 }),
+                default_prior: Some(PriorConfig { p_failure: 0.005, decay_half_life_minutes: DEFAULT_HALF_LIFE_MINUTES }),
                 cpts: vec![
                     CptEntry {
                         mutation: "ImageUpdate".into(),
@@ -2468,7 +2586,7 @@ mod tests {
             &mut heuristics,
             vec![LayerClassEntry {
                 class: "Redis".into(),
-                default_prior: Some(PriorConfig { p_failure: 0.002 }),
+                default_prior: Some(PriorConfig { p_failure: 0.002, decay_half_life_minutes: DEFAULT_HALF_LIFE_MINUTES }),
                 cpts: vec![],
             }],
         );
@@ -2477,7 +2595,7 @@ mod tests {
             &mut heuristics,
             vec![LayerClassEntry {
                 class: "Redis".into(),
-                default_prior: Some(PriorConfig { p_failure: 0.001 }),
+                default_prior: Some(PriorConfig { p_failure: 0.001, decay_half_life_minutes: DEFAULT_HALF_LIFE_MINUTES }),
                 cpts: vec![],
             }],
         );
@@ -2491,7 +2609,7 @@ mod tests {
             &mut heuristics,
             vec![LayerClassEntry {
                 class: "Container".into(),
-                default_prior: Some(PriorConfig { p_failure: 0.005 }),
+                default_prior: Some(PriorConfig { p_failure: 0.005, decay_half_life_minutes: DEFAULT_HALF_LIFE_MINUTES }),
                 cpts: vec![CptEntry {
                     mutation: "ImageUpdate".into(),
                     signal: "CrashLoopBackOff".into(),

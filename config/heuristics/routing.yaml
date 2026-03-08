@@ -9,6 +9,7 @@
 - class: LoadBalancer
   default_prior:
     P_failure: 0.001
+    decay_half_life_minutes: 60
   cpts:
     - mutation: RuleChange
       signal: BackendUnhealthy
@@ -24,6 +25,7 @@
 - class: Gateway
   default_prior:
     P_failure: 0.002
+    decay_half_life_minutes: 90
   cpts:
     - mutation: CertificateRotation
       signal: TLSError
@@ -39,6 +41,7 @@
 - class: HttpRoute
   default_prior:
     P_failure: 0.001
+    decay_half_life_minutes: 30
   cpts:
     - mutation: RouteChange
       signal: error_rate

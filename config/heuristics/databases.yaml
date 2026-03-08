@@ -8,6 +8,7 @@
 - class: SqlDatabase
   default_prior:
     P_failure: 0.002
+    decay_half_life_minutes: 120
   cpts:
     - mutation: SchemaMigration
       signal: query_error_rate
@@ -38,6 +39,7 @@
 - class: MongoDatabase
   default_prior:
     P_failure: 0.002
+    decay_half_life_minutes: 120
   cpts:
     - mutation: SchemaMigration
       signal: query_error_rate
@@ -53,6 +55,7 @@
 - class: RedisCache
   default_prior:
     P_failure: 0.002
+    decay_half_life_minutes: 30
   cpts:
     - mutation: SkuChange
       signal: ConnectionTimeout

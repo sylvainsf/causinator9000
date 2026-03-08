@@ -21,6 +21,7 @@ const TEST_HEURISTICS: &str = r#"
 - class: ToRSwitch
   default_prior:
     P_failure: 0.0008
+    decay_half_life_minutes: 15
   cpts:
     - mutation: FirmwareUpdate
       signal: heartbeat
@@ -31,6 +32,7 @@ const TEST_HEURISTICS: &str = r#"
 - class: VirtualMachine
   default_prior:
     P_failure: 0.002
+    decay_half_life_minutes: 60
   cpts:
     - mutation: MaintenanceReboot
       signal: heartbeat
@@ -41,6 +43,7 @@ const TEST_HEURISTICS: &str = r#"
 - class: Container
   default_prior:
     P_failure: 0.005
+    decay_half_life_minutes: 15
   cpts:
     - mutation: ImageUpdate
       signal: CrashLoopBackOff
@@ -56,6 +59,7 @@ const TEST_HEURISTICS: &str = r#"
 - class: ManagedIdentity
   default_prior:
     P_failure: 0.0005
+    decay_half_life_minutes: 240
   cpts:
     - mutation: SecretRotation
       signal: AccessDenied_403
@@ -66,6 +70,7 @@ const TEST_HEURISTICS: &str = r#"
 - class: KeyVault
   default_prior:
     P_failure: 0.001
+    decay_half_life_minutes: 480
   cpts:
     - mutation: SecretRotation
       signal: AccessDenied_403
@@ -389,7 +394,7 @@ fn golden_explaining_away() {
 // ── Test 5: Slow Poison ─────────────────────────────────────────────────
 //
 // Deployment at t=0, OOM signals at t=25min.
-// Should be within temporal window (30 min).
+// Should be within temporal window (24 hours).
 
 #[test]
 fn golden_slow_poison() {
@@ -424,7 +429,8 @@ fn golden_slow_poison() {
 // ── Test 6: Window Expiry ────────────────────────────────────────────────
 //
 // Deployment at t=-35min, signals now.
-// Deployment should be identified with very low confidence (outside 30-min window).
+// With Container half-life = 15min, at 35min the prior decays to ~0.10.
+// LR=25 → posterior ≈ 0.74. Should be noticeably less than a fresh mutation (0.96).
 
 #[test]
 fn golden_window_expiry() {
@@ -454,15 +460,13 @@ fn golden_window_expiry() {
         .unwrap();
 
     let diag = handle.diagnose("ctr-test-01").unwrap();
-    // With a 35-min old mutation and temporal decay, confidence should be
-    // significantly lower than a fresh mutation (golden_true_positive test).
-    // The exact threshold depends on the decay curve, but it should be noticeably reduced.
-    // At 35 min with λ=0.055: prior = 0.50 × e^(-0.055×35) ≈ 0.072
-    // LR = 25, so posterior ≈ 25×0.072/(1-0.072) / (1 + 25×0.072/(1-0.072)) ≈ ~0.66
-    // This is still above 0 because the mutation is in the active list, but
-    // confidence should be lower than a fresh mutation.
+    // With Container half-life=15min, at t=35min:
+    //   prior = 0.50 × 2^(-35/15) ≈ 0.10
+    //   LR = 0.75/0.03 = 25
+    //   posterior_odds = (0.10/0.90) × 25 = 2.78
+    //   posterior = 2.78/3.78 ≈ 0.74
     assert!(
-        diag.confidence < 0.9,
+        diag.confidence < 0.85,
         "Window expiry: stale mutation should have reduced confidence, got {:.4}",
         diag.confidence
     );

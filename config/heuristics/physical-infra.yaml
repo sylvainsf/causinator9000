@@ -10,6 +10,7 @@
 - class: ToRSwitch
   default_prior:
     P_failure: 0.0008
+    decay_half_life_minutes: 15
   cpts:
     - mutation: FirmwareUpdate
       signal: heartbeat
@@ -25,6 +26,7 @@
 - class: AvailabilityZone
   default_prior:
     P_failure: 0.0001
+    decay_half_life_minutes: 240
   cpts:
     - mutation: ZonalIncident
       signal: heartbeat
@@ -35,6 +37,7 @@
 - class: PowerDomain
   default_prior:
     P_failure: 0.00005
+    decay_half_life_minutes: 120
   cpts:
     - mutation: PowerEvent
       signal: heartbeat

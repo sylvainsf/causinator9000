@@ -314,6 +314,23 @@ async fn post_graph_load(
     })))
 }
 
+async fn post_graph_merge(
+    State(state): State<AppState>,
+    Json(payload): Json<GraphPayload>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    let (total_nodes, total_edges, new_nodes, new_edges) = state
+        .solver
+        .merge_graph(payload)
+        .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
+    Ok(Json(serde_json::json!({
+        "status": "merged",
+        "total_nodes": total_nodes,
+        "total_edges": total_edges,
+        "new_nodes": new_nodes,
+        "new_edges": new_edges,
+    })))
+}
+
 async fn get_graph_export(
     State(state): State<AppState>,
 ) -> Result<Json<GraphPayload>, (StatusCode, String)> {
@@ -355,6 +372,7 @@ pub async fn serve(solver: SolverHandle, addr: &str) -> anyhow::Result<()> {
         .route("/api/reload-cpts", post(post_reload_cpts))
         .route("/api/window", get(get_window).post(post_window))
         .route("/api/graph/load", post(post_graph_load))
+        .route("/api/graph/merge", post(post_graph_merge))
         .route("/api/graph/export", get(get_graph_export))
         .route("/api/memory", get(get_memory))
         // Allow large payloads for graph loading (up to 512MB)

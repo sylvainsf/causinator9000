@@ -8,6 +8,7 @@
 - class: Container
   default_prior:
     P_failure: 0.005
+    decay_half_life_minutes: 15
   cpts:
     - mutation: ImageUpdate
       signal: CrashLoopBackOff
@@ -53,6 +54,7 @@
 - class: ContainerRegistry
   default_prior:
     P_failure: 0.001
+    decay_half_life_minutes: 120
   cpts:
     - mutation: ImagePurge
       signal: ImagePullError
@@ -63,6 +65,7 @@
 - class: AKSCluster
   default_prior:
     P_failure: 0.003
+    decay_half_life_minutes: 90
   cpts:
     - mutation: KubernetesUpgrade
       signal: PodEviction

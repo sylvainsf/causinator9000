@@ -8,6 +8,7 @@
 - class: Application
   default_prior:
     P_failure: 0.003
+    decay_half_life_minutes: 30
   cpts:
     - mutation: Redeployment
       signal: error_rate
@@ -18,6 +19,7 @@
 - class: Environment
   default_prior:
     P_failure: 0.001
+    decay_half_life_minutes: 120
   cpts:
     - mutation: EnvironmentUpdate
       signal: error_rate

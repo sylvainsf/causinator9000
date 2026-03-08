@@ -149,7 +149,7 @@ body { font-family: -apple-system, 'Segoe UI', sans-serif;
   <span id="health-label"></span>
   <div class="window-ctrl">
     <label>Window:</label>
-    <input type="number" id="windowMin" value="30" min="1" max="1440">
+    <input type="number" id="windowMin" value="1440" min="1" max="10080">
     <label>min</label>
     <button onclick="setWindow()">Set</button>
   </div>
@@ -314,12 +314,12 @@ function updateFilterOptions() {
 async function fetchWindow() {
   try {
     const w = await (await fetch(`${API}/api/window`)).json();
-    document.getElementById('windowMin').value = w.temporal_window_minutes || 30;
+    document.getElementById('windowMin').value = w.temporal_window_minutes || 1440;
   } catch(e) {}
 }
 
 async function setWindow() {
-  const mins = parseInt(document.getElementById('windowMin').value) || 30;
+  const mins = parseInt(document.getElementById('windowMin').value) || 1440;
   try {
     await fetch(`${API}/api/window`, {
       method: 'POST',

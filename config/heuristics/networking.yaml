@@ -8,6 +8,7 @@
 - class: VirtualNetwork
   default_prior:
     P_failure: 0.0005
+    decay_half_life_minutes: 120
   cpts:
     - mutation: SubnetChange
       signal: ConnectionTimeout
@@ -23,6 +24,7 @@
 - class: SubnetGateway
   default_prior:
     P_failure: 0.001
+    decay_half_life_minutes: 120
   cpts:
     - mutation: GatewayRestart
       signal: ConnectionTimeout
@@ -33,6 +35,7 @@
 - class: NetworkInterface
   default_prior:
     P_failure: 0.001
+    decay_half_life_minutes: 30
   cpts:
     - mutation: IPChange
       signal: ConnectionTimeout
@@ -43,6 +46,7 @@
 - class: DNS
   default_prior:
     P_failure: 0.0003
+    decay_half_life_minutes: 360
   cpts:
     - mutation: RecordChange
       signal: ResolutionFailure

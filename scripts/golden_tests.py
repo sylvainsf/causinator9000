@@ -314,7 +314,7 @@ def test_explaining_away() -> TestResult:
 def test_slow_poison() -> TestResult:
     """
     Deployment at t=0, OOM signals at t=25min.
-    Should be within temporal window (30 min).
+    Should be within temporal window (24 hours).
     """
     result = TestResult("Slow Poison")
     clear_events()

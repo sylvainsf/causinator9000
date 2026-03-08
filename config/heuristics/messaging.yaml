@@ -8,6 +8,7 @@
 - class: MessageQueue
   default_prior:
     P_failure: 0.002
+    decay_half_life_minutes: 60
   cpts:
     - mutation: QueuePolicyChange
       signal: MessageBacklog

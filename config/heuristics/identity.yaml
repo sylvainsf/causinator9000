@@ -9,6 +9,7 @@
 - class: ManagedIdentity
   default_prior:
     P_failure: 0.0005
+    decay_half_life_minutes: 240
   cpts:
     - mutation: SecretRotation
       signal: AccessDenied_403
@@ -24,6 +25,7 @@
 - class: KeyVault
   default_prior:
     P_failure: 0.001
+    decay_half_life_minutes: 480
   cpts:
     - mutation: SecretRotation
       signal: AccessDenied_403
@@ -44,6 +46,7 @@
 - class: IdentityProvider
   default_prior:
     P_failure: 0.0005
+    decay_half_life_minutes: 360
   cpts:
     - mutation: PolicyChange
       signal: AccessDenied_403
@@ -54,6 +57,7 @@
 - class: CertAuthority
   default_prior:
     P_failure: 0.0002
+    decay_half_life_minutes: 480
   cpts:
     - mutation: CertificateRotation
       signal: TLSError
