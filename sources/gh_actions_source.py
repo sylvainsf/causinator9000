@@ -282,6 +282,9 @@ def process_failures(repo: str, runs: list[dict], engine: str,
         wf = run["workflowName"]
         branch = run.get("headBranch", "")
         event = run.get("event", "")
+        # Use actual event timestamps
+        run_created = run.get("createdAt", "")
+        run_updated = run.get("updatedAt", run_created)  # completion time
 
         # Get commit info (cached)
         if sha8 not in commit_cache:
@@ -357,11 +360,12 @@ def process_failures(repo: str, runs: list[dict], engine: str,
                     "source_id": latent, "target_id": jid,
                     "edge_type": "dependency", "properties": {},
                 })
-                # Signal on the job node (no mutation — we don't know what changed)
+                # Signal on the job node (timestamp = run completion time)
                 signals_to_send.append({
                     "node_id": jid,
                     "signal_type": signal_type,
                     "severity": "critical",
+                    "timestamp": run_updated,
                     "properties": {
                         "run_id": run_id, "job": job_name,
                         "failed_steps": job["failed_steps"],
@@ -384,11 +388,12 @@ def process_failures(repo: str, runs: list[dict], engine: str,
                             "event": event,
                         },
                     })
-                    # Mutation: the code change
+                    # Mutation: the code change (timestamp = run start time)
                     mutations_to_send.append({
                         "node_id": cid,
                         "mutation_type": mut_type,
                         "source": f"gh-actions/{repo}",
+                        "timestamp": run_created,
                         "properties": {
                             "sha": sha8, "branch": branch,
                             "author": commit_info.get("author", ""),
@@ -403,11 +408,12 @@ def process_failures(repo: str, runs: list[dict], engine: str,
                     "edge_type": "dependency", "properties": {},
                 })
 
-                # Signal on the job node
+                # Signal on the job node (timestamp = run completion time)
                 signals_to_send.append({
                     "node_id": jid,
                     "signal_type": signal_type,
                     "severity": "critical",
+                    "timestamp": run_updated,
                     "properties": {
                         "run_id": run_id, "job": job_name,
                         "failed_steps": job["failed_steps"],
@@ -429,6 +435,7 @@ def process_failures(repo: str, runs: list[dict], engine: str,
                         "node_id": "latent://flaky-tests",
                         "mutation_type": "FlakyTestRun",
                         "source": f"gh-actions/{repo}",
+                        "timestamp": run_created,
                         "properties": {"note": "Competing cause for test failures"},
                     })
 

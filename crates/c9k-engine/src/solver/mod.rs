@@ -1119,6 +1119,13 @@ impl SolverState {
             .copied()
             .collect();
 
+        // Use the latest signal timestamp as the event time for this diagnosis
+        let event_time = target_signals
+            .iter()
+            .map(|s| s.timestamp)
+            .max()
+            .unwrap_or(now);
+
         if candidate_mutations.is_empty() && target_signals.is_empty() {
             return Ok(Diagnosis {
                 target_node: node_id.to_string(),
@@ -1155,7 +1162,7 @@ impl SolverState {
                 root_cause: None,
                 causal_path: vec![],
                 competing_causes: vec![],
-                timestamp: now,
+                timestamp: event_time,
             });
         }
 
@@ -1227,7 +1234,7 @@ impl SolverState {
             root_cause,
             causal_path,
             competing_causes: competing,
-            timestamp: now,
+            timestamp: event_time,
         })
     }
 
