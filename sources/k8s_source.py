@@ -123,21 +123,16 @@ def ingest_snapshot(context: str, namespaces: list[str], aks_resource_id: str | 
     edges = []
     signals_to_send = []
 
-    # Cluster node
-    cid = cluster_node_id(cluster)
-    nodes.append({
-        "id": cid, "label": cluster, "class": "AKSCluster",
-        "region": "kubernetes", "rack_id": None,
-        "properties": {"source": "k8s", "context": context},
-    })
-
-    # Link to ARG AKS resource if provided
+    # Use the ARG resource ID as the cluster node if provided (merges with ARG node)
+    # Otherwise create a standalone K8s cluster node
     if aks_resource_id:
-        edges.append({
-            "id": f"edge-k8s-aks-{cluster[-20:]}",
-            "source_id": aks_resource_id.lower(),
-            "target_id": cid,
-            "edge_type": "containment", "properties": {},
+        cid = aks_resource_id.lower()
+    else:
+        cid = cluster_node_id(cluster)
+        nodes.append({
+            "id": cid, "label": cluster, "class": "AKSCluster",
+            "region": "kubernetes", "rack_id": None,
+            "properties": {"source": "k8s", "context": context},
         })
 
     ns_list = namespaces
