@@ -315,16 +315,80 @@ function makeCy(container, elements) {
     container,
     elements,
     style: CY_STYLE.concat(islandStyles),
-    layout: { name: 'preset' },  // we'll run layout manually
+    layout: { name: 'preset' },
     minZoom: 0.02, maxZoom: 10, wheelSensitivity: 0.3,
   });
-  // Run dagre layout then fit to viewport
-  cy.layout({
-    name: 'dagre', rankDir: 'TB', nodeSep: 40, rankSep: 60, padding: 20,
-    stop: function() { cy.fit(cy.elements(), 20); }
-  }).run();
+
+  layoutAllTrees();
+
   cy.on('tap', 'node', e => { if (e.target.data('class') !== 'cluster') selectNode(e.target.id()); });
   cy.on('tap', e => { if (e.target === cy) clearSel(); });
+}
+
+function layoutAllTrees() {
+  if (!cy || cy.nodes().length === 0) return;
+
+  // Find connected components
+  const components = [];
+  const visited = new Set();
+  cy.nodes().forEach(n => {
+    if (visited.has(n.id())) return;
+    const component = n.component();
+    component.nodes().forEach(cn => visited.add(cn.id()));
+    components.push(component);
+  });
+
+  if (components.length <= 1) {
+    // Single component — just dagre
+    cy.layout({
+      name: 'dagre', rankDir: 'TB', nodeSep: 50, rankSep: 70, padding: 30,
+      stop: () => cy.fit(50)
+    }).run();
+    return;
+  }
+
+  // Sort components: largest first
+  components.sort((a, b) => b.nodes().length - a.nodes().length);
+
+  // Layout each component with dagre independently
+  const boxes = [];
+  components.forEach((comp, i) => {
+    comp.layout({
+      name: 'dagre', rankDir: 'TB', nodeSep: 40, rankSep: 60,
+      fit: false, padding: 0,
+    }).run();
+
+    // Get bounding box of this component after layout
+    const bb = comp.nodes().boundingBox();
+    boxes.push({ comp, bb, w: bb.w + 80, h: bb.h + 80 });
+  });
+
+  // Tile components in a grid with generous spacing
+  const viewW = cy.width() || 1200;
+  const cols = Math.max(1, Math.ceil(Math.sqrt(components.length)));
+  const maxColW = Math.max(...boxes.map(b => b.w));
+  const gapX = Math.max(150, maxColW * 0.3);
+  const gapY = 120;
+
+  let curX = 0, curY = 0, colH = 0, col = 0;
+  boxes.forEach((box, i) => {
+    const dx = curX - box.bb.x1;
+    const dy = curY - box.bb.y1;
+    box.comp.nodes().shift({ x: dx, y: dy });
+
+    colH = Math.max(colH, box.h);
+    col++;
+    if (col >= cols) {
+      col = 0;
+      curX = 0;
+      curY += colH + gapY;
+      colH = 0;
+    } else {
+      curX += box.w + gapX;
+    }
+  });
+
+  cy.fit(50);
 }
 
 // ── Data ──
@@ -546,11 +610,14 @@ function focusGraphOnGroup(rootCause) {
   });
 
   // Re-layout just the visible nodes and fit
-  cy.layout({
-    name: 'dagre', rankDir: 'TB', nodeSep: 60, rankSep: 80, padding: 40,
-    fit: true,
-    stop: function() { cy.fit(neighborhood, 60); }
-  }).run();
+  const visible = cy.nodes().filter(n => n.style('display') === 'element');
+  if (visible.length > 0) {
+    visible.layout({
+      name: 'dagre', rankDir: 'TB', nodeSep: 60, rankSep: 80,
+      fit: false, padding: 0,
+    }).run();
+    cy.fit(visible, 60);
+  }
 }
 
 function timeAgo(iso) {
