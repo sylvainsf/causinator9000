@@ -13,7 +13,12 @@ path = "src/lib.rs"
 name = "c9k-load-test"
 path = "src/bin/load_test.rs"
 
+[[bin]]
+name = "c9k-scale-test"
+path = "src/bin/scale_test.rs"
+
 [dependencies]
+c9k-engine = { path = "../c9k-engine" }
 reqwest.workspace = true
 tokio.workspace = true
 serde.workspace = true

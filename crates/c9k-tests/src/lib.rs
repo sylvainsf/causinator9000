@@ -2,8 +2,10 @@
 
 //! Causinator 9000 Test Utilities — shared helpers for HTTP integration and load tests.
 //!
-//! This crate provides common HTTP client wrappers and test helpers
-//! for testing the Causinator 9000 engine's REST API.
+//! This crate provides common HTTP client wrappers, topology builders,
+//! and test helpers for testing the Causinator 9000 engine.
+
+pub mod topology;
 
 use anyhow::{Context, Result};
 use percent_encoding::{NON_ALPHANUMERIC, utf8_percent_encode};

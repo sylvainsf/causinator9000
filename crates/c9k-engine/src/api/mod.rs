@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 use axum::{
     Json, Router,
-    extract::{Path, Query, State},
+    extract::{DefaultBodyLimit, Path, Query, State},
     http::StatusCode,
     routing::{get, post},
 };
@@ -14,7 +14,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use tower_http::services::ServeDir;
 
-use crate::solver::{Mutation, Signal, SolverHandle};
+use crate::solver::{GraphPayload, Mutation, Signal, SolverHandle};
 
 // ── State ────────────────────────────────────────────────────────────────
 
@@ -289,6 +289,41 @@ async fn post_window(
     })))
 }
 
+async fn post_graph_load(
+    State(state): State<AppState>,
+    Json(payload): Json<GraphPayload>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    let (nodes, edges) = state
+        .solver
+        .load_graph(payload)
+        .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
+    Ok(Json(serde_json::json!({
+        "status": "loaded",
+        "nodes": nodes,
+        "edges": edges,
+    })))
+}
+
+async fn get_graph_export(
+    State(state): State<AppState>,
+) -> Result<Json<GraphPayload>, (StatusCode, String)> {
+    state
+        .solver
+        .export_graph()
+        .map(Json)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
+}
+
+async fn get_memory(
+    State(state): State<AppState>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    let info = state
+        .solver
+        .memory_info()
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    Ok(Json(serde_json::json!(info)))
+}
+
 // ── Router ───────────────────────────────────────────────────────────────
 
 pub async fn serve(solver: SolverHandle, addr: &str) -> anyhow::Result<()> {
@@ -308,6 +343,11 @@ pub async fn serve(solver: SolverHandle, addr: &str) -> anyhow::Result<()> {
         .route("/api/alert-graph", get(get_alert_graph))
         .route("/api/reload-cpts", post(post_reload_cpts))
         .route("/api/window", get(get_window).post(post_window))
+        .route("/api/graph/load", post(post_graph_load))
+        .route("/api/graph/export", get(get_graph_export))
+        .route("/api/memory", get(get_memory))
+        // Allow large payloads for graph loading (up to 512MB)
+        .layer(DefaultBodyLimit::max(512 * 1024 * 1024))
         // Legacy endpoints (backward compat)
         .route("/health", get(health))
         .route("/diagnosis", get(get_diagnosis))

@@ -265,6 +265,26 @@ pub struct SolverSnapshot {
     pub active_signals: Vec<Signal>,
 }
 
+/// Structured graph payload for loading/exporting via API.
+/// This is the primary format for programmatic graph management —
+/// no SQL, no files, just JSON in and out.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GraphPayload {
+    pub nodes: Vec<CausalNode>,
+    pub edges: Vec<BlueprintEdge>,
+}
+
+/// Memory usage info for diagnostics.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MemoryInfo {
+    pub nodes: usize,
+    pub edges: usize,
+    pub active_mutations: usize,
+    pub active_signals: usize,
+    pub node_index_entries: usize,
+    pub heuristic_classes: usize,
+}
+
 // ── Solver ───────────────────────────────────────────────────────────────
 
 /// Thread-safe handle to the solver for use from API/reaction handlers.
@@ -371,6 +391,86 @@ impl SolverHandle {
             .lock()
             .map_err(|e| anyhow::anyhow!("lock: {e}"))?;
         state.add_edge(edge, source_id, target_id)
+    }
+
+    /// Load a complete graph from structured data, replacing the current graph.
+    /// Accepts a `GraphPayload` with nodes and edges arrays.
+    pub fn load_graph(&self, payload: GraphPayload) -> Result<(usize, usize)> {
+        let mut state = self.inner.lock().map_err(|e| anyhow::anyhow!("lock: {e}"))?;
+        state.graph.clear();
+        state.node_index.clear();
+
+        for node in &payload.nodes {
+            state.add_node(node.clone());
+        }
+
+        let mut edge_count = 0;
+        for edge in &payload.edges {
+            let edge_type = match edge.edge_type.as_str() {
+                "containment" => EdgeType::Containment,
+                "dependency" => EdgeType::Dependency,
+                "connection" => EdgeType::Connection,
+                _ => EdgeType::Dependency,
+            };
+            state.add_edge(
+                CausalEdge {
+                    id: edge.id.clone(),
+                    edge_type,
+                    properties: edge.properties.clone(),
+                },
+                &edge.source_id,
+                &edge.target_id,
+            )?;
+            edge_count += 1;
+        }
+
+        tracing::info!(
+            nodes = state.graph.node_count(),
+            edges = edge_count,
+            "Graph loaded from payload"
+        );
+        Ok((state.graph.node_count(), edge_count))
+    }
+
+    /// Export the current graph as a structured `GraphPayload`.
+    pub fn export_graph(&self) -> Result<GraphPayload> {
+        let state = self.inner.lock().map_err(|e| anyhow::anyhow!("lock: {e}"))?;
+
+        let nodes: Vec<CausalNode> = state
+            .graph
+            .node_indices()
+            .map(|idx| state.graph[idx].clone())
+            .collect();
+
+        let edges: Vec<BlueprintEdge> = state
+            .graph
+            .edge_references()
+            .map(|e| {
+                let weight = e.weight();
+                BlueprintEdge {
+                    id: weight.id.clone(),
+                    source_id: state.graph[e.source()].id.clone(),
+                    target_id: state.graph[e.target()].id.clone(),
+                    edge_type: format!("{:?}", weight.edge_type).to_lowercase(),
+                    properties: weight.properties.clone(),
+                }
+            })
+            .collect();
+
+        Ok(GraphPayload { nodes, edges })
+    }
+
+    /// Get memory stats: node count, edge count, active mutations, active signals.
+    pub fn memory_info(&self) -> Result<MemoryInfo> {
+        let state = self.inner.lock().map_err(|e| anyhow::anyhow!("lock: {e}"))?;
+        Ok(MemoryInfo {
+            nodes: state.graph.node_count(),
+            edges: state.graph.edge_count(),
+            active_mutations: state.active_mutations.len(),
+            active_signals: state.active_signals.len(),
+            node_index_entries: state.node_index.len(),
+            heuristic_classes: state.heuristics.len(),
+        })
     }
 
     /// Load heuristics (CPTs) from a YAML string.

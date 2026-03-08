@@ -348,14 +348,17 @@ open http://localhost:8080/
 ### Stress Tests
 
 ```bash
-# Run all 4 stress tests (fan-out, concurrent, large-window, flood)
-python3 scripts/load_test.py
+# Rust-native stress tests (recommended — 10× faster than Python)
+cargo run --release --bin c9k-load-test
+cargo run --release --bin c9k-load-test -- --test fan --fan-pods 200
+cargo run --release --bin c9k-load-test -- --test concurrent --threads 64
 
-# Run a specific test
-python3 scripts/load_test.py --test fan
-python3 scripts/load_test.py --test concurrent
-python3 scripts/load_test.py --test window
-python3 scripts/load_test.py --test flood
+# Scale + memory test
+cargo run --release --bin c9k-scale-test
+cargo run --release --bin c9k-scale-test -- --preset multi-region
+
+# Legacy Python stress tests (still functional)
+python3 scripts/load_test.py
 ```
 
 ---
@@ -441,9 +444,14 @@ All endpoints are available under both `/api/` and root paths.
 | `/api/alert-graph` | GET | Cytoscape JSON of alert-affected subgraphs only |
 | `/api/neighborhood?node=<id>&depth=2` | GET | Cytoscape JSON of node's local subgraph |
 | `/api/graph/{island}` | GET | Full graph as Cytoscape JSON |
+| `/api/graph/load` | POST | Load a complete graph from JSON (`{"nodes": [...], "edges": [...]}`) |
+| `/api/graph/export` | GET | Export the current graph as structured JSON |
 | `/api/mutations` | POST | Inject a mutation: `{"node_id": "...", "mutation_type": "..."}` |
 | `/api/signals` | POST | Inject a signal: `{"node_id": "...", "signal_type": "...", "severity": "..."}` |
 | `/api/clear` | POST | Clear all active mutations and signals |
+| `/api/reload-cpts` | POST | Hot-reload CPTs from disk without restart |
+| `/api/window` | GET/POST | Get or set temporal window in minutes (`{"minutes": 30}`) |
+| `/api/memory` | GET | Solver memory info: node/edge/index counts |
 
 ### Example: Inject and Diagnose
 
@@ -618,28 +626,87 @@ causinator9000/
 │   │       ├── solver/ve.rs            # Variable elimination (available, not primary)
 │   │       ├── api/mod.rs              # REST + static file serving
 │   │       ├── drasi/mod.rs            # drasi-lib integration
+│   │       ├── lib.rs                  # Library re-exports for test crates
 │   │       └── checkpoint/mod.rs       # Bincode state persistence
-│   └── c9k-cli/                       # CLI binary
-│       └── src/main.rs
+│   ├── c9k-cli/                       # CLI binary (CPT management, diagnosis, graph ops)
+│   │   └── src/main.rs
+│   └── c9k-tests/                     # Rust test suite + load test binaries
+│       └── src/
+│           ├── lib.rs                  # Test client, latency stats
+│           ├── topology.rs             # Programmatic topology builder (any scale)
+│           └── bin/
+│               ├── load_test.rs        # 4-test stress suite (Rust, 44k qps)
+│               └── scale_test.rs       # Memory + latency scaling test
 ├── web/
 │   └── index.html                      # Cytoscape.js dashboard (zero-build)
-├── spec.md                             # Full engineering specification
-└── blog.md                             # "Why causation, not correlation" writeup
+└── docs/
+    └── screenshots/                    # Dashboard screenshots for README
 ```
 
 ## Performance
 
-| Metric | Value |
-|---|---|
-| Graph | 26,180 nodes / 52,110 edges |
-| Inference p50 | 1.2 ms |
-| Inference p95 | 1.6 ms |
-| Concurrent throughput | 2,186 queries/sec (8 threads) |
-| Fan-out (1 mutation → 100 diagnoses) | p95 = 2.5 ms |
-| Active window (20k events) | p95 = 1.0 ms |
-| Sustained flood (inject + diagnose) | p95 = 1.3 ms, 1,042 diag/s |
+### Inference Latency
 
-Inference is O(ancestors × active_mutations), not O(graph). Adding 16,000 nodes had zero measurable impact on latency.
+Inference is O(ancestors × active_mutations), not O(graph). Graph size affects memory and load time, but has **zero impact** on diagnosis speed.
+
+| Graph Scale | Nodes | Edges | p50 | p95 | RSS |
+|---|---|---|---|---|---|
+| Tiny (1 rack) | 203 | 425 | 0.15 ms | 0.23 ms | 35 MB |
+| Standard (10 regions) | 26,270 | 49,490 | 0.14 ms | 0.21 ms | 84 MB |
+| Azure Region (150 racks, 500 apps) | 45,167 | 61,155 | 0.13 ms | 0.23 ms | 190 MB |
+| **5 Azure Regions** | **225,835** | **305,775** | **0.15 ms** | **0.21 ms** | **611 MB** |
+
+Diagnosis latency stays at ~0.2 ms (200 microseconds) from 200 nodes to 225,000 nodes.
+
+### Stress Tests (Rust)
+
+```bash
+# All 4 stress tests
+cargo run --release --bin c9k-load-test
+
+# Scale test — progressive topology scaling with memory measurement
+cargo run --release --bin c9k-scale-test
+
+# Multi-region scale test (1-5 Azure production regions, up to 225k nodes)
+cargo run --release --bin c9k-scale-test -- --preset multi-region
+```
+
+| Test | Result |
+|---|---|
+| Fan-out (1 mutation → 200 pods) | p95 = 0.2 ms, all 200 traced to shared KeyVault |
+| Concurrent (64 threads × 1000 queries) | p95 = 1.7 ms, **44,168 qps** |
+| Large window (20k active events) | p95 = 0.4 ms |
+| Sustained flood (30s inject + diagnose) | p95 = 1.5 ms, 3,203 diag/s |
+| Memory scaling | ~2.7 KB/node — 225k nodes fits in 611 MB |
+
+### Topology Builder
+
+Generate realistic Azure infrastructure topologies at any scale — pure Rust, no SQL, no files:
+
+```rust
+use c9k_tests::topology::TopologyBuilder;
+
+// Standard POC (~26k nodes)
+let graph = TopologyBuilder::standard().build();
+
+// Single Azure production region (~45k nodes)
+let graph = TopologyBuilder::azure_region().build();
+
+// 5 Azure regions (~225k nodes)
+let graph = TopologyBuilder::azure_multi_region(5).build();
+
+// Custom
+let graph = TopologyBuilder::new()
+    .regions(3)
+    .racks_per_region(50)
+    .vms_per_rack(20)
+    .apps_per_region(200)
+    .pods_per_app(6)
+    .build();
+
+// Load directly via API
+client.post("/api/graph/load").json(&graph).send().await?;
+```
 
 ## License
 
