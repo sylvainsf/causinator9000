@@ -24,6 +24,16 @@
       table:
         - [0.55, 0.06]
         - [0.45, 0.94]
+    - mutation: BlockDeviceReadOnly
+      signal: HTTP_500
+      table:
+        - [0.92, 0.01]
+        - [0.08, 0.99]
+    - mutation: BlockDeviceReadOnly
+      signal: query_error_rate
+      table:
+        - [0.88, 0.02]
+        - [0.12, 0.98]
 
 - class: MongoDatabase
   default_prior:

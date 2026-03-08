@@ -34,6 +34,21 @@
       table:
         - [0.30, 0.02]
         - [0.70, 0.98]
+    - mutation: ImageUpdate
+      signal: HTTP_500
+      table:
+        - [0.70, 0.04]
+        - [0.30, 0.96]
+    - mutation: Deployment
+      signal: HTTP_500
+      table:
+        - [0.72, 0.03]
+        - [0.28, 0.97]
+    - mutation: Deployment
+      signal: CrashLoopBackOff
+      table:
+        - [0.68, 0.03]
+        - [0.32, 0.97]
 
 - class: ContainerRegistry
   default_prior:
@@ -64,3 +79,8 @@
       table:
         - [0.65, 0.04]
         - [0.35, 0.96]
+    - mutation: Deployment
+      signal: HTTP_500
+      table:
+        - [0.75, 0.03]
+        - [0.25, 0.97]

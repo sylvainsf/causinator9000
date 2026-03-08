@@ -417,13 +417,18 @@ Click "Neighborhood" in the top bar or the "Show Neighborhood" button in the det
 
 ### Alert Groups
 
-When multiple alerts share a common root cause, the dashboard collapses them into **incident groups**. Instead of seeing 12 individual alert cards, you see 4 groups — one per root cause — with a count badge and expandable member list.
+When multiple alerts share a common root cause, the dashboard collapses them into **incident groups** — one per root cause — with a count badge and expandable member list.
 
-The critical insight: **grouping is by root cause, not by signal type.** Two KeyVault rotations happening simultaneously both produce `AccessDenied_403` signals, but because they trace to different root causes (`kv-eastus-01` vs `kv-centralus-01`), they appear as two separate incident groups. A naive approach that groups by signal type would merge them into one group, hiding the fact that two independent incidents need two independent responses.
+The critical insight: **grouping is by root cause, not by signal type.** Consider two services on the same AKS cluster, both returning `HTTP_500` within a 5-minute window. Traditional monitoring sees "elevated 500s" and creates one big incident. The engine looks upstream and identifies two completely independent root causes:
+
+- **Group A** (4 pods): `ds-centralus-app015` — the managed disk backing app015's SQL database went read-only (`BlockDeviceReadOnly`). All pods querying that store start 500ing. → Storage team.
+- **Group B** (4 pods): `aks-centralus-app016` — a deployment pushed a new container image with a bug (`Deployment`). All pods restart with the bad code and 500. → Dev team rollback.
+
+Same symptom. Different causes. Different response teams. Naive signal-type grouping merges them into one incident, hiding the fact that two independent failures need two independent responses.
 
 ![Alert groups collapsed by shared root cause](docs/screenshots/alert-groups.png)
 
-*12 alerts from 4 simultaneous incidents collapse into 4 groups. Two groups both show AccessDenied_403 — but they're separate incidents caused by different KeyVault rotations in different regions. The engine traces each alert to its own root cause rather than lumping same-signal alerts together. Click a group to expand individual alert cards.*
+*8 HTTP_500 alerts from 2 simultaneous incidents, correctly separated into 2 groups. Both groups show the same signal type — the engine distinguishes them by tracing each pod's 500 upstream through the causal graph to find the actual root cause.*
 
 To seed the alert groups demo:
 
