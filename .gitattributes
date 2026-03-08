@@ -1,0 +1,3 @@
+# Tell GitHub linguist that scripts and source adapters are tooling, not the primary language
+scripts/* linguist-vendored
+sources/*.py linguist-vendored
