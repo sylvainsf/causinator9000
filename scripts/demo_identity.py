@@ -143,6 +143,7 @@ def main():
     mi_name = f"c9k-demo-identity"
     mi_rg = aks_rg or "c9k-demo"
     demo_uid = str(uuid.uuid4())[:8]
+    watchers = []  # background processes to clean up
 
     # ══════════════════════════════════════════════════════════════════
     banner("Act 1 — Deploy: Create managed identity + pod")
@@ -211,11 +212,27 @@ def main():
     post("reload-cpts", {})
 
     # Add the K8s topology
-    r = run(f"python3 sources/k8s_source.py --context {ctx} -n {ns}"
-            + (f" --aks-resource-id {aks_id}" if aks_id else ""))
+    run(f"python3 sources/k8s_source.py --context {ctx} -n {ns}"
+        + (f" --aks-resource-id {aks_id}" if aks_id else ""))
     print(f"  ✓ K8s topology ingested")
 
-    print("\n  Step 4: Waiting for pod to stabilize...")
+    print("\n  Step 4: Starting real-time watchers...")
+
+    # Start K8s event watcher in background
+    k8s_watcher = subprocess.Popen(
+        ["python3", "sources/k8s_source.py", "--context", ctx, "-n", ns, "--watch"],
+        stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+    watchers.append(k8s_watcher)
+    print("  ✓ K8s event watcher started (pid: %d)" % k8s_watcher.pid)
+
+    # Start Azure health poller in background (polls every 60s)
+    azure_poller = subprocess.Popen(
+        ["sh", "-c", f"while true; do python3 sources/azure_health_source.py --hours 1 2>/dev/null; sleep 60; done"],
+        stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+    watchers.append(azure_poller)
+    print("  ✓ Azure resource change poller started (pid: %d)" % azure_poller.pid)
+
+    print("\n  Step 5: Waiting for pod to stabilize...")
     for i in range(6):
         r = kubectl("get", "pod", "demo-app", "-n", ns, "-o",
                      "jsonpath={.status.phase}", context=ctx)
@@ -253,26 +270,29 @@ def main():
     pause("Press ENTER after the managed identity is deleted...")
 
     # ══════════════════════════════════════════════════════════════════
-    banner("Act 3 — Detect: Engine traces the failure")
+    banner("Act 3 — Detect: Watch the dashboard update in real-time")
     # ══════════════════════════════════════════════════════════════════
 
-    print("  Step 1: Checking pod status...")
+    print("  The K8s watcher and Azure poller are running.")
+    print("  Watch the dashboard — alerts should appear automatically.")
+    print()
+    print("  Step 1: Checking pod logs for auth errors...")
+    time.sleep(5)
+
     r = kubectl("logs", "demo-app", "-n", ns, "--tail=5", context=ctx)
     if r.returncode == 0:
         for line in r.stdout.strip().split("\n"):
             print(f"    {line}")
 
-    print("\n  Step 2: Ingesting Azure resource changes...")
-    run(f"python3 sources/azure_health_source.py --hours 1")
-    print("  ✓ ResourceChanges ingested")
-
-    print("\n  Step 3: Ingesting K8s cluster state...")
+    print("\n  Step 2: Refreshing K8s snapshot...")
     run(f"python3 sources/k8s_source.py --context {ctx} -n {ns}"
         + (f" --aks-resource-id {aks_id}" if aks_id else ""))
-    print("  ✓ K8s state ingested")
 
-    print("\n  Step 4: Checking results...")
-    time.sleep(2)
+    print("\n  Step 3: Triggering Azure resource change ingestion...")
+    run("python3 sources/azure_health_source.py --hours 1")
+
+    print("\n  Step 4: Waiting for engine to correlate...")
+    time.sleep(3)
 
     groups = get("alert-groups") or []
     print()
@@ -297,6 +317,14 @@ def main():
     # ══════════════════════════════════════════════════════════════════
 
     pause("Press ENTER to clean up demo resources...")
+
+    print("  Stopping watchers...")
+    for w in watchers:
+        w.terminate()
+        try:
+            w.wait(timeout=5)
+        except:
+            w.kill()
 
     kubectl("delete", "namespace", ns, context=ctx)
     run(f"az identity delete -n {mi_name} -g {mi_rg} 2>/dev/null", check=False)
