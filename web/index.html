@@ -90,6 +90,19 @@ body { font-family: -apple-system, 'Segoe UI', sans-serif;
 .island-pill:hover, .island-pill.active { opacity:1; font-weight:600; }
 .island-pill .dot { width:8px; height:8px; border-radius:50%; }
 .island-pill .alert-badge { background:#f85149; color:#fff; border-radius:8px; padding:0 5px; font-size:9px; font-weight:700; }
+.island-toggle { font-size:10px; color:var(--dim); cursor:pointer; margin-left:auto; display:flex; align-items:center; gap:3px; flex-shrink:0; }
+.island-toggle input { margin:0; cursor:pointer; }
+
+/* ── Low confidence group ── */
+.low-conf-group { border:1px solid var(--border); border-radius:6px; margin-top:6px; }
+.low-conf-header { display:flex; align-items:center; gap:6px; padding:6px 8px; cursor:pointer;
+  font-size:11px; color:var(--dim); }
+.low-conf-header:hover { color:var(--text); }
+.low-conf-header .count { background:var(--border); color:var(--dim); border-radius:8px;
+  padding:1px 6px; font-size:10px; font-weight:600; }
+.low-conf-body { border-top:1px solid var(--border); padding:4px; }
+.low-conf-body .group { opacity:0.7; }
+.low-conf-body .group:hover { opacity:1; }
 
 /* ── Graph ── */
 .graph { grid-row:2; position:relative; }
@@ -221,6 +234,8 @@ const API = '';
 let cy = null, alerts = [], alertGroups = [], sortMode = 'confidence', view = 'alerts', selNode = null;
 let expandedGroups = new Set();
 let islands = [], activeIsland = null;
+let showAlertIslandsOnly = true, lowConfExpanded = false;
+const LOW_CONF_THRESHOLD = 0.10;
 
 // Island color palette (distinct hues)
 const ISLAND_COLORS = [
@@ -420,39 +435,64 @@ function renderAlerts() {
     return;
   }
 
-  list.innerHTML = groups.map(g => {
-    const p = (g.confidence*100).toFixed(1);
-    const cls = g.confidence>=.7?'hi':g.confidence>=.3?'md':'lo';
-    const expanded = expandedGroups.has(g.root_cause);
-    const sigStr = (g.signal_types||[]).join(', ');
-    const ago = timeAgo(g.latest_signal);
+  // Split into high and low confidence
+  const hiGroups = groups.filter(g => g.confidence >= LOW_CONF_THRESHOLD);
+  const loGroups = groups.filter(g => g.confidence < LOW_CONF_THRESHOLD);
 
-    let html = `<div class="group">`;
-    html += `<div class="group-header${expanded?' expanded':''}" onclick="toggleGroup('${escHtml(g.root_cause)}')">`;
-    html += `<div class="group-rc"><span class="badge ${cls}">${g.count}</span> ${escHtml(g.root_cause)}</div>`;
-    html += `<div class="bar-row"><div class="bar"><div class="bar-fill ${cls}" style="width:${p}%"></div></div><span class="pct" style="color:var(--${cls==='hi'?'red':cls==='md'?'orange':'dim'})">${p}%</span></div>`;
-    html += `<div class="group-sig">${sigStr} · ${ago}<span class="group-expand">${expanded?'▾':'▸'} ${g.count} node${g.count>1?'s':''}</span></div>`;
+  let html = hiGroups.map(g => renderGroupCard(g)).join('');
+
+  // Collapse low-confidence groups into an expandable summary
+  if (loGroups.length > 0) {
+    const totalLoAlerts = loGroups.reduce((s, g) => s + g.count, 0);
+    html += `<div class="low-conf-group">`;
+    html += `<div class="low-conf-header" onclick="lowConfExpanded=!lowConfExpanded;renderAlerts()">`;
+    html += `<span>${lowConfExpanded ? '▾' : '▸'}</span>`;
+    html += `<span class="count">${loGroups.length}</span>`;
+    html += `Low confidence (&lt;${(LOW_CONF_THRESHOLD*100).toFixed(0)}%) · ${totalLoAlerts} alert${totalLoAlerts>1?'s':''}`;
     html += `</div>`;
-
-    if (expanded && g.members) {
-      html += `<div class="group-members">`;
-      for (const m of g.members) {
-        const mp = (m.confidence*100).toFixed(1);
-        const mc = m.confidence>=.7?'hi':m.confidence>=.3?'md':'lo';
-        const mSig = (m.signal_types||[]).join(', ');
-        const sel = m.node_id===selNode?' sel':'';
-        html += `<div class="card${sel}" onclick="selectAlert('${m.node_id}')">
-          <div class="nid">${m.node_id}</div>
-          <div class="sig">${mSig} ×${m.signal_count}</div>
-          <div class="bar-row"><div class="bar"><div class="bar-fill ${mc}" style="width:${mp}%"></div></div><span class="pct" style="color:var(--${mc==='hi'?'red':mc==='md'?'orange':'dim'})">${mp}%</span></div>
-        </div>`;
-      }
+    if (lowConfExpanded) {
+      html += `<div class="low-conf-body">`;
+      html += loGroups.map(g => renderGroupCard(g)).join('');
       html += `</div>`;
     }
-
     html += `</div>`;
-    return html;
-  }).join('');
+  }
+
+  list.innerHTML = html;
+}
+
+function renderGroupCard(g) {
+  const p = (g.confidence*100).toFixed(1);
+  const cls = g.confidence>=.7?'hi':g.confidence>=.3?'md':'lo';
+  const expanded = expandedGroups.has(g.root_cause);
+  const sigStr = (g.signal_types||[]).join(', ');
+  const ago = timeAgo(g.latest_signal);
+
+  let html = `<div class="group">`;
+  html += `<div class="group-header${expanded?' expanded':''}" onclick="toggleGroup('${escHtml(g.root_cause)}')">`;
+  html += `<div class="group-rc"><span class="badge ${cls}">${g.count}</span> ${escHtml(g.root_cause)}</div>`;
+  html += `<div class="bar-row"><div class="bar"><div class="bar-fill ${cls}" style="width:${p}%"></div></div><span class="pct" style="color:var(--${cls==='hi'?'red':cls==='md'?'orange':'dim'})">${p}%</span></div>`;
+  html += `<div class="group-sig">${sigStr} · ${ago}<span class="group-expand">${expanded?'▾':'▸'} ${g.count} node${g.count>1?'s':''}</span></div>`;
+  html += `</div>`;
+
+  if (expanded && g.members) {
+    html += `<div class="group-members">`;
+    for (const m of g.members) {
+      const mp = (m.confidence*100).toFixed(1);
+      const mc = m.confidence>=.7?'hi':m.confidence>=.3?'md':'lo';
+      const mSig = (m.signal_types||[]).join(', ');
+      const sel = m.node_id===selNode?' sel':'';
+      html += `<div class="card${sel}" onclick="selectAlert('${m.node_id}')">
+        <div class="nid">${m.node_id}</div>
+        <div class="sig">${mSig} ×${m.signal_count}</div>
+        <div class="bar-row"><div class="bar"><div class="bar-fill ${mc}" style="width:${mp}%"></div></div><span class="pct" style="color:var(--${mc==='hi'?'red':mc==='md'?'orange':'dim'})">${mp}%</span></div>
+      </div>`;
+    }
+    html += `</div>`;
+  }
+
+  html += `</div>`;
+  return html;
 }
 
 function escHtml(s) { return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
@@ -563,43 +603,53 @@ function renderIslandBar() {
   bar.innerHTML = '<label>Islands:</label>';
   if (!islands.length) return;
 
-  // Only show islands with alerts first, then top by size — max 8 pills
+  // Filter: only islands with alerts/signals, or all significant ones
   const withAlerts = islands.filter(i => i.alerts > 0 || i.signals > 0);
-  const bigOnes = islands.filter(i => i.alerts === 0 && i.signals === 0 && i.node_count > 5)
-    .sort((a,b) => b.node_count - a.node_count)
-    .slice(0, Math.max(0, 8 - withAlerts.length));
-  const shown = [...withAlerts, ...bigOnes];
+  let shown;
+  if (showAlertIslandsOnly) {
+    shown = withAlerts;
+  } else {
+    const bigOnes = islands.filter(i => i.alerts === 0 && i.signals === 0 && i.node_count > 5)
+      .sort((a,b) => b.node_count - a.node_count)
+      .slice(0, Math.max(0, 8 - withAlerts.length));
+    shown = [...withAlerts, ...bigOnes];
+  }
 
-  if (!shown.length) {
+  if (!shown.length && showAlertIslandsOnly) {
     bar.innerHTML += `<span style="font-size:10px;color:var(--dim)">${islands.length} islands, no alerts</span>`;
-    return;
+  } else {
+    for (const isl of shown) {
+      const id = isl.island_id;
+      const color = ISLAND_COLORS[id % ISLAND_COLORS.length];
+      const active = activeIsland === id;
+      const alertBadge = isl.alerts > 0 ? `<span class="alert-badge">${isl.alerts}</span>` : '';
+      const sigBadge = isl.signals > 0 && isl.alerts === 0 ? `<span class="alert-badge" style="background:var(--orange)">${isl.signals}</span>` : '';
+      const label = isl.representative?.label || `Island ${id}`;
+      const shortLabel = label.length > 20 ? label.slice(0, 17) + '…' : label;
+      const pill = document.createElement('div');
+      pill.className = `island-pill${active ? ' active' : ''}`;
+      pill.style.borderColor = color;
+      pill.style.color = active ? '#fff' : color;
+      pill.style.background = active ? color + '22' : 'transparent';
+      pill.innerHTML = `<span class="dot" style="background:${color}"></span>${isl.node_count}${alertBadge}${sigBadge}`;
+      pill.title = `${shortLabel}\n${isl.node_count} nodes, ${isl.classes.slice(0,5).join(', ')}\n${isl.alerts} alerts, ${isl.signals} signals, ${isl.mutations} mutations`;
+      pill.onclick = () => focusIsland(id);
+      bar.appendChild(pill);
+    }
+
+    if (islands.length > shown.length) {
+      const more = document.createElement('span');
+      more.style.cssText = 'font-size:9px;color:var(--dim);padding:2px 4px';
+      more.textContent = `+${islands.length - shown.length}`;
+      bar.appendChild(more);
+    }
   }
 
-  for (const isl of shown) {
-    const id = isl.island_id;
-    const color = ISLAND_COLORS[id % ISLAND_COLORS.length];
-    const active = activeIsland === id;
-    const alertBadge = isl.alerts > 0 ? `<span class="alert-badge">${isl.alerts}</span>` : '';
-    const sigBadge = isl.signals > 0 && isl.alerts === 0 ? `<span class="alert-badge" style="background:var(--orange)">${isl.signals}</span>` : '';
-    const label = isl.representative?.label || `Island ${id}`;
-    const shortLabel = label.length > 20 ? label.slice(0, 17) + '…' : label;
-    const pill = document.createElement('div');
-    pill.className = `island-pill${active ? ' active' : ''}`;
-    pill.style.borderColor = color;
-    pill.style.color = active ? '#fff' : color;
-    pill.style.background = active ? color + '22' : 'transparent';
-    pill.innerHTML = `<span class="dot" style="background:${color}"></span>${isl.node_count}${alertBadge}${sigBadge}`;
-    pill.title = `${shortLabel}\n${isl.node_count} nodes, ${isl.classes.slice(0,5).join(', ')}\n${isl.alerts} alerts, ${isl.signals} signals, ${isl.mutations} mutations`;
-    pill.onclick = () => focusIsland(id);
-    bar.appendChild(pill);
-  }
-
-  if (islands.length > shown.length) {
-    const more = document.createElement('span');
-    more.style.cssText = 'font-size:9px;color:var(--dim);padding:2px 4px';
-    more.textContent = `+${islands.length - shown.length}`;
-    bar.appendChild(more);
-  }
+  // Toggle: show all vs alerts-only
+  const toggle = document.createElement('label');
+  toggle.className = 'island-toggle';
+  toggle.innerHTML = `<input type="checkbox" ${showAlertIslandsOnly ? 'checked' : ''} onchange="showAlertIslandsOnly=this.checked;renderIslandBar()"> alerts only`;
+  bar.appendChild(toggle);
 }
 
 function focusIsland(islandId) {
