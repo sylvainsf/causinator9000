@@ -14,7 +14,7 @@ Thanks for your interest in contributing! The Causinator 9000 is a reactive caus
 
 ### 1. CPTs for Common Infrastructure
 
-The solver is only as good as its Conditional Probability Tables. We ship CPTs for 22 resource classes, but real-world infrastructure has hundreds of mutation→signal relationships that we haven't encoded yet.
+The solver is only as good as its Conditional Probability Tables. We ship CPTs for **30 resource classes** across 12 YAML files (see [CPT reference](docs/cpts.md)), but real-world infrastructure has hundreds of mutation→signal relationships that we haven't encoded yet.
 
 **What we need:**
 
@@ -48,18 +48,35 @@ You can also contribute CPTs as a new layer file — just add it to `config/heur
 - If you're unsure about exact values, submit what you have — a rough CPT is better than no CPT
 - Add a test case to `scripts/demo.py` or `scripts/golden_tests.py` that exercises your new CPT
 
-### 2. Graph Creation & Update
+### 2. Cloud Provider Source Adapters
 
-The current graph is either built from a Radius ARM template via LLM prompt or generated synthetically. We need more ways to build and maintain the causal graph.
+We have comprehensive Azure support via `sources/arg_source.py` (topology), `sources/azure_health_source.py` (mutations + signals), and `sources/azure_policy_source.py` (deny policies). **We need equivalent coverage for AWS and GCP.**
+
+**AWS support (highest priority):**
+
+We don't have an AWS topology source yet. The equivalent of our ARG adapter would query:
+- **AWS Config** — resource inventory + relationships (like ARG's Resources table)
+- **AWS CloudTrail** — API-level mutations (like ARM ResourceChanges)
+- **AWS Health** — degradation signals (like Azure Resource Health)
+- **AWS Service Control Policies** — deny policies (like Azure Policy)
+
+A `sources/aws_source.py` that uses `boto3` or `aws` CLI to extract EC2 instances, RDS databases, EKS clusters, Lambda functions, S3 buckets, VPCs, subnets, security groups, ALBs, and their dependency edges would immediately make the engine useful for AWS-native teams.
 
 **What we need:**
+- `sources/aws_config_source.py` — topology from AWS Config (nodes + edges)
+- `sources/aws_cloudtrail_source.py` — mutations from CloudTrail events
+- `sources/aws_health_source.py` — signals from AWS Health events
+- CPTs for AWS resource types: EC2, RDS, EKS, Lambda, S3, ALB, NLB, Route53, CloudFront, ElastiCache, SQS, SNS, DynamoDB
 
-- **Cloud provider importers** — scripts or tools that query AWS (CloudFormation/CDK), GCP (Deployment Manager/Config Connector), or Azure (ARM/Bicep) and produce the `nodes`/`edges` SQL
-- **Terraform graph import** — Terraform's state file contains the dependency graph; a transpiler that reads `terraform show -json` output would cover a huge number of use cases
-- **Kubernetes topology discovery** — watch the K8s API for Deployments, Services, Ingress, NetworkPolicy and build the graph live
-- **LLM prompt improvements** — the transpiler prompt (`prompts/transpiler.md`) can always be sharper. Better latent node inference, better edge direction reasoning, better handling of edge cases
-- **Automated graph updates** — currently the graph is static. We need a mechanism to watch for topology changes (new deployments, removed resources, changed dependencies) and update the graph incrementally via the Drasi CDC pipeline
-- **Graph diffing** — detect when the real infrastructure has drifted from the graph model and surface the gaps
+**GCP support:**
+- `sources/gcp_asset_source.py` — topology from Cloud Asset Inventory
+- `sources/gcp_audit_source.py` — mutations from Cloud Audit Logs
+- CPTs for GCP resource types: GCE, GKE, Cloud SQL, Cloud Run, GCS, Cloud Functions
+
+**Other graph sources:**
+- **Kubernetes topology discovery** — already built (`sources/k8s_source.py`), but could be expanded with service mesh topology (Istio, Linkerd)
+- **Terraform graph import** — already built (`sources/terraform_source.py`), works for any provider
+- **Pulumi** — state file import similar to Terraform
 
 ### 3. Drasi Sources for Observability Platforms
 
