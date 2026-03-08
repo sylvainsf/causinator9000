@@ -4,7 +4,7 @@
 
 Given a dependency graph, deployment **mutations** (changes to infrastructure), and degradation **signals** (observed symptoms), the Causinator 9000 computes the probability that each recent change caused the observed symptoms and traces the causal path through the dependency DAG (directed acyclic graph).
 
-Built in Rust. Sub-2ms inference on a 26,000-node graph. Zero external dependencies beyond PostgreSQL.
+Built in Rust. Sub-200µs inference at p95 on a 225,000-node graph. Zero external dependencies beyond PostgreSQL.
 
 ## Table of Contents
 
