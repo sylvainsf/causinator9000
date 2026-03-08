@@ -6,9 +6,14 @@
 # CPT table format: [[P(signal_high|mutation), P(signal_high|no_mutation)],
 #                     [P(signal_low|mutation),  P(signal_low|no_mutation)]]
 
+# P_failure calibrated from per-node empirical data:
+#   Load Balancer: health probe flaps ~0.01%/hr → 0.0001
+#   App Gateway: backend health + cert issues ~0.03%/hr → 0.0003
+#   HttpRoute: config-dependent → 0.0001
+
 - class: LoadBalancer
   default_prior:
-    P_failure: 0.001
+    P_failure: 0.0001
     decay_half_life_minutes: 60
   cpts:
     - mutation: RuleChange
@@ -24,7 +29,7 @@
 
 - class: Gateway
   default_prior:
-    P_failure: 0.002
+    P_failure: 0.0003
     decay_half_life_minutes: 90
   cpts:
     - mutation: CertificateRotation
@@ -40,7 +45,7 @@
 
 - class: HttpRoute
   default_prior:
-    P_failure: 0.001
+    P_failure: 0.0001
     decay_half_life_minutes: 30
   cpts:
     - mutation: RouteChange

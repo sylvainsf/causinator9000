@@ -5,9 +5,13 @@
 # CPT table format: [[P(signal_high|mutation), P(signal_high|no_mutation)],
 #                     [P(signal_low|mutation),  P(signal_low|no_mutation)]]
 
+# P_failure: application-level per-instance failures
+#   App: ~1-5% daily error spikes in production → ~0.001/hr
+#   Environment: less frequent → ~0.0002/hr
+
 - class: Application
   default_prior:
-    P_failure: 0.003
+    P_failure: 0.001
     decay_half_life_minutes: 30
   cpts:
     - mutation: Redeployment
@@ -18,7 +22,7 @@
 
 - class: Environment
   default_prior:
-    P_failure: 0.001
+    P_failure: 0.0002
     decay_half_life_minutes: 120
   cpts:
     - mutation: EnvironmentUpdate

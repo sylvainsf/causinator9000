@@ -92,7 +92,13 @@ ingest-gh-dry:  ## Dry run — show what would be ingested without sending to en
 		--hours $(GH_HOURS) \
 		--dry-run
 
-ingest-all: ingest-arg ingest-gh  ## Full ingestion: Azure topology + GH Actions failures
+ingest-all: ingest-arg ingest-azure-health ingest-gh  ## Full ingestion: Azure topology + health/changes + GH Actions
+
+ingest-azure-health:  ## Ingest Azure Resource Health signals + Resource Changes mutations
+	python3 sources/azure_health_source.py --hours $(GH_HOURS)
+
+ingest-azure-health-dry:  ## Dry run — show Azure health signals and resource changes
+	python3 sources/azure_health_source.py --hours $(GH_HOURS) --dry-run
 
 clear:  ## Clear all mutations and signals (keeps graph)
 	curl -s -X POST $(ENGINE_URL)/api/clear -H 'Content-Type: application/json' -d '{}' | python3 -m json.tool

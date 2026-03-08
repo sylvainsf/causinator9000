@@ -7,9 +7,14 @@
 # CPT table format: [[P(signal_high|mutation), P(signal_high|no_mutation)],
 #                     [P(signal_low|mutation),  P(signal_low|no_mutation)]]
 
+# P_failure calibrated from per-node empirical/industry data:
+#   ToR switch: ~0.5-1% annual per-switch failure → ~0.0002/hr
+#   AZ outage: ~2-3/yr per region → ~0.00003/hr
+#   Power domain: <0.01% annual → ~0.000001/hr
+
 - class: ToRSwitch
   default_prior:
-    P_failure: 0.0008
+    P_failure: 0.0002
     decay_half_life_minutes: 15
   cpts:
     - mutation: FirmwareUpdate
@@ -25,7 +30,7 @@
 
 - class: AvailabilityZone
   default_prior:
-    P_failure: 0.0001
+    P_failure: 0.00003
     decay_half_life_minutes: 240
   cpts:
     - mutation: ZonalIncident
@@ -36,7 +41,7 @@
 
 - class: PowerDomain
   default_prior:
-    P_failure: 0.00005
+    P_failure: 0.000001
     decay_half_life_minutes: 120
   cpts:
     - mutation: PowerEvent

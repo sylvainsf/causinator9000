@@ -5,9 +5,14 @@
 # CPT table format: [[P(signal_high|mutation), P(signal_high|no_mutation)],
 #                     [P(signal_low|mutation),  P(signal_low|no_mutation)]]
 
+# P_failure calibrated from per-node empirical data:
+#   VNet/Subnet: very stable, ~0.001%/hr → 0.00005
+#   NIC: slightly more due to NSG churn → 0.0001
+#   DNS: TTL-related issues rare → 0.00005
+
 - class: VirtualNetwork
   default_prior:
-    P_failure: 0.0005
+    P_failure: 0.00005
     decay_half_life_minutes: 120
   cpts:
     - mutation: SubnetChange
@@ -23,7 +28,7 @@
 
 - class: SubnetGateway
   default_prior:
-    P_failure: 0.001
+    P_failure: 0.00005
     decay_half_life_minutes: 120
   cpts:
     - mutation: GatewayRestart
@@ -34,7 +39,7 @@
 
 - class: NetworkInterface
   default_prior:
-    P_failure: 0.001
+    P_failure: 0.0001
     decay_half_life_minutes: 30
   cpts:
     - mutation: IPChange
@@ -45,7 +50,7 @@
 
 - class: DNS
   default_prior:
-    P_failure: 0.0003
+    P_failure: 0.00005
     decay_half_life_minutes: 360
   cpts:
     - mutation: RecordChange

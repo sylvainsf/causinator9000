@@ -2,12 +2,13 @@
 #
 # CPTs for virtual machines and traditional compute resources.
 #
-# CPT table format: [[P(signal_high|mutation), P(signal_high|no_mutation)],
-#                     [P(signal_low|mutation),  P(signal_low|no_mutation)]]
+# P_failure calibrated from per-node empirical data:
+#   Single VM: ~1-3% unplanned reboot/month → ~0.0008/hr
+#   (Azure SLA floor: 99.9% = ~0.0001/hr for the service)
 
 - class: VirtualMachine
   default_prior:
-    P_failure: 0.002
+    P_failure: 0.0008
     decay_half_life_minutes: 60
   cpts:
     - mutation: MaintenanceReboot

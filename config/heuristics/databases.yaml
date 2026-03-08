@@ -5,9 +5,14 @@
 # CPT table format: [[P(signal_high|mutation), P(signal_high|no_mutation)],
 #                     [P(signal_low|mutation),  P(signal_low|no_mutation)]]
 
+# P_failure calibrated from per-node empirical data:
+#   SQL Database: throttling/connection issues ~0.05%/hr → 0.0003
+#   Cosmos/Mongo: similar → 0.0003
+#   Redis: eviction/memory pressure more common → 0.0005
+
 - class: SqlDatabase
   default_prior:
-    P_failure: 0.002
+    P_failure: 0.0003
     decay_half_life_minutes: 120
   cpts:
     - mutation: SchemaMigration
@@ -38,7 +43,7 @@
 
 - class: MongoDatabase
   default_prior:
-    P_failure: 0.002
+    P_failure: 0.0003
     decay_half_life_minutes: 120
   cpts:
     - mutation: SchemaMigration
@@ -54,7 +59,7 @@
 
 - class: RedisCache
   default_prior:
-    P_failure: 0.002
+    P_failure: 0.0005
     decay_half_life_minutes: 30
   cpts:
     - mutation: SkuChange

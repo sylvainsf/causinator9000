@@ -5,9 +5,14 @@
 # CPT table format: [[P(signal_high|mutation), P(signal_high|no_mutation)],
 #                     [P(signal_low|mutation),  P(signal_low|no_mutation)]]
 
+# P_failure calibrated from per-node empirical data:
+#   Pod: ~1-5% daily restart/eviction rate → ~0.002/hr
+#   AKS cluster: ~0.05% hourly issue rate → ~0.0003/hr
+#   Container Registry: ~0.01% hourly → ~0.0001/hr
+
 - class: Container
   default_prior:
-    P_failure: 0.005
+    P_failure: 0.002
     decay_half_life_minutes: 15
   cpts:
     - mutation: ImageUpdate
@@ -53,7 +58,7 @@
 
 - class: ContainerRegistry
   default_prior:
-    P_failure: 0.001
+    P_failure: 0.0001
     decay_half_life_minutes: 120
   cpts:
     - mutation: ImagePurge
@@ -64,7 +69,7 @@
 
 - class: AKSCluster
   default_prior:
-    P_failure: 0.003
+    P_failure: 0.0003
     decay_half_life_minutes: 90
   cpts:
     - mutation: KubernetesUpgrade

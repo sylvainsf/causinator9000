@@ -6,9 +6,15 @@
 # CPT table format: [[P(signal_high|mutation), P(signal_high|no_mutation)],
 #                     [P(signal_low|mutation),  P(signal_low|no_mutation)]]
 
+# P_failure calibrated from per-node empirical data:
+#   Key Vault: throttling/RBAC issues ~0.02%/hr → 0.0002
+#   Managed Identity: token refresh failures → 0.0001
+#   Identity Provider (Entra): auth issues → 0.0001
+#   Cert Authority: cert validation → 0.0002
+
 - class: ManagedIdentity
   default_prior:
-    P_failure: 0.0005
+    P_failure: 0.0001
     decay_half_life_minutes: 240
   cpts:
     - mutation: SecretRotation
@@ -24,7 +30,7 @@
 
 - class: KeyVault
   default_prior:
-    P_failure: 0.001
+    P_failure: 0.0002
     decay_half_life_minutes: 480
   cpts:
     - mutation: SecretRotation
@@ -45,7 +51,7 @@
 
 - class: IdentityProvider
   default_prior:
-    P_failure: 0.0005
+    P_failure: 0.0001
     decay_half_life_minutes: 360
   cpts:
     - mutation: PolicyChange

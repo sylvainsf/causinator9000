@@ -5,9 +5,12 @@
 # CPT table format: [[P(signal_high|mutation), P(signal_high|no_mutation)],
 #                     [P(signal_low|mutation),  P(signal_low|no_mutation)]]
 
+# P_failure calibrated from per-node empirical data:
+#   Event Hub/Service Bus: throttling on single namespace ~0.02%/hr → 0.0002
+
 - class: MessageQueue
   default_prior:
-    P_failure: 0.002
+    P_failure: 0.0002
     decay_half_life_minutes: 60
   cpts:
     - mutation: QueuePolicyChange
