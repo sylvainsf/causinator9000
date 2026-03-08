@@ -234,7 +234,7 @@ const API = '';
 let cy = null, alerts = [], alertGroups = [], sortMode = 'confidence', view = 'alerts', selNode = null;
 let expandedGroups = new Set();
 let islands = [], activeIsland = null;
-let showAlertIslandsOnly = true, lowConfExpanded = false;
+let showAlertIslandsOnly = true, lowConfExpanded = false, focusedGroup = null;
 const LOW_CONF_THRESHOLD = 0.10;
 
 // Island color palette (distinct hues)
@@ -252,21 +252,24 @@ const ISLAND_COLORS = [
 // ── Cytoscape styles ──
 const CY_STYLE = [
   { selector: 'node', style: {
-    'label': 'data(label)', 'font-size': 12, 'color': '#c9d1d9',
-    'text-valign': 'bottom', 'text-margin-y': 4,
-    'width': 18, 'height': 18, 'border-width': 1.5, 'border-color': '#30363d',
+    'label': 'data(label)', 'font-size': 11, 'color': '#c9d1d9',
+    'text-valign': 'bottom', 'text-margin-y': 5,
+    'text-max-width': '140px', 'text-wrap': 'ellipsis',
+    'width': 16, 'height': 16, 'border-width': 1.5, 'border-color': '#30363d',
     'background-color': '#30363d', 'shape': 'ellipse',
-    'min-zoomed-font-size': 11,
+    'min-zoomed-font-size': 9,
   }},
   { selector: 'node[status="alert"]', style: {
-    'background-color': '#f85149', 'border-color': '#da3633', 'width': 28, 'height': 28,
-    'font-size': 14, 'color': '#f85149', 'font-weight': 'bold',
-    'min-zoomed-font-size': 12,
+    'background-color': '#f85149', 'border-color': '#da3633', 'width': 24, 'height': 24,
+    'font-size': 13, 'color': '#f85149', 'font-weight': 'bold',
+    'text-max-width': '200px',
+    'min-zoomed-font-size': 8,
   }},
   { selector: 'node[status="signal"]', style: {
-    'background-color': '#d29922', 'border-color': '#bb8009', 'width': 22, 'height': 22,
-    'font-size': 12, 'color': '#d29922',
-    'min-zoomed-font-size': 11,
+    'background-color': '#d29922', 'border-color': '#bb8009', 'width': 20, 'height': 20,
+    'font-size': 11, 'color': '#d29922',
+    'text-max-width': '180px',
+    'min-zoomed-font-size': 8,
   }},
   { selector: 'node[status="mutation"]', style: {
     'background-color': '#e3b341', 'border-color': '#c69026', 'width': 20, 'height': 20,
@@ -500,10 +503,54 @@ function escHtml(s) { return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').
 function toggleGroup(rootCause) {
   if (expandedGroups.has(rootCause)) {
     expandedGroups.delete(rootCause);
+    // Unfocus — show all nodes again
+    focusedGroup = null;
+    if (cy) {
+      cy.nodes().style('opacity', 1).style('display', 'element');
+      cy.edges().style('opacity', 1).style('display', 'element');
+      cy.fit(50);
+    }
   } else {
+    expandedGroups.clear(); // only one group expanded at a time
     expandedGroups.add(rootCause);
+    focusedGroup = rootCause;
+    focusGraphOnGroup(rootCause);
   }
   renderAlerts();
+}
+
+function focusGraphOnGroup(rootCause) {
+  if (!cy) return;
+  // Find the group's member node IDs
+  const group = alertGroups.find(g => g.root_cause === rootCause);
+  if (!group) return;
+
+  const memberIds = new Set(group.affected_nodes || []);
+  // Also add root cause path nodes
+  if (group.causal_path) group.causal_path.forEach(id => memberIds.add(id));
+
+  // Collect the member nodes and their connected neighborhood (1 hop)
+  const memberNodes = cy.nodes().filter(n => memberIds.has(n.id()));
+  const neighborhood = memberNodes.union(memberNodes.neighborhood());
+
+  // Hide everything else, show only the focused tree
+  cy.nodes().style('display', 'none');
+  cy.edges().style('display', 'none');
+  neighborhood.nodes().style('display', 'element').style('opacity', 1);
+  neighborhood.edges().style('display', 'element').style('opacity', 1);
+  // Also show edges between visible nodes
+  cy.edges().forEach(e => {
+    if (e.source().style('display') === 'element' && e.target().style('display') === 'element') {
+      e.style('display', 'element');
+    }
+  });
+
+  // Re-layout just the visible nodes and fit
+  cy.layout({
+    name: 'dagre', rankDir: 'TB', nodeSep: 60, rankSep: 80, padding: 40,
+    fit: true,
+    stop: function() { cy.fit(neighborhood, 60); }
+  }).run();
 }
 
 function timeAgo(iso) {
@@ -550,7 +597,13 @@ async function selectNode(nodeId) {
 
 function selectAlert(nodeId) {
   selectNode(nodeId);
-  if (cy) { const n=cy.getElementById(nodeId); if(n.length) cy.animate({center:{eles:n},zoom:2,duration:300}); }
+  if (cy) {
+    const n = cy.getElementById(nodeId);
+    if (n.length) {
+      n.select();
+      cy.animate({ center: { eles: n }, zoom: 3, duration: 300 });
+    }
+  }
 }
 
 function clearSel() {
