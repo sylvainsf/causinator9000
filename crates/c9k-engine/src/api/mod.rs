@@ -359,6 +359,40 @@ async fn get_islands(
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     Ok(Json(serde_json::json!(islands)))
 }
+#[derive(Deserialize)]
+struct SuppressRequest {
+    signal_type: String,
+}
+
+async fn post_suppress(
+    State(state): State<AppState>,
+    Json(body): Json<SuppressRequest>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    state.solver.suppress_signal(&body.signal_type)
+        .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
+    let list = state.solver.suppressed_signals()
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    Ok(Json(serde_json::json!({"status": "suppressed", "suppressed": list})))
+}
+
+async fn post_unsuppress(
+    State(state): State<AppState>,
+    Json(body): Json<SuppressRequest>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    state.solver.unsuppress_signal(&body.signal_type)
+        .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
+    let list = state.solver.suppressed_signals()
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    Ok(Json(serde_json::json!({"status": "unsuppressed", "suppressed": list})))
+}
+
+async fn get_suppressed(
+    State(state): State<AppState>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    let list = state.solver.suppressed_signals()
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    Ok(Json(serde_json::json!({"suppressed": list})))
+}
 // ── Router ───────────────────────────────────────────────────────────────
 
 pub async fn serve(solver: SolverHandle, addr: &str) -> anyhow::Result<()> {
@@ -376,6 +410,9 @@ pub async fn serve(solver: SolverHandle, addr: &str) -> anyhow::Result<()> {
         .route("/api/neighborhood", get(get_neighborhood))
         .route("/api/alerts", get(get_alerts))
         .route("/api/alert-groups", get(get_alert_groups))
+        .route("/api/alerts/suppress", post(post_suppress))
+        .route("/api/alerts/unsuppress", post(post_unsuppress))
+        .route("/api/alerts/suppressed", get(get_suppressed))
         .route("/api/alert-graph", get(get_alert_graph))
         .route("/api/reload-cpts", post(post_reload_cpts))
         .route("/api/window", get(get_window).post(post_window))

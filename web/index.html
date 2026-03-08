@@ -102,7 +102,7 @@ body { font-family: -apple-system, 'Segoe UI', sans-serif;
   padding:1px 6px; font-size:10px; font-weight:600; }
 .low-conf-body { border-top:1px solid var(--border); padding:4px; }
 .low-conf-body .group { opacity:0.7; }
-.low-conf-body .group:hover { opacity:1; }
+.low-conf-body .group:hover { opacity:1; }\n\n/* \u2500\u2500 Dismiss button \u2500\u2500 */\n.dismiss-btn { background:none; border:none; color:var(--dim); cursor:pointer; font-size:12px;\n  margin-left:6px; padding:0 4px; opacity:0.4; vertical-align:middle; }\n.dismiss-btn:hover { opacity:1; color:var(--red); }\n.suppressed-bar { padding:4px 8px; font-size:10px; color:var(--dim); border-top:1px solid var(--border);\n  display:flex; align-items:center; gap:4px; flex-shrink:0; }\n.suppressed-bar button { background:none; border:1px solid var(--border); color:var(--dim);\n  font-size:9px; padding:1px 6px; border-radius:8px; cursor:pointer; }\n.suppressed-bar button:hover { border-color:var(--accent); color:var(--text); }
 
 /* ── Graph ── */
 .graph { grid-row:2; position:relative; }
@@ -198,6 +198,7 @@ body { font-family: -apple-system, 'Segoe UI', sans-serif;
     </div>
   </div>
   <div class="alerts-scroll" id="alertsList"></div>
+  <div class="suppressed-bar" id="suppressedBar" style="display:none"></div>
 </div>
 
 <div class="graph">
@@ -537,7 +538,7 @@ function renderGroupCard(g) {
 
   let html = `<div class="group">`;
   html += `<div class="group-header${expanded?' expanded':''}" onclick="toggleGroup('${escHtml(g.root_cause)}')">`;
-  html += `<div class="group-rc"><span class="badge ${cls}">${g.count}</span> ${escHtml(g.root_cause)}</div>`;
+  html += `<div class="group-rc"><span class="badge ${cls}">${g.count}</span> ${escHtml(g.root_cause)}<button class="dismiss-btn" onclick="event.stopPropagation();suppressSignals(${JSON.stringify(g.signal_types)})" title="Suppress these signal types">✕</button></div>`;
   html += `<div class="bar-row"><div class="bar"><div class="bar-fill ${cls}" style="width:${p}%"></div></div><span class="pct" style="color:var(--${cls==='hi'?'red':cls==='md'?'orange':'dim'})">${p}%</span></div>`;
   html += `<div class="group-sig">${sigStr} · ${ago}<span class="group-expand">${expanded?'▾':'▸'} ${g.count} node${g.count>1?'s':''}</span></div>`;
   html += `</div>`;
@@ -563,6 +564,45 @@ function renderGroupCard(g) {
 }
 
 function escHtml(s) { return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+async function suppressSignals(signalTypes) {
+  for (const st of signalTypes) {
+    try {
+      await fetch(`${API}/api/alerts/suppress`, {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({signal_type: st}),
+      });
+    } catch(e) { console.error(e); }
+  }
+  await fetchAlerts();
+  await loadAlertGraph();
+  fetchSuppressed();
+}
+
+async function unsuppressSignal(st) {
+  try {
+    await fetch(`${API}/api/alerts/unsuppress`, {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({signal_type: st}),
+    });
+  } catch(e) { console.error(e); }
+  await fetchAlerts();
+  await loadAlertGraph();
+  fetchSuppressed();
+}
+
+async function fetchSuppressed() {
+  try {
+    const data = await (await fetch(`${API}/api/alerts/suppressed`)).json();
+    const list = data.suppressed || [];
+    const bar = document.getElementById('suppressedBar');
+    if (!list.length) { bar.style.display = 'none'; return; }
+    bar.style.display = 'flex';
+    bar.innerHTML = 'Suppressed: ' + list.map(s =>
+      `<button onclick="unsuppressSignal('${s}')" title="Click to unsuppress">${s} ✕</button>`
+    ).join('');
+  } catch(e) {}
+}
 
 function toggleGroup(rootCause) {
   if (expandedGroups.has(rootCause)) {
@@ -831,6 +871,7 @@ function focusIsland(islandId) {
 (async () => {
   await fetchWindow();
   await refresh();
+  await fetchSuppressed();
   await loadAlertGraph();
   setInterval(refresh, 5000);
   // Graph only reloads on explicit user action (view switch, alert click)

@@ -108,6 +108,88 @@ fn default_half_life() -> f64 {
     DEFAULT_HALF_LIFE_MINUTES
 }
 
+// ── Alert rules ──────────────────────────────────────────────────────────
+
+/// Action to take when an alert matches a rule.
+#[derive(Debug, Clone, Deserialize, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum AlertAction {
+    Suppress,
+    Low,
+    Normal,
+}
+
+/// A single alert rule from config/alert-rules.yaml.
+#[derive(Debug, Clone, Deserialize)]
+pub struct AlertRule {
+    #[serde(default)]
+    pub signal_type: Option<String>,
+    #[serde(default)]
+    pub class: Option<String>,
+    #[serde(default)]
+    pub source: Option<String>,
+    #[serde(default)]
+    pub pattern: Option<String>,
+    #[serde(default)]
+    pub min_confidence: Option<f64>,
+    #[serde(default)]
+    pub max_confidence: Option<f64>,
+    pub action: AlertAction,
+    #[serde(default)]
+    pub reason: Option<String>,
+}
+
+/// Top-level alert rules config.
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct AlertRulesConfig {
+    #[serde(default)]
+    pub rules: Vec<AlertRule>,
+}
+
+impl AlertRulesConfig {
+    pub fn load(path: &str) -> Result<Self> {
+        if !std::path::Path::new(path).exists() {
+            return Ok(Self::default());
+        }
+        let contents = std::fs::read_to_string(path)
+            .context(format!("reading alert rules from {path}"))?;
+        let config: AlertRulesConfig = serde_yaml_ng::from_str(&contents)
+            .context(format!("parsing alert rules from {path}"))?;
+        tracing::info!(rules = config.rules.len(), "Loaded alert rules from {path}");
+        Ok(config)
+    }
+
+    /// Match an alert against the rules. Returns the action for the first match.
+    pub fn match_alert(&self, signal_types: &[String], node_id: &str,
+                       confidence: f64) -> AlertAction {
+        for rule in &self.rules {
+            let mut matches = true;
+
+            if let Some(ref st) = rule.signal_type {
+                if !signal_types.iter().any(|s| s == st) {
+                    matches = false;
+                }
+            }
+            if let Some(ref pat) = rule.pattern {
+                if let Ok(re) = regex::Regex::new(pat) {
+                    if !re.is_match(node_id) { matches = false; }
+                }
+            }
+            if let Some(min) = rule.min_confidence {
+                if confidence < min { matches = false; }
+            }
+            if let Some(max) = rule.max_confidence {
+                if confidence > max { matches = false; }
+            }
+
+            if matches {
+                return rule.action.clone();
+            }
+        }
+        AlertAction::Normal
+    }
+}
+
 // ── Modular heuristics manifest ──────────────────────────────────────────
 
 /// Default background failure probability used when a new class is defined
@@ -707,6 +789,29 @@ impl SolverHandle {
         let state = self.inner.lock().map_err(|e| anyhow::anyhow!("lock: {e}"))?;
         let alerts = state.alerts()?;
 
+        // Filter out suppressed signal types (runtime)
+        let alerts: Vec<serde_json::Value> = alerts
+            .into_iter()
+            .filter(|a| {
+                let sig_types = a["signal_types"].as_array();
+                match sig_types {
+                    Some(arr) => !arr.iter().all(|v| {
+                        v.as_str().map(|s| state.suppressed_signals.contains(s)).unwrap_or(false)
+                    }),
+                    None => true,
+                }
+            })
+            // Filter out alerts suppressed by config rules
+            .filter(|a| {
+                let sig_types: Vec<String> = a["signal_types"].as_array()
+                    .map(|arr| arr.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect())
+                    .unwrap_or_default();
+                let node_id = a["node_id"].as_str().unwrap_or("");
+                let confidence = a["confidence"].as_f64().unwrap_or(0.0);
+                state.alert_rules.match_alert(&sig_types, node_id, confidence) != AlertAction::Suppress
+            })
+            .collect();
+
         // Group by root_cause
         let mut groups: HashMap<String, Vec<serde_json::Value>> = HashMap::new();
         for alert in alerts {
@@ -793,6 +898,31 @@ impl SolverHandle {
 
         Ok(result)
     }
+
+    /// Suppress alerts matching a signal type. Suppressed alerts are hidden
+    /// from alert_groups() but still stored in the engine.
+    pub fn suppress_signal(&self, signal_type: &str) -> Result<()> {
+        let mut state = self.inner.lock().map_err(|e| anyhow::anyhow!("lock: {e}"))?;
+        state.suppressed_signals.insert(signal_type.to_string());
+        tracing::info!(signal_type, "Signal type suppressed");
+        Ok(())
+    }
+
+    /// Remove a signal type from the suppression list.
+    pub fn unsuppress_signal(&self, signal_type: &str) -> Result<()> {
+        let mut state = self.inner.lock().map_err(|e| anyhow::anyhow!("lock: {e}"))?;
+        state.suppressed_signals.remove(signal_type);
+        tracing::info!(signal_type, "Signal type unsuppressed");
+        Ok(())
+    }
+
+    /// Get the list of currently suppressed signal types.
+    pub fn suppressed_signals(&self) -> Result<Vec<String>> {
+        let state = self.inner.lock().map_err(|e| anyhow::anyhow!("lock: {e}"))?;
+        let mut v: Vec<String> = state.suppressed_signals.iter().cloned().collect();
+        v.sort();
+        Ok(v)
+    }
 }
 
 struct SolverState {
@@ -806,6 +936,10 @@ struct SolverState {
     active_mutations: Vec<Mutation>,
     /// Active signals within the temporal window
     active_signals: Vec<Signal>,
+    /// Suppressed signal types — alerts matching these are hidden
+    suppressed_signals: std::collections::HashSet<String>,
+    /// Alert rules from config/alert-rules.yaml
+    alert_rules: AlertRulesConfig,
     /// Temporal window duration (default: 24 hours)
     temporal_window: chrono::Duration,
     /// Cached latest diagnoses (updated on each inference run)
@@ -822,6 +956,8 @@ impl SolverState {
             heuristics: HashMap::new(),
             active_mutations: Vec::new(),
             active_signals: Vec::new(),
+            suppressed_signals: std::collections::HashSet::new(),
+            alert_rules: AlertRulesConfig::load("config/alert-rules.yaml").unwrap_or_default(),
             temporal_window: chrono::Duration::hours(24),
             cached_diagnoses: HashMap::new(),
             _checkpoint_path: Some("data/checkpoint.bin".to_string()),

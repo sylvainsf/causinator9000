@@ -1,0 +1,62 @@
+# Causinator 9000 — Alert Rules
+#
+# Controls which alerts are shown, suppressed, or auto-acknowledged.
+# This file is loaded on engine startup and on `make reload-cpts`.
+#
+# Rules are evaluated top-to-bottom. First matching rule wins.
+#
+# Rule types:
+#   suppress  — hide from alert groups entirely (known non-issues)
+#   low       — force into the low-confidence collapsed section
+#   normal    — default behavior (no override)
+#
+# Match fields (all optional, AND logic):
+#   signal_type   — exact match on signal type
+#   class         — resource class of the affected node
+#   source        — source adapter that produced the signal
+#   pattern       — regex match on the node ID
+#   min_confidence — only match if confidence is above this threshold
+#   max_confidence — only match if confidence is below this threshold
+
+rules:
+  # ── Suppress: known non-issues ─────────────────────────────────────────
+
+  # PR checklist missing — already shown in the PR UI, not an infrastructure issue
+  - signal_type: ChecklistMissing
+    action: suppress
+    reason: "Shown in PR UI — not an infrastructure concern"
+
+  # GitHub Actions leader election churn — normal K8s behavior
+  - signal_type: LeaderElection
+    action: suppress
+    reason: "Normal K8s controller behavior"
+
+  # ── Low priority: noisy but occasionally useful ────────────────────────
+
+  # Metrics API unavailable — transient during node scaling
+  - signal_type: MetricsUnavailable
+    action: low
+    reason: "Usually transient during node scale operations"
+
+  # Pod eviction — common during maintenance windows
+  - signal_type: PodEviction
+    action: low
+    reason: "Expected during AKS upgrades and node maintenance"
+
+  # ── Examples (commented out) ───────────────────────────────────────────
+
+  # Suppress all signals from a specific source
+  # - source: "azure-resource-changes"
+  #   pattern: ".*cwvdp.*"
+  #   action: suppress
+  #   reason: "WVD pool VMs — managed by automation, not our concern"
+
+  # Suppress low-confidence noise
+  # - max_confidence: 0.05
+  #   action: suppress
+  #   reason: "Below 5% confidence — background noise"
+
+  # Force a specific class to low priority
+  # - class: CIPlatform
+  #   action: low
+  #   reason: "GH runner infra issues — out of our control"
