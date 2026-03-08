@@ -26,10 +26,12 @@ layers:
   - path: heuristics/messaging.yaml         # MessageQueue
   - path: heuristics/physical-infra.yaml    # ToRSwitch, AvailabilityZone, PowerDomain
   - path: heuristics/applications.yaml      # Application, Environment
-  - path: heuristics/ci-pipelines.yaml      # CIPipeline (GitHub Actions, etc.)
+  - path: heuristics/ci-pipelines.yaml      # CIJob, Commit, FlakyTest, CIPlatform
 
   # ── Private overrides ───────────────────────────────────────────────
   # Uncomment or add your own layers here.
   # Files marked optional: true are silently skipped when absent.
+  - path: heuristics/private.radius.yaml   # Radius project-specific signals
+    optional: true
   # - path: heuristics/private.yaml
   #   optional: true

@@ -124,12 +124,6 @@
       table:
         - [0.08, 0.03]
         - [0.92, 0.97]
-    # PR checklist — the PR itself is the direct cause
-    - mutation: CodeChange
-      signal: ChecklistMissing
-      table:
-        - [0.90, 0.01]
-        - [0.10, 0.99]
     # Flaky test — competing cause for TestFailure
     # Moderate LR: flaky tests are a real thing but not every failure
     - mutation: FlakyTestRun

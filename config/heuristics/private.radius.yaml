@@ -1,0 +1,62 @@
+# Causinator 9000 Private Heuristic Layer — Radius Project
+#
+# Project-specific CPTs and signals for the project-radius/radius repo.
+# These are lean patches on top of the core ci-pipelines.yaml layer.
+#
+# To use: uncomment the private layer line in heuristics.manifest.yaml
+# or set C9K_HEURISTICS to point to a manifest that includes this file.
+#
+# This file is a good example of how to add project-specific signal types
+# without modifying the core CPT registry.
+
+# ── Radius-specific CI signals ──────────────────────────────────────────
+#
+# ChecklistMissing: Radius uses mheap/require-checklist-action to enforce
+#   PR checklists. A PR without the checklist is almost certainly caused by
+#   the PR author, not by infrastructure or flakiness.
+#
+# RadiusFunctionalTestFailure: Radius functional tests run against both
+#   cloud and non-cloud resources. These have a higher flaky rate than
+#   unit tests due to infrastructure dependencies.
+
+- class: CIJob
+  cpts:
+    # PR checklist enforcement — very high LR because the PR itself
+    # is the direct and only possible cause
+    - mutation: CodeChange
+      signal: ChecklistMissing
+      table:
+        - [0.90, 0.01]
+        - [0.10, 0.99]
+    - mutation: Release
+      signal: ChecklistMissing
+      table:
+        - [0.85, 0.01]
+        - [0.15, 0.99]
+
+    # Radius functional tests have specific failure modes
+    - mutation: CodeChange
+      signal: RadiusFunctionalTestFailure
+      table:
+        - [0.60, 0.04]
+        - [0.40, 0.96]
+    - mutation: DepGroupUpdate
+      signal: RadiusFunctionalTestFailure
+      table:
+        - [0.55, 0.04]
+        - [0.45, 0.96]
+    - mutation: FlakyTestRun
+      signal: RadiusFunctionalTestFailure
+      table:
+        - [0.40, 0.04]
+        - [0.60, 0.96]
+
+# Radius long-running test cluster — higher flaky rate due to
+# shared infrastructure and 24/7 operation
+- class: FlakyTest
+  cpts:
+    - mutation: FlakyTestRun
+      signal: RadiusFunctionalTestFailure
+      table:
+        - [0.45, 0.04]
+        - [0.55, 0.96]
