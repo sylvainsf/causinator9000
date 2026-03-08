@@ -10,18 +10,15 @@ Built in Rust. Sub-2ms inference on a 26,000-node graph. Zero external dependenc
 
 - [How It Works](#how-it-works)
 - [Architecture](#architecture)
-- [The Inference Algorithm](#the-inference-algorithm)
-- [Conditional Probability Tables (CPTs)](#conditional-probability-tables-cpts)
-- [Temporal Decay](#temporal-decay)
-- [Upstream Propagation](#upstream-propagation)
-- [Latent Node Inference](#latent-node-inference)
 - [Quick Start](#quick-start)
-- [Running the Demo](#running-the-demo)
+- [Data Sources](#data-sources)
 - [Web Dashboard](#web-dashboard)
+- [CPTs and Inference](#cpts-and-inference)
+- [Alert Rules](#alert-rules)
 - [API Reference](#api-reference)
-- [Building CPTs](#building-cpts)
 - [Project Structure](#project-structure)
 - [Performance](#performance)
+- [Documentation](#documentation)
 - [License](#license)
 
 ---
@@ -67,232 +64,74 @@ LLM Transpiler      ──┘     (WAL)                      │
 
 ## The Inference Algorithm
 
-For each candidate (mutation, signal) pair where a CPT entry matches:
+Uses **likelihood-ratio Bayesian inference**: for each (mutation, signal) pair, computes $LR = P(signal \mid mutation) / P(signal \mid no\\ mutation)$, then updates a causal prior via Bayes' theorem. An `ImageUpdate → CrashLoopBackOff` CPT of [0.75, 0.03] gives LR = 25× → 96.2% posterior confidence.
 
-**Likelihood Ratio:**
+Key features:
+- **Per-class temporal decay** — recent mutations score higher; each resource class has its own half-life (Container: 15 min, DNS: 360 min, DenyPolicy: 30 days)
+- **Upstream propagation** — traces mutations through the DAG with 8% hop attenuation
+- **Competing causes** — ranks multiple candidate mutations; latent nodes (FlakyTest, GHCR, Azure OIDC) compete with code changes
+- **Explaining away** — correlated failures on shared infrastructure converge to a single root cause
 
-$$LR = \frac{P(\text{signal} \mid \text{mutation present})}{P(\text{signal} \mid \text{mutation absent})}$$
+→ [Full inference documentation](docs/inference.md)
 
-**Posterior via Bayes' theorem:**
+## Data Sources
 
-$$P(\text{caused} \mid \text{signal}) = \frac{\text{prior odds} \times LR}{1 + \text{prior odds} \times LR}$$
+The engine ingests topology, mutations, and signals from multiple sources:
 
-**Worked example:** `ImageUpdate → CrashLoopBackOff`, CPT = [0.75, 0.03]:
+| Source | What it provides | Command |
+|--------|-----------------|---------|
+| Azure Resource Graph | Infrastructure topology (VMs, NICs, AKS, KV, etc.) | `make ingest-arg` |
+| Azure Resource Changes | ARM-level mutations (config changes, scale events) | `make ingest-azure-health` |
+| Azure Resource Health | Degraded/Unavailable signals | `make ingest-azure-health` |
+| Azure Policy | Deny policy latent nodes + violations | `make ingest-azure-policy` |
+| GitHub Actions | CI failures as classified signals, commits as mutations | `make ingest-gh` |
+| Kubernetes | Pod topology + events (CrashLoopBackOff, OOMKilled, etc.) | `make ingest-k8s` |
+| Terraform State | HCL resources + dependency edges | `make ingest-tf` |
 
-```
-LR = 0.75 / 0.03 = 25×
-Starting prior = 0.50 (uninformative), prior_odds = 1.0
-Posterior odds = 1.0 × 25 = 25
-Posterior = 25/26 = 96.2%
-```
+Real-time receivers: `make webhook-gh` (GH webhook :8090), `make webhook-azure` (Event Grid :8091), `make watch-k8s` (K8s event stream).
 
-This is asking: *"given that CrashLoopBackOff appeared after an ImageUpdate, how likely is the update to blame?"* — not "what's the background failure rate."
+Full pipeline: `make ingest-all`
 
-## Conditional Probability Tables (CPTs)
+→ [Data sources reference](docs/data-sources.md)
 
-CPTs encode the relationship between mutation types and signal types for each resource class. They live in `config/heuristics.yaml`.
+## CPTs and Inference
 
-### Structure
+CPTs encode causal relationships between mutations and signals. They're organized as modular YAML layers in `config/heuristics/`:
 
 ```yaml
-- class: <ResourceClass>
+- class: Container
   default_prior:
-    P_failure: <float>       # Background failure probability (not used in LR inference)
+    P_failure: 0.002
+    decay_half_life_minutes: 15
   cpts:
-    - mutation: <MutationType>
-      signal: <SignalType>
+    - mutation: ImageUpdate
+      signal: CrashLoopBackOff
       table:
-        - [P(signal_high | mutation_present), P(signal_high | mutation_absent)]
-        - [P(signal_low  | mutation_present), P(signal_low  | mutation_absent)]
-```
-
-### How to Read a CPT
-
-The table `[0.75, 0.03]` for `ImageUpdate → CrashLoopBackOff` means:
-
-| | Mutation present | Mutation absent |
-|---|---|---|
-| **Signal observed** | 0.75 (75%) | 0.03 (3%) |
-| **Signal not observed** | 0.25 (25%) | 0.97 (97%) |
-
-The **likelihood ratio** is `0.75 / 0.03 = 25×`. Higher LR = stronger causal link.
-
-### Guidelines for Writing CPTs
-
-**High-confidence links (LR > 20×):**
-```yaml
-# A firmware update almost certainly causes heartbeat loss when it goes wrong
-- mutation: FirmwareUpdate
-  signal: heartbeat
-  table:
-    - [0.80, 0.001]    # LR = 800×
-    - [0.20, 0.999]
-```
-
-**Moderate links (LR 5–20×):**
-```yaml
-# A config change often causes error rate spikes, but errors happen for other reasons too
-- mutation: ConfigChange
-  signal: error_rate
-  table:
-    - [0.65, 0.04]     # LR = 16.25×
-    - [0.35, 0.96]
-```
-
-**Weak links (LR 2–5×):**
-```yaml
-# Scaling events sometimes cause memory pressure, but memory issues are common anyway
-- mutation: ScaleEvent
-  signal: memory_rss
-  table:
-    - [0.40, 0.08]     # LR = 5×
-    - [0.60, 0.92]
-```
-
-**Rules of thumb:**
-- Each row must sum to 1.0 (the two columns per row represent the same event conditional on mutation present/absent)
-- `P(signal | mutation_present)` should always be ≥ `P(signal | mutation_absent)` — otherwise the mutation *prevents* the signal
-- The ratio between the two top-row values is the likelihood ratio. This is the single most important number
-- Start with LR ≈ 10× for typical cause-effect relationships and adjust based on domain knowledge
-- LR > 100× should be reserved for near-certain causal links (firmware update → hard crash)
-- LR < 3× means the signal barely distinguishes mutation-present from mutation-absent — consider whether the CPT entry is useful
-
-### Iterating on CPTs: Eliminating Noise
-
-CPTs aren't write-once. In practice, you'll refine them as you observe the solver's behavior on real traffic. The most important iteration is **identifying and suppressing transient failures** — signals that correlate with mutations but don't represent real incidents.
-
-Common transient patterns:
-- **Image pull rate limits:** DockerHub or a private registry rate-limits a pull during an automated deploy. The deploy fails, retries, and succeeds with the same image. The `ImageUpdate → ImagePullBackOff` signal is real but not actionable.
-- **Health check timing:** A pod restarts during a rolling update and briefly fails its readiness probe. The signal is `CrashLoopBackOff` but it self-resolves within 60 seconds.
-- **DNS propagation:** A config change updates a service's DNS entry. For a few seconds, some clients resolve the old address and report connection errors. Transient by definition.
-- **Flapping alerts:** A metric oscillates around an alerting threshold, producing repeated fire/resolve cycles. Each one looks like a signal but none represent a real degradation.
-
-**How to handle transients in CPTs:**
-
-1. **Lower the LR.** If a mutation→signal pair fires frequently but rarely represents a real incident, reduce `P(signal | mutation)` to bring the LR down. An LR of 2–3× will produce a posterior of 65–75% — present in the output but not the top candidate if a stronger match exists.
-
-2. **Raise the background rate.** If a signal type fires often regardless of mutations (flapping), increase `P(signal | no mutation)`. This acknowledges that the signal is noisy by nature.
-
-3. **Split into transient vs. persistent variants.** If the same signal type can be transient or real depending on duration, create two CPT entries with different signal names:
-
-```yaml
-# Transient: pull failed once, retried successfully
-- mutation: ImageUpdate
-  signal: ImagePullBackOff_transient
-  table:
-    - [0.25, 0.15]    # LR = 1.7× — barely above noise
-    - [0.75, 0.85]
-
-# Persistent: pull failing repeatedly, image is actually broken
-- mutation: ImageUpdate
-  signal: ImagePullBackOff_persistent
-  table:
-    - [0.80, 0.02]    # LR = 40× — very likely the deploy broke it
-    - [0.20, 0.98]
-```
-
-The classification of transient vs. persistent happens upstream — your signal ingestion pipeline decides which variant to record based on duration, retry success, or alert resolution time. The solver doesn't need to know about the heuristic; it just sees differently-named signal types with different CPTs.
-
-4. **Review the golden tests.** After adjusting CPTs, run `python3 scripts/demo.py` and `python3 scripts/golden_tests.py` to verify you haven't degraded the solver's accuracy on scenarios that should still trigger.
-
-The goal: over time, your CPTs converge toward a state where every diagnosis the solver produces is worth an operator's attention, and the transient noise that doesn't warrant investigation has been systematically classified out.
-
-### Discovering Missing Latent Nodes
-
-The other side of CPT iteration is recognizing when the graph is missing shared causes. This shows up as a distinctive pattern in your solver output: **multiple nodes failing simultaneously with no root cause identified**.
-
-If you see 5 pods in the same cluster all throwing `ConnectionTimeout` at the same moment and the solver reports `confidence: 0.0` on each one individually (no mutations in the window), that's the solver telling you there's a shared cause it can't see. The independent-failure hypothesis is astronomically unlikely — 5 simultaneous timeout events that are truly unrelated — but the solver has no upstream node to attribute them to.
-
-This is your signal to add a latent node:
-
-1. **Identify the shared factor.** What do the failing nodes have in common? Same subnet? Same NAT gateway? Same service mesh sidecar version? Same shared database connection pool?
-
-2. **Add the latent node and edges.** Add a new node representing the unobserved shared dependency and wire it to each affected node. You can do this by updating the topology in `scripts/transpile.py` or adding entries to the graph via the transpiler prompt. For a quick test, inject a mutation on the latent node via the API:
-
-```bash
-# Inject a mutation on the latent node (assumes the node exists in the graph)
-c9k mutate --node latent-natgw-eastus-prod --mutation GatewayRestart
-```
-
-For permanent additions, add the node and edges to your transpiler output or synthetic topology generator so they're included in every graph rebuild.
-
-3. **Add CPTs for the new class** (or reuse an existing one if the class already has CPTs). What mutations can happen on a NAT gateway? What signals would they produce?
-
-```yaml
-- class: SubnetGateway
-  default_prior:
-    P_failure: 0.001
-  cpts:
-    - mutation: GatewayRestart
-      signal: ConnectionTimeout
-      table:
-        - [0.75, 0.03]    # LR = 25×
+        - [0.75, 0.03]    # LR = 25× → 96.2% confidence
         - [0.25, 0.97]
 ```
 
-4. **Re-run inference.** Next time those 5 pods time out simultaneously after a gateway restart, the solver walks upstream, finds the shared NAT gateway with the mutation, and reports a single root cause at ~90% confidence instead of 5 separate `0.0%` diagnoses.
+**30 resource classes** across 12 YAML files, covering Azure infrastructure, CI/CD pipelines, Kubernetes, and project-specific overrides. Add your own via `config/heuristics/private.yaml`.
 
-**Common latent nodes to look for:**
-- **Shared load balancers** — multiple services behind the same LB with no LB node in the graph
-- **Service mesh control planes** — Istio/Linkerd control plane changes affect all sidecars
-- **Shared database instances** — multiple apps using the same RDS/Cloud SQL instance
-- **NAT gateways / egress IPs** — subnet-level networking that affects all pods in a VNet
-- **Container registries** — a registry outage breaks image pulls for every service that depends on it
-- **Shared secret stores** — a Vault/KMS rotation affects every service with cached credentials
+→ [CPT reference](docs/cpts.md) · [Inference algorithm](docs/inference.md)
 
-The pattern is always the same: when you see correlated failures that the solver can't explain, you're looking at a missing node in the graph. Add it, wire it up, give it CPTs, and the solver starts explaining those correlations as what they are — shared causes, not coincidences.
+## Alert Rules
 
-### Included CPT Classes (22)
+Permanent alert suppression via `config/alert-rules.yaml`:
 
-The POC ships with CPTs for: Container, VirtualMachine, ManagedIdentity, KeyVault, AKSCluster, RedisCache, SqlDatabase, LoadBalancer, VirtualNetwork, Gateway, HttpRoute, MessageQueue, ToRSwitch, AvailabilityZone, PowerDomain, SubnetGateway, Application, Environment, DNS, IdentityProvider, ContainerRegistry, CertAuthority, MongoDatabase, NetworkInterface.
+```yaml
+rules:
+  - signal_type: ChecklistMissing
+    action: suppress
+    reason: "Shown in PR UI — not an infrastructure concern"
+  - max_confidence: 0.05
+    action: low
+    reason: "Below 5% — background noise"
+```
 
-## Temporal Decay
+Match on signal type, resource class, node ID pattern (regex), confidence range. UI dismiss button for runtime suppression.
 
-The causal prior decays exponentially with the time gap between mutation and signal:
-
-$$\text{prior}(t) = 0.50 \times e^{-\lambda t}$$
-
-where *t* = gap in minutes, λ = 0.055 (half-life ≈ 12.6 minutes).
-
-| Gap | Prior | Posterior (LR=25) |
-|---|---|---|
-| 0 min | 0.50 | 96.2% |
-| 5 min | 0.38 | 93.9% |
-| 15 min | 0.22 | 87.6% |
-| 25 min | 0.13 | 78.9% |
-| 30 min | 0.10 | 73.5% |
-
-A mutation at 2 minutes scores 92.9%. The same mutation at 25 minutes scores 70.2%. Same CPT, same LR — the time gap is the only difference.
-
-## Upstream Propagation
-
-When a mutation occurs on an upstream node (e.g., CertAuthority) and signals appear on downstream nodes (e.g., mTLS errors on pods), the solver traces the causal path through the DAG.
-
-Three scoring strategies are evaluated per upstream mutation:
-1. **Ancestor's own CPTs** applied to the observed signal type
-2. **Ancestor's CPTs** applied to downstream signals
-3. **Target's CPTs** matched against the mutation type
-
-Highest score wins, then attenuated by **8% per hop** in the dependency path.
-
-Example: `CertAuthority → Gateway → AKSCluster → Pod` (3 hops):
-- CA's CPT for `CertificateRotation → mTLSHandshakeError`: LR = 42.5×
-- 3-hop attenuation: × 0.92³ = 0.779
-- Result: **77%** confidence with full causal path shown
-
-## Latent Node Inference
-
-The graph transpiler injects unobserved physical infrastructure nodes that don't appear in deployment templates but are critical for causal reasoning:
-
-- **ToR Switches** — shared network fabric; explains correlated VM failures
-- **Availability Zones** — physical isolation boundaries
-- **Power Domains** — electrical fault domains
-- **Subnet Gateways** — shared network paths
-- **Platform Services** — DNS, certificate authorities, identity providers, container registries
-
-Without latent nodes, 50 simultaneous VM failures appear as 50 independent events (P ≈ 0.001⁵⁰). With a latent ToR switch as their shared parent, the solver recognizes a single shared-cause hypothesis — the *explaining away* pattern.
-
----
+→ [Alert rules reference](docs/alert-rules.md)
 
 ## Quick Start
 
@@ -507,106 +346,6 @@ Response:
 
 ---
 
-## Building CPTs
-
-### Heuristic Registry Layout
-
-Causinator 9000 ships heuristics as a **modular, layered registry**. The default configuration uses a **manifest file** (`config/heuristics.manifest.yaml`) that lists layer files to load in order:
-
-```yaml
-# config/heuristics.manifest.yaml
-layers:
-  - path: heuristics/containers.yaml        # Container, ContainerRegistry, AKSCluster
-  - path: heuristics/compute.yaml           # VirtualMachine
-  - path: heuristics/networking.yaml        # VirtualNetwork, SubnetGateway, NetworkInterface, DNS
-  - path: heuristics/routing.yaml           # LoadBalancer, Gateway, HttpRoute
-  - path: heuristics/databases.yaml         # SqlDatabase, MongoDatabase, RedisCache
-  - path: heuristics/identity.yaml          # ManagedIdentity, KeyVault, IdentityProvider, CertAuthority
-  - path: heuristics/messaging.yaml         # MessageQueue
-  - path: heuristics/physical-infra.yaml    # ToRSwitch, AvailabilityZone, PowerDomain
-  - path: heuristics/applications.yaml      # Application, Environment
-  - path: heuristics/private.yaml           # Your private overrides (optional)
-    optional: true
-```
-
-**Key concepts:**
-
-| Feature | Behavior |
-|---|---|
-| **Multiple files** | Each `layers` entry is a separate YAML file loaded in order |
-| **Most-specific override** | Later layers override earlier ones at CPT granularity — keyed by `(class, mutation, signal)` |
-| **Lean patching** | An override file only needs the fields it wants to change; everything else is inherited |
-| **Optional layers** | Layers with `optional: true` are silently skipped when absent |
-| **Backward compatible** | Setting `C9K_HEURISTICS` to a flat YAML list (the old format) still works — the format is auto-detected |
-
-**Example lean patch** — override a single weight without touching anything else:
-
-```yaml
-# config/heuristics/private.yaml
-- class: Container
-  cpts:
-    - mutation: ImageUpdate
-      signal: CrashLoopBackOff
-      table:
-        - [0.85, 0.03]   # Increased from 0.75 based on internal incident data
-        - [0.15, 0.97]
-```
-
-See `config/heuristics/private.yaml.example` for more examples including prior overrides and adding brand-new classes.
-
-> **Environment variable:** `C9K_HEURISTICS` controls which file to load. Defaults to `config/heuristics.manifest.yaml`. Set it to `config/heuristics.yaml` (the original flat file) for backward compatibility.
-
-### Step 1: Identify the Resource Class
-
-What type of infrastructure is this? Container, Gateway, KeyVault, AKSCluster, etc. Each class gets its own CPT block in one of the layer files under `config/heuristics/` (or in `config/heuristics.yaml` if using the flat format).
-
-### Step 2: List Mutation→Signal Pairs
-
-For each class, what changes can happen and what symptoms do they produce?
-
-| Resource | Mutation | Expected Signal | Reasoning |
-|---|---|---|---|
-| Container | ImageUpdate | CrashLoopBackOff | New code may crash |
-| Container | ImageUpdate | memory_rss | New code may leak memory |
-| Container | ConfigChange | error_rate | Misconfigured env vars |
-| Gateway | CertificateRotation | TLSError | Cert mismatch breaks TLS |
-| KeyVault | SecretRotation | AccessDenied_403 | Apps using cached/old secrets |
-| AKSCluster | KubernetesUpgrade | PodEviction | Nodes drain during upgrade |
-
-### Step 3: Estimate the Probabilities
-
-For each pair, estimate two values:
-
-- **P(signal | mutation present):** If this mutation happened and caused a problem, how likely would we see this signal? (0.0 – 1.0)
-- **P(signal | mutation absent):** How likely is this signal from background noise / other causes? (usually 0.01 – 0.10)
-
-The ratio of these two values is the **likelihood ratio** — the single most important number in the CPT.
-
-### Step 4: Write the YAML
-
-```yaml
-- class: MyNewService
-  default_prior:
-    P_failure: 0.003    # Background failure rate (informational)
-  cpts:
-    - mutation: SchemaChange
-      signal: query_timeout
-      table:
-        - [0.70, 0.05]  # LR = 14×  — strong link
-        - [0.30, 0.95]
-    - mutation: ConnectionPoolResize
-      signal: latency_spike
-      table:
-        - [0.45, 0.08]  # LR = 5.6× — moderate link
-        - [0.55, 0.92]
-```
-
-### Step 5: Validate with the Demo
-
-Run the demo or inject events via the API to verify the CPT produces expected confidence scores. The `golden_tests.py` script can be extended with custom scenarios.
-
----
-
 ## Project Structure
 
 ```
@@ -729,6 +468,15 @@ let graph = TopologyBuilder::new()
 // Load directly via API
 client.post("/api/graph/load").json(&graph).send().await?;
 ```
+
+## Documentation
+
+| Document | Description |
+|----------|-------------|
+| [Inference Algorithm](docs/inference.md) | Likelihood-ratio math, temporal decay, upstream propagation, competing causes |
+| [CPT Reference](docs/cpts.md) | CPT format, writing guidelines, P_failure calibration, layer system, all 30 classes |
+| [Data Sources](docs/data-sources.md) | All source adapters, mutation/signal types, node ID conventions |
+| [Alert Rules](docs/alert-rules.md) | Suppression config, match fields, runtime dismiss API |
 
 ## License
 
