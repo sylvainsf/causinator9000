@@ -1,99 +1,83 @@
 #!/usr/bin/env python3
 """
-Generate the exact data needed for each README screenshot.
+Seed data for the alert-groups screenshot.
 
-Run this, then take screenshots:
-  1. Alert Trees view   → docs/screenshots/alert-trees.png
-  2. Alert Cards panel   → docs/screenshots/alert-cards.png
-  3. Node Detail panel   → docs/screenshots/node-detail.png  (click pod-westeurope-app010-01)
-  4. Neighborhood view   → docs/screenshots/neighborhood.png (click "Neighborhood", select pod-eastus-app001-00)
+Creates two simultaneous incidents that produce 9 total alerts,
+collapsing into 3 incident groups — the perfect demo of the grouping feature.
 
-Usage:
+Run this, then take the screenshot:
   python3 scripts/screenshot_data.py
   open http://localhost:8080/
+
+Screenshot to take:
+  → docs/screenshots/alert-groups.png
+  Shows 3 collapsed incident groups in the left panel:
+    [5 nodes] kv-eastus-01 (SecretRotation) — 89.8% — all AccessDenied_403
+    [3 nodes] ca-westeurope (CertificateRotation) — 77.0% — all TLSError
+    [1 node]  pod-centralus-app020-01 (ImageUpdate) — 96.2% — CrashLoopBackOff
+
+  Click the KV group to expand it → shows 5 individual pod cards underneath.
+  This highlights: "9 alerts, but really 3 incidents to investigate."
 """
 import os
 import requests
 import sys
 
-E = os.environ.get("C9K_ENGINE_URL", "http://localhost:8080")
+E = os.environ.get("RCIE_ENGINE_URL", os.environ.get("C9K_ENGINE_URL", "http://localhost:8080"))
 
 def post(path, json):
     r = requests.post(f"{E}/api/{path}", json=json, timeout=5)
     r.raise_for_status()
     return r.json()
 
-def check():
+def main():
+    # Check engine
     try:
         h = requests.get(f"{E}/api/health", timeout=5).json()
-        print(f"Engine: {h['nodes']:,} nodes, {h['edges']:,} edges")
-        return True
+        print(f"Engine: {h['nodes']:,} nodes")
     except:
         print(f"ERROR: Engine not responding at {E}")
-        return False
-
-def main():
-    if not check():
         sys.exit(1)
 
     # Clear everything
     post("clear", {})
-    print("Cleared all events\n")
 
-    # ── Screenshot 1 & 2: Alert Trees + Alert Cards ──────────────────
-    # Four distinct incidents across different regions and hop depths
-    print("=== Scenario A: KeyVault SecretRotation → 3 pods (1 hop) ===")
+    # ─── Incident 1: KeyVault SecretRotation → 5 pods get 403 ───
+    print("\nIncident 1: kv-eastus-01 SecretRotation → 5 pods")
     post("mutations", {"node_id": "kv-eastus-01", "mutation_type": "SecretRotation"})
-    for i in range(3):
+    for i in range(5):
         post("signals", {"node_id": f"pod-eastus-app00{i}-00", "signal_type": "AccessDenied_403", "severity": "critical"})
-    print("  kv-eastus-01 SecretRotation → 3× AccessDenied_403")
 
-    print("=== Scenario B: CertAuthority rotation → Gateway → AKS → 2 pods (3 hops) ===")
+    # ─── Incident 2: CertAuthority rotation → 3 pods get TLS errors ───
+    print("Incident 2: ca-westeurope CertificateRotation → 3 pods")
     post("mutations", {"node_id": "ca-westeurope", "mutation_type": "CertificateRotation"})
-    post("signals", {"node_id": "pod-westeurope-app010-01", "signal_type": "TLSError", "severity": "critical"})
-    post("signals", {"node_id": "pod-westeurope-app010-02", "signal_type": "TLSError", "severity": "critical"})
-    print("  ca-westeurope CertificateRotation → 2× TLSError")
+    for i in range(3):
+        post("signals", {"node_id": f"pod-westeurope-app01{i}-01", "signal_type": "TLSError", "severity": "critical"})
 
-    print("=== Scenario C: IdentityProvider PolicyChange → MI → pod (2 hops) ===")
-    post("mutations", {"node_id": "idp-japaneast", "mutation_type": "PolicyChange"})
-    post("signals", {"node_id": "pod-japaneast-app050-00", "signal_type": "AccessDenied_403", "severity": "critical"})
-    print("  idp-japaneast PolicyChange → 1× AccessDenied_403")
-
-    print("=== Scenario D: Direct ImageUpdate crash (0 hops) ===")
+    # ─── Incident 3: Direct deploy crash ───
+    print("Incident 3: pod-centralus-app020-01 ImageUpdate → CrashLoopBackOff")
     post("mutations", {"node_id": "pod-centralus-app020-01", "mutation_type": "ImageUpdate"})
     post("signals", {"node_id": "pod-centralus-app020-01", "signal_type": "CrashLoopBackOff", "severity": "critical"})
-    print("  pod-centralus-app020-01 ImageUpdate → CrashLoopBackOff")
 
-    # Verify
-    alerts = requests.get(f"{E}/api/alerts", timeout=5).json()
-    print(f"\n{len(alerts)} alerts ready:")
-    for a in alerts:
-        pct = a["confidence"] * 100
-        rc = a.get("root_cause") or "none"
-        print(f"  {a['node_id']}: {pct:.1f}% — {rc}")
-
-    graph = requests.get(f"{E}/api/alert-graph", timeout=5).json()
-    nodes = [e for e in graph if e["group"] == "nodes" and e["data"].get("class") != "cluster"]
-    print(f"\nAlert graph: {len(nodes)} nodes")
+    # Verify grouping
+    groups = requests.get(f"{E}/api/alert-groups", timeout=5).json()
+    total_alerts = sum(g["count"] for g in groups)
+    print(f"\n{total_alerts} alerts → {len(groups)} incident groups:")
+    for g in groups:
+        pct = g["confidence"] * 100
+        sigs = ", ".join(g["signal_types"])
+        nodes = ", ".join(g["affected_nodes"][:3])
+        more = f" +{g['count']-3} more" if g["count"] > 3 else ""
+        print(f"  [{g['count']} nodes] {g['root_cause']}: {pct:.1f}%")
+        print(f"    signals: {sigs}")
+        print(f"    nodes: {nodes}{more}")
 
     print(f"""
-Screenshots to take:
-
-1. ALERT TREES (default view when you open http://localhost:8080/)
-   → docs/screenshots/alert-trees.png
-   Shows 4 discrete causal tree clusters
-
-2. ALERT CARDS (left panel)
-   → docs/screenshots/alert-cards.png
-   Shows the confidence-sorted alert list with bars
-
-3. NODE DETAIL (click on pod-westeurope-app010-01 in the graph or cards)
-   → docs/screenshots/node-detail.png
-   Shows the 3-hop causal path: ca-westeurope → appgw → aks → pod
-
-4. NEIGHBORHOOD (click "Neighborhood" button, then select pod-eastus-app001-00)
-   → docs/screenshots/neighborhood.png
-   Shows the local dependency subgraph around a pod
+Screenshot instructions:
+  1. Open http://localhost:8080/
+  2. You should see 3 collapsed incident groups in the left panel
+  3. Click the "kv-eastus-01" group to expand it — shows 5 pod cards
+  4. Take screenshot → docs/screenshots/alert-groups.png
 """)
 
 if __name__ == "__main__":

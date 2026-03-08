@@ -415,6 +415,20 @@ Click "Neighborhood" in the top bar or the "Show Neighborhood" button in the det
 
 *Neighborhood view of pod-eastus-app001-00 showing its upstream dependencies: AKS cluster, KeyVault, ContainerRegistry, ManagedIdentity, and the application/subnet containment hierarchy.*
 
+### Alert Groups
+
+When multiple alerts share a common root cause, the dashboard collapses them into **incident groups**. Instead of seeing 9 individual alert cards, you see 3 groups — one per root cause — with a count badge and expandable member list.
+
+![Alert groups collapsed by shared root cause](docs/screenshots/alert-groups.png)
+
+*9 alerts from 3 simultaneous incidents collapse into 3 groups: a KeyVault secret rotation affecting 5 pods (AccessDenied_403), a CertAuthority rotation affecting 3 pods (TLSError), and a direct ImageUpdate crash (CrashLoopBackOff). Click a group to expand and see each individual alert card.*
+
+To seed the alert groups demo:
+
+```bash
+python3 scripts/screenshot_data.py
+```
+
 ### Temporal Window Control
 
 The temporal window (default: 30 minutes) controls how far back the solver looks for candidate mutations. Adjust it in real time using the input in the top bar — type a value in minutes and click "Set." The change takes effect immediately for all subsequent diagnoses.
@@ -614,6 +628,7 @@ causinator9000/
 │   ├── load_test.py                    # 4-test stress suite
 │   ├── golden_tests.py                 # Correctness validation
 │   ├── seed_alerts.py                  # Seed dashboard with sample alerts
+│   ├── screenshot_data.py              # Seed alert-groups screenshot demo
 │   ├── smoke_test.py                   # Quick pipeline test
 │   ├── load_generator.py               # Signal flood generator
 │   ├── radius_receiver.py              # Radius webhook → PG
