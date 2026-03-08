@@ -167,10 +167,13 @@ health:  ## Quick health check
 
 # ── Real-time Receivers ──────────────────────────────────────────────────
 
-.PHONY: webhook-gh
+.PHONY: webhook-gh webhook-azure
 
 webhook-gh:  ## Start GitHub webhook receiver (real-time CI failure ingestion)
 	python3 sources/gh_webhook_receiver.py --port $(GH_WEBHOOK_PORT)
+
+webhook-azure:  ## Start Azure Event Grid receiver (real-time resource mutations/health)
+	python3 sources/eventgrid_receiver.py
 
 # ── Dashboard ────────────────────────────────────────────────────────────
 
