@@ -83,7 +83,7 @@ body { font-family: -apple-system, 'Segoe UI', sans-serif;
 .group-members .card .sig { font-size:9px; }
 
 /* ── Island nav ── */
-.island-bar { padding:6px 10px; border-bottom:1px solid var(--border); display:flex; flex-wrap:wrap; gap:4px; align-items:center; }
+.island-bar { padding:4px 8px; border-bottom:1px solid var(--border); display:flex; flex-wrap:wrap; gap:3px; align-items:center; max-height:60px; overflow:hidden; flex-shrink:0; }
 .island-bar label { font-size:10px; color:var(--dim); text-transform:uppercase; letter-spacing:1px; margin-right:4px; }
 .island-pill { display:inline-flex; align-items:center; gap:4px; padding:2px 8px; border-radius:10px;
   border:2px solid; font-size:10px; cursor:pointer; transition:opacity .15s; opacity:0.7; }
@@ -563,23 +563,42 @@ function renderIslandBar() {
   bar.innerHTML = '<label>Islands:</label>';
   if (!islands.length) return;
 
-  for (const isl of islands) {
+  // Only show islands with alerts first, then top by size — max 8 pills
+  const withAlerts = islands.filter(i => i.alerts > 0 || i.signals > 0);
+  const bigOnes = islands.filter(i => i.alerts === 0 && i.signals === 0 && i.node_count > 5)
+    .sort((a,b) => b.node_count - a.node_count)
+    .slice(0, Math.max(0, 8 - withAlerts.length));
+  const shown = [...withAlerts, ...bigOnes];
+
+  if (!shown.length) {
+    bar.innerHTML += `<span style="font-size:10px;color:var(--dim)">${islands.length} islands, no alerts</span>`;
+    return;
+  }
+
+  for (const isl of shown) {
     const id = isl.island_id;
     const color = ISLAND_COLORS[id % ISLAND_COLORS.length];
     const active = activeIsland === id;
     const alertBadge = isl.alerts > 0 ? `<span class="alert-badge">${isl.alerts}</span>` : '';
+    const sigBadge = isl.signals > 0 && isl.alerts === 0 ? `<span class="alert-badge" style="background:var(--orange)">${isl.signals}</span>` : '';
     const label = isl.representative?.label || `Island ${id}`;
-    // Truncate label
-    const shortLabel = label.length > 25 ? label.slice(0, 22) + '…' : label;
+    const shortLabel = label.length > 20 ? label.slice(0, 17) + '…' : label;
     const pill = document.createElement('div');
     pill.className = `island-pill${active ? ' active' : ''}`;
     pill.style.borderColor = color;
     pill.style.color = active ? '#fff' : color;
     pill.style.background = active ? color + '22' : 'transparent';
-    pill.innerHTML = `<span class="dot" style="background:${color}"></span>${isl.node_count} · ${shortLabel}${alertBadge}`;
-    pill.title = `${isl.node_count} nodes, ${isl.classes.join(', ')}\n${isl.alerts} alerts, ${isl.signals} signals, ${isl.mutations} mutations`;
+    pill.innerHTML = `<span class="dot" style="background:${color}"></span>${isl.node_count}${alertBadge}${sigBadge}`;
+    pill.title = `${shortLabel}\n${isl.node_count} nodes, ${isl.classes.slice(0,5).join(', ')}\n${isl.alerts} alerts, ${isl.signals} signals, ${isl.mutations} mutations`;
     pill.onclick = () => focusIsland(id);
     bar.appendChild(pill);
+  }
+
+  if (islands.length > shown.length) {
+    const more = document.createElement('span');
+    more.style.cssText = 'font-size:9px;color:var(--dim);padding:2px 4px';
+    more.textContent = `+${islands.length - shown.length}`;
+    bar.appendChild(more);
   }
 }
 
