@@ -6,23 +6,31 @@
 #   - az CLI (azure.microsoft.com/cli) + `az login`
 #   - gh CLI (cli.github.com) + `gh auth login`
 #
+# Configuration:
+#   cp .env.example .env    # then edit .env with your values
+#
 # Quick start:
-#   make build
-#   make run
-#   make ingest-arg                    # load Azure topology
-#   make ingest-gh REPO=project-radius/radius  # ingest GH Actions failures
-#   open http://localhost:8080
+#   make build && make run-release
+#   make ingest-all
+#   make open
 
 SHELL := /bin/bash
 .DEFAULT_GOAL := help
 
-# ── Configuration ────────────────────────────────────────────────────────
+# Load .env if it exists (gitignored — local config)
+-include .env
+export
 
-ENGINE_URL   ?= http://localhost:8080
-AZURE_SUB    ?= $(shell az account show --query id -o tsv 2>/dev/null)
-REPO         ?= project-radius/radius
-GH_HOURS     ?= 48
-ARG_OUTPUT   ?= /tmp/c9k-arg-graph.json
+# ── Configuration (override via .env or command line) ────────────────────
+
+ENGINE_URL           ?= $(or $(C9K_ENGINE_URL),http://localhost:8080)
+AZURE_SUB            ?= $(or $(AZURE_SUBSCRIPTION_ID),$(shell az account show --query id -o tsv 2>/dev/null))
+REPO                 ?= $(or $(firstword $(subst $(comma), ,$(GH_REPOS))),project-radius/radius)
+GH_HOURS             ?= $(or $(GH_HOURS),48)
+AZURE_CHANGES_HOURS  ?= $(or $(AZURE_CHANGES_HOURS),48)
+GH_WEBHOOK_PORT      ?= $(or $(GH_WEBHOOK_PORT),8090)
+ARG_OUTPUT           ?= /tmp/c9k-arg-graph.json
+comma := ,
 
 # ── Build ────────────────────────────────────────────────────────────────
 
@@ -95,10 +103,10 @@ ingest-gh-dry:  ## Dry run — show what would be ingested without sending to en
 ingest-all: ingest-arg ingest-azure-health ingest-azure-policy ingest-gh  ## Full ingestion: ARG + health/changes + policy + GH Actions
 
 ingest-azure-health:  ## Ingest Azure Resource Health signals + Resource Changes mutations
-	python3 sources/azure_health_source.py --hours $(GH_HOURS)
+	python3 sources/azure_health_source.py --hours $(AZURE_CHANGES_HOURS)
 
 ingest-azure-health-dry:  ## Dry run — show Azure health signals and resource changes
-	python3 sources/azure_health_source.py --hours $(GH_HOURS) --dry-run
+	python3 sources/azure_health_source.py --hours $(AZURE_CHANGES_HOURS) --dry-run
 
 ingest-azure-policy:  ## Ingest Azure deny-policy violations as latent causal nodes
 	python3 sources/azure_policy_source.py
@@ -162,7 +170,7 @@ health:  ## Quick health check
 .PHONY: webhook-gh
 
 webhook-gh:  ## Start GitHub webhook receiver (real-time CI failure ingestion)
-	python3 sources/gh_webhook_receiver.py --port 8090
+	python3 sources/gh_webhook_receiver.py --port $(GH_WEBHOOK_PORT)
 
 # ── Dashboard ────────────────────────────────────────────────────────────
 
@@ -171,10 +179,26 @@ webhook-gh:  ## Start GitHub webhook receiver (real-time CI failure ingestion)
 open:  ## Open the web dashboard
 	open $(ENGINE_URL)
 
+# ── Configuration ────────────────────────────────────────────────────────
+
+.PHONY: config env-init
+
+config:  ## Show current configuration
+	@echo "Engine:       $(ENGINE_URL)"
+	@echo "Subscription: $(AZURE_SUB)"
+	@echo "GH Repos:     $(REPO)"
+	@echo "GH Hours:     $(GH_HOURS)"
+	@echo "Azure Hours:  $(AZURE_CHANGES_HOURS)"
+	@echo "Webhook Port: $(GH_WEBHOOK_PORT)"
+	@echo ".env file:    $(if $(wildcard .env),✓ loaded,✗ not found — run 'make env-init')"
+
+env-init:  ## Create .env from .env.example (if not exists)
+	@if [ -f .env ]; then echo ".env already exists"; else cp .env.example .env && echo "Created .env — edit it with your values"; fi
+
 # ── Help ─────────────────────────────────────────────────────────────────
 
 .PHONY: help
 
 help:  ## Show this help
-	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | \
-		awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2}'
+	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' Makefile | sort | \
+		awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-25s\033[0m %s\n", $$1, $$2}'
