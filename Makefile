@@ -42,8 +42,18 @@ build:  ## Build debug binaries
 build-release:  ## Build optimized release binaries
 	cargo build --release
 
-test:  ## Run all tests (39 tests: 27 engine + 6 golden + 5 topology + 1 doctest)
+test:  ## Run all tests (Rust + Python)
 	cargo test
+	python3 -m pytest tests/ -v
+
+test-rust:  ## Run Rust tests only
+	cargo test
+
+test-python:  ## Run Python source adapter tests only
+	python3 -m pytest tests/ -v
+
+test-integration:  ## Run integration tests (requires running engine)
+	C9K_INTEGRATION=1 python3 -m pytest tests/ -v -m "not skipif"
 
 clean:  ## Remove build artifacts
 	cargo clean
