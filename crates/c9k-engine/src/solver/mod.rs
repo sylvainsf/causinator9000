@@ -151,8 +151,8 @@ impl AlertRulesConfig {
         if !std::path::Path::new(path).exists() {
             return Ok(Self::default());
         }
-        let contents = std::fs::read_to_string(path)
-            .context(format!("reading alert rules from {path}"))?;
+        let contents =
+            std::fs::read_to_string(path).context(format!("reading alert rules from {path}"))?;
         let config: AlertRulesConfig = serde_yaml_ng::from_str(&contents)
             .context(format!("parsing alert rules from {path}"))?;
         tracing::info!(rules = config.rules.len(), "Loaded alert rules from {path}");
@@ -160,8 +160,12 @@ impl AlertRulesConfig {
     }
 
     /// Match an alert against the rules. Returns the action for the first match.
-    pub fn match_alert(&self, signal_types: &[String], node_id: &str,
-                       confidence: f64) -> AlertAction {
+    pub fn match_alert(
+        &self,
+        signal_types: &[String],
+        node_id: &str,
+        confidence: f64,
+    ) -> AlertAction {
         for rule in &self.rules {
             let mut matches = true;
 
@@ -172,14 +176,20 @@ impl AlertRulesConfig {
             }
             if let Some(ref pat) = rule.pattern {
                 if let Ok(re) = regex::Regex::new(pat) {
-                    if !re.is_match(node_id) { matches = false; }
+                    if !re.is_match(node_id) {
+                        matches = false;
+                    }
                 }
             }
             if let Some(min) = rule.min_confidence {
-                if confidence < min { matches = false; }
+                if confidence < min {
+                    matches = false;
+                }
             }
             if let Some(max) = rule.max_confidence {
-                if confidence > max { matches = false; }
+                if confidence > max {
+                    matches = false;
+                }
             }
 
             if matches {
@@ -528,7 +538,10 @@ impl SolverHandle {
     /// Load a complete graph from structured data, replacing the current graph.
     /// Accepts a `GraphPayload` with nodes and edges arrays.
     pub fn load_graph(&self, payload: GraphPayload) -> Result<(usize, usize)> {
-        let mut state = self.inner.lock().map_err(|e| anyhow::anyhow!("lock: {e}"))?;
+        let mut state = self
+            .inner
+            .lock()
+            .map_err(|e| anyhow::anyhow!("lock: {e}"))?;
         state.graph.clear();
         state.node_index.clear();
 
@@ -569,7 +582,10 @@ impl SolverHandle {
     /// New edges are added; duplicate edges are skipped.
     /// Returns (total_nodes, total_edges, new_nodes, new_edges).
     pub fn merge_graph(&self, payload: GraphPayload) -> Result<(usize, usize, usize, usize)> {
-        let mut state = self.inner.lock().map_err(|e| anyhow::anyhow!("lock: {e}"))?;
+        let mut state = self
+            .inner
+            .lock()
+            .map_err(|e| anyhow::anyhow!("lock: {e}"))?;
 
         let mut new_nodes = 0;
         for node in &payload.nodes {
@@ -642,7 +658,10 @@ impl SolverHandle {
 
     /// Export the current graph as a structured `GraphPayload`.
     pub fn export_graph(&self) -> Result<GraphPayload> {
-        let state = self.inner.lock().map_err(|e| anyhow::anyhow!("lock: {e}"))?;
+        let state = self
+            .inner
+            .lock()
+            .map_err(|e| anyhow::anyhow!("lock: {e}"))?;
 
         let nodes: Vec<CausalNode> = state
             .graph
@@ -670,7 +689,10 @@ impl SolverHandle {
 
     /// Get memory stats: node count, edge count, active mutations, active signals.
     pub fn memory_info(&self) -> Result<MemoryInfo> {
-        let state = self.inner.lock().map_err(|e| anyhow::anyhow!("lock: {e}"))?;
+        let state = self
+            .inner
+            .lock()
+            .map_err(|e| anyhow::anyhow!("lock: {e}"))?;
         Ok(MemoryInfo {
             nodes: state.graph.node_count(),
             edges: state.graph.edge_count(),
@@ -786,7 +808,10 @@ impl SolverHandle {
     ///
     /// Alerts with no root cause are grouped under "unknown".
     pub fn alert_groups(&self) -> Result<Vec<AlertGroup>> {
-        let state = self.inner.lock().map_err(|e| anyhow::anyhow!("lock: {e}"))?;
+        let state = self
+            .inner
+            .lock()
+            .map_err(|e| anyhow::anyhow!("lock: {e}"))?;
         let alerts = state.alerts()?;
 
         // Filter out suppressed signal types (runtime)
@@ -796,19 +821,29 @@ impl SolverHandle {
                 let sig_types = a["signal_types"].as_array();
                 match sig_types {
                     Some(arr) => !arr.iter().all(|v| {
-                        v.as_str().map(|s| state.suppressed_signals.contains(s)).unwrap_or(false)
+                        v.as_str()
+                            .map(|s| state.suppressed_signals.contains(s))
+                            .unwrap_or(false)
                     }),
                     None => true,
                 }
             })
             // Filter out alerts suppressed by config rules
             .filter(|a| {
-                let sig_types: Vec<String> = a["signal_types"].as_array()
-                    .map(|arr| arr.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect())
+                let sig_types: Vec<String> = a["signal_types"]
+                    .as_array()
+                    .map(|arr| {
+                        arr.iter()
+                            .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                            .collect()
+                    })
                     .unwrap_or_default();
                 let node_id = a["node_id"].as_str().unwrap_or("");
                 let confidence = a["confidence"].as_f64().unwrap_or(0.0);
-                state.alert_rules.match_alert(&sig_types, node_id, confidence) != AlertAction::Suppress
+                state
+                    .alert_rules
+                    .match_alert(&sig_types, node_id, confidence)
+                    != AlertAction::Suppress
             })
             .collect();
 
@@ -837,7 +872,9 @@ impl SolverHandle {
                     for m in &members {
                         if let Some(arr) = m["signal_types"].as_array() {
                             for v in arr {
-                                if let Some(s) = v.as_str() { set.insert(s.to_string()); }
+                                if let Some(s) = v.as_str() {
+                                    set.insert(s.to_string());
+                                }
                             }
                         }
                     }
@@ -856,7 +893,11 @@ impl SolverHandle {
                 let causal_path: Vec<String> = members
                     .first()
                     .and_then(|m| m["causal_path"].as_array())
-                    .map(|arr| arr.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect())
+                    .map(|arr| {
+                        arr.iter()
+                            .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                            .collect()
+                    })
                     .unwrap_or_default();
 
                 let affected_nodes: Vec<String> = members
@@ -871,7 +912,11 @@ impl SolverHandle {
                         confidence: m["confidence"].as_f64().unwrap_or(0.0),
                         signal_types: m["signal_types"]
                             .as_array()
-                            .map(|a| a.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect())
+                            .map(|a| {
+                                a.iter()
+                                    .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                                    .collect()
+                            })
                             .unwrap_or_default(),
                         signal_count: m["signal_count"].as_u64().unwrap_or(0) as usize,
                         latest_signal: m["latest_signal"].as_str().unwrap_or("").to_string(),
@@ -893,7 +938,9 @@ impl SolverHandle {
 
         // Sort by confidence descending
         result.sort_by(|a, b| {
-            b.confidence.partial_cmp(&a.confidence).unwrap_or(std::cmp::Ordering::Equal)
+            b.confidence
+                .partial_cmp(&a.confidence)
+                .unwrap_or(std::cmp::Ordering::Equal)
         });
 
         Ok(result)
@@ -902,7 +949,10 @@ impl SolverHandle {
     /// Suppress alerts matching a signal type. Suppressed alerts are hidden
     /// from alert_groups() but still stored in the engine.
     pub fn suppress_signal(&self, signal_type: &str) -> Result<()> {
-        let mut state = self.inner.lock().map_err(|e| anyhow::anyhow!("lock: {e}"))?;
+        let mut state = self
+            .inner
+            .lock()
+            .map_err(|e| anyhow::anyhow!("lock: {e}"))?;
         state.suppressed_signals.insert(signal_type.to_string());
         tracing::info!(signal_type, "Signal type suppressed");
         Ok(())
@@ -910,7 +960,10 @@ impl SolverHandle {
 
     /// Remove a signal type from the suppression list.
     pub fn unsuppress_signal(&self, signal_type: &str) -> Result<()> {
-        let mut state = self.inner.lock().map_err(|e| anyhow::anyhow!("lock: {e}"))?;
+        let mut state = self
+            .inner
+            .lock()
+            .map_err(|e| anyhow::anyhow!("lock: {e}"))?;
         state.suppressed_signals.remove(signal_type);
         tracing::info!(signal_type, "Signal type unsuppressed");
         Ok(())
@@ -918,7 +971,10 @@ impl SolverHandle {
 
     /// Get the list of currently suppressed signal types.
     pub fn suppressed_signals(&self) -> Result<Vec<String>> {
-        let state = self.inner.lock().map_err(|e| anyhow::anyhow!("lock: {e}"))?;
+        let state = self
+            .inner
+            .lock()
+            .map_err(|e| anyhow::anyhow!("lock: {e}"))?;
         let mut v: Vec<String> = state.suppressed_signals.iter().cloned().collect();
         v.sort();
         Ok(v)
@@ -1039,7 +1095,11 @@ impl SolverState {
     ///   Container (15 min): at t=15min prior ≈ 0.25, at t=1h prior ≈ 0.03
     ///   AKSCluster (60 min): at t=1h prior ≈ 0.25, at t=4h prior ≈ 0.03
     ///   DNS (240 min):  at t=4h prior ≈ 0.25, at t=16h prior ≈ 0.03
-    fn temporal_prior(mutation_ts: DateTime<Utc>, signal_ts: DateTime<Utc>, half_life_minutes: f64) -> f64 {
+    fn temporal_prior(
+        mutation_ts: DateTime<Utc>,
+        signal_ts: DateTime<Utc>,
+        half_life_minutes: f64,
+    ) -> f64 {
         let gap_minutes = (signal_ts - mutation_ts).num_seconds().max(0) as f64 / 60.0;
         let lambda = (2.0_f64).ln() / half_life_minutes;
         let base_prior = 0.50;
@@ -1690,7 +1750,12 @@ impl SolverState {
                 let representative = node_indices
                     .iter()
                     .map(|idx| &self.graph[*idx])
-                    .find(|n| n.class == "CIPipeline" || n.class == "AKSCluster" || n.class == "VirtualMachine" || n.class == "ResourceGroup")
+                    .find(|n| {
+                        n.class == "CIPipeline"
+                            || n.class == "AKSCluster"
+                            || n.class == "VirtualMachine"
+                            || n.class == "ResourceGroup"
+                    })
                     .unwrap_or(&self.graph[node_indices[0]]);
 
                 serde_json::json!({
@@ -2372,7 +2437,10 @@ mod tests {
             "ToRSwitch".into(),
             ClassHeuristic {
                 class: "ToRSwitch".into(),
-                default_prior: PriorConfig { p_failure: 0.0008, decay_half_life_minutes: DEFAULT_HALF_LIFE_MINUTES },
+                default_prior: PriorConfig {
+                    p_failure: 0.0008,
+                    decay_half_life_minutes: DEFAULT_HALF_LIFE_MINUTES,
+                },
                 cpts: vec![CptEntry {
                     mutation: "FirmwareUpdate".into(),
                     signal: "heartbeat".into(),
@@ -2384,7 +2452,10 @@ mod tests {
             "VirtualMachine".into(),
             ClassHeuristic {
                 class: "VirtualMachine".into(),
-                default_prior: PriorConfig { p_failure: 0.002, decay_half_life_minutes: DEFAULT_HALF_LIFE_MINUTES },
+                default_prior: PriorConfig {
+                    p_failure: 0.002,
+                    decay_half_life_minutes: DEFAULT_HALF_LIFE_MINUTES,
+                },
                 cpts: vec![CptEntry {
                     mutation: "MaintenanceReboot".into(),
                     signal: "heartbeat".into(),
@@ -2396,7 +2467,10 @@ mod tests {
             "Container".into(),
             ClassHeuristic {
                 class: "Container".into(),
-                default_prior: PriorConfig { p_failure: 0.005, decay_half_life_minutes: DEFAULT_HALF_LIFE_MINUTES },
+                default_prior: PriorConfig {
+                    p_failure: 0.005,
+                    decay_half_life_minutes: DEFAULT_HALF_LIFE_MINUTES,
+                },
                 cpts: vec![CptEntry {
                     mutation: "ImageUpdate".into(),
                     signal: "CrashLoopBackOff".into(),
@@ -2536,7 +2610,8 @@ mod tests {
 
         // Different half-life: 15 min (fast, like Container class)
         let fast_hl = 15.0;
-        let prior_fast_15 = SolverState::temporal_prior(now - chrono::Duration::minutes(15), now, fast_hl);
+        let prior_fast_15 =
+            SolverState::temporal_prior(now - chrono::Duration::minutes(15), now, fast_hl);
         assert!(
             (prior_fast_15 - 0.25).abs() < 0.02,
             "fast class at 15min should be ~0.25, got {prior_fast_15}"
@@ -2544,7 +2619,8 @@ mod tests {
 
         // Same 15 min gap but with slow half-life (240 min, like DNS)
         let slow_hl = 240.0;
-        let prior_slow_15 = SolverState::temporal_prior(now - chrono::Duration::minutes(15), now, slow_hl);
+        let prior_slow_15 =
+            SolverState::temporal_prior(now - chrono::Duration::minutes(15), now, slow_hl);
         assert!(
             prior_slow_15 > 0.45,
             "slow class at 15min should be >0.45, got {prior_slow_15}"
@@ -2792,7 +2868,10 @@ mod tests {
         let mut heuristics = HashMap::new();
         let entries = vec![LayerClassEntry {
             class: "Container".into(),
-            default_prior: Some(PriorConfig { p_failure: 0.005, decay_half_life_minutes: DEFAULT_HALF_LIFE_MINUTES }),
+            default_prior: Some(PriorConfig {
+                p_failure: 0.005,
+                decay_half_life_minutes: DEFAULT_HALF_LIFE_MINUTES,
+            }),
             cpts: vec![CptEntry {
                 mutation: "ImageUpdate".into(),
                 signal: "CrashLoopBackOff".into(),
@@ -2815,7 +2894,10 @@ mod tests {
             &mut heuristics,
             vec![LayerClassEntry {
                 class: "Container".into(),
-                default_prior: Some(PriorConfig { p_failure: 0.005, decay_half_life_minutes: DEFAULT_HALF_LIFE_MINUTES }),
+                default_prior: Some(PriorConfig {
+                    p_failure: 0.005,
+                    decay_half_life_minutes: DEFAULT_HALF_LIFE_MINUTES,
+                }),
                 cpts: vec![
                     CptEntry {
                         mutation: "ImageUpdate".into(),
@@ -2873,7 +2955,10 @@ mod tests {
             &mut heuristics,
             vec![LayerClassEntry {
                 class: "Redis".into(),
-                default_prior: Some(PriorConfig { p_failure: 0.002, decay_half_life_minutes: DEFAULT_HALF_LIFE_MINUTES }),
+                default_prior: Some(PriorConfig {
+                    p_failure: 0.002,
+                    decay_half_life_minutes: DEFAULT_HALF_LIFE_MINUTES,
+                }),
                 cpts: vec![],
             }],
         );
@@ -2882,7 +2967,10 @@ mod tests {
             &mut heuristics,
             vec![LayerClassEntry {
                 class: "Redis".into(),
-                default_prior: Some(PriorConfig { p_failure: 0.001, decay_half_life_minutes: DEFAULT_HALF_LIFE_MINUTES }),
+                default_prior: Some(PriorConfig {
+                    p_failure: 0.001,
+                    decay_half_life_minutes: DEFAULT_HALF_LIFE_MINUTES,
+                }),
                 cpts: vec![],
             }],
         );
@@ -2896,7 +2984,10 @@ mod tests {
             &mut heuristics,
             vec![LayerClassEntry {
                 class: "Container".into(),
-                default_prior: Some(PriorConfig { p_failure: 0.005, decay_half_life_minutes: DEFAULT_HALF_LIFE_MINUTES }),
+                default_prior: Some(PriorConfig {
+                    p_failure: 0.005,
+                    decay_half_life_minutes: DEFAULT_HALF_LIFE_MINUTES,
+                }),
                 cpts: vec![CptEntry {
                     mutation: "ImageUpdate".into(),
                     signal: "CrashLoopBackOff".into(),

@@ -16,10 +16,10 @@
 //!   c9k-scale-test --preset multi-region    # 1-5 regions (~50k-250k nodes)
 //!   c9k-scale-test --queries 200            # more queries per scale point
 
-use std::time::Instant;
 use anyhow::Result;
-use clap::Parser;
 use c9k_tests::topology::TopologyBuilder;
+use clap::Parser;
+use std::time::Instant;
 
 #[derive(Parser)]
 #[command(name = "c9k-scale-test", about = "Causinator 9000 Scale & Memory Test")]
@@ -47,23 +47,33 @@ fn progressive_points() -> Vec<ScalePoint> {
         ScalePoint {
             label: "tiny (1r/2rack/3vm)".into(),
             graph: TopologyBuilder::new()
-                .regions(1).racks_per_region(2).vms_per_rack(3)
-                .containers_per_vm(2).identities_per_vm(1)
-                .apps_per_region(10).pods_per_app(4)
+                .regions(1)
+                .racks_per_region(2)
+                .vms_per_rack(3)
+                .containers_per_vm(2)
+                .identities_per_vm(1)
+                .apps_per_region(10)
+                .pods_per_app(4)
                 .build(),
         },
         ScalePoint {
             label: "small (1r/10rack/10vm)".into(),
             graph: TopologyBuilder::new()
-                .regions(1).racks_per_region(10).vms_per_rack(10)
-                .apps_per_region(50).pods_per_app(4)
+                .regions(1)
+                .racks_per_region(10)
+                .vms_per_rack(10)
+                .apps_per_region(50)
+                .pods_per_app(4)
                 .build(),
         },
         ScalePoint {
             label: "medium (2r/10rack/10vm)".into(),
             graph: TopologyBuilder::new()
-                .regions(2).racks_per_region(10).vms_per_rack(10)
-                .apps_per_region(100).pods_per_app(4)
+                .regions(2)
+                .racks_per_region(10)
+                .vms_per_rack(10)
+                .apps_per_region(100)
+                .pods_per_app(4)
                 .build(),
         },
         ScalePoint {
@@ -82,12 +92,12 @@ fn progressive_points() -> Vec<ScalePoint> {
 }
 
 fn multi_region_points() -> Vec<ScalePoint> {
-    (1..=5).map(|regions| {
-        ScalePoint {
+    (1..=5)
+        .map(|regions| ScalePoint {
             label: format!("{regions} Azure region(s)"),
             graph: TopologyBuilder::azure_multi_region(regions).build(),
-        }
-    }).collect()
+        })
+        .collect()
 }
 
 fn get_engine_rss(url: &str) -> Option<u64> {
@@ -142,8 +152,10 @@ async fn main() -> Result<()> {
     // Verify engine
     let health: serde_json::Value = client
         .get(format!("{}/api/health", args.engine_url))
-        .send().await?
-        .json().await?;
+        .send()
+        .await?
+        .json()
+        .await?;
     println!("Engine: v{}", health["version"]);
     if let Some(rss) = get_engine_rss(&args.engine_url) {
         println!("Baseline RSS: {}", format_mem(rss));
@@ -163,8 +175,10 @@ async fn main() -> Result<()> {
         }
     };
 
-    println!("{:<35} {:>8} {:>8} {:>10} {:>10} {:>8} {:>8} {:>8}",
-             "Scale Point", "Nodes", "Edges", "Load(ms)", "RSS", "p50", "p95", "p99");
+    println!(
+        "{:<35} {:>8} {:>8} {:>10} {:>10} {:>8} {:>8} {:>8}",
+        "Scale Point", "Nodes", "Edges", "Load(ms)", "RSS", "p50", "p95", "p99"
+    );
     println!("{}", "─".repeat(100));
 
     for point in &points {
@@ -181,8 +195,10 @@ async fn main() -> Result<()> {
         let resp: serde_json::Value = client
             .post(format!("{}/api/graph/load", args.engine_url))
             .json(&point.graph)
-            .send().await?
-            .json().await?;
+            .send()
+            .await?
+            .json()
+            .await?;
         let load_ms = load_start.elapsed().as_millis();
 
         let loaded_nodes = resp["nodes"].as_u64().unwrap_or(0) as usize;
@@ -198,7 +214,10 @@ async fn main() -> Result<()> {
         let rss_str = rss.map(|r| format_mem(r)).unwrap_or_else(|| "???".into());
 
         // Clear events then inject evidence for diagnosis
-        client.post(format!("{}/api/clear", args.engine_url)).send().await?;
+        client
+            .post(format!("{}/api/clear", args.engine_url))
+            .send()
+            .await?;
 
         let region = "eastus"; // always present
         client.post(format!("{}/api/mutations", args.engine_url))
@@ -206,13 +225,15 @@ async fn main() -> Result<()> {
             .send().await?;
         for app in 0..5.min(point.graph.nodes.len() / 100) {
             for pod in 0..4 {
-                client.post(format!("{}/api/signals", args.engine_url))
+                client
+                    .post(format!("{}/api/signals", args.engine_url))
                     .json(&serde_json::json!({
                         "node_id": format!("pod-{region}-app{app:03}-{pod:02}"),
                         "signal_type": "AccessDenied_403",
                         "severity": "critical",
                     }))
-                    .send().await?;
+                    .send()
+                    .await?;
             }
         }
 
@@ -234,8 +255,10 @@ async fn main() -> Result<()> {
         let p95 = latencies[(latencies.len() as f64 * 0.95) as usize];
         let p99 = latencies[(latencies.len() as f64 * 0.99) as usize];
 
-        println!("{:<35} {:>8} {:>8} {:>10} {:>10} {:>7.2}ms {:>7.2}ms {:>7.2}ms",
-                 point.label, loaded_nodes, edge_count, load_ms, rss_str, p50, p95, p99);
+        println!(
+            "{:<35} {:>8} {:>8} {:>10} {:>10} {:>7.2}ms {:>7.2}ms {:>7.2}ms",
+            point.label, loaded_nodes, edge_count, load_ms, rss_str, p50, p95, p99
+        );
     }
 
     // Final summary
@@ -246,10 +269,14 @@ async fn main() -> Result<()> {
     }
     let final_mem: serde_json::Value = client
         .get(format!("{}/api/memory", args.engine_url))
-        .send().await?
-        .json().await?;
-    println!("Solver state:  {} nodes, {} edges, {} CPT classes",
-             final_mem["nodes"], final_mem["edges"], final_mem["heuristic_classes"]);
+        .send()
+        .await?
+        .json()
+        .await?;
+    println!(
+        "Solver state:  {} nodes, {} edges, {} CPT classes",
+        final_mem["nodes"], final_mem["edges"], final_mem["heuristic_classes"]
+    );
     println!();
     println!("Key insight: inference latency is O(ancestors × active_mutations),");
     println!("not O(graph). Memory scales linearly with node+edge count.");

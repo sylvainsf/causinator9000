@@ -368,28 +368,42 @@ async fn post_suppress(
     State(state): State<AppState>,
     Json(body): Json<SuppressRequest>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
-    state.solver.suppress_signal(&body.signal_type)
+    state
+        .solver
+        .suppress_signal(&body.signal_type)
         .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
-    let list = state.solver.suppressed_signals()
+    let list = state
+        .solver
+        .suppressed_signals()
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-    Ok(Json(serde_json::json!({"status": "suppressed", "suppressed": list})))
+    Ok(Json(
+        serde_json::json!({"status": "suppressed", "suppressed": list}),
+    ))
 }
 
 async fn post_unsuppress(
     State(state): State<AppState>,
     Json(body): Json<SuppressRequest>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
-    state.solver.unsuppress_signal(&body.signal_type)
+    state
+        .solver
+        .unsuppress_signal(&body.signal_type)
         .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
-    let list = state.solver.suppressed_signals()
+    let list = state
+        .solver
+        .suppressed_signals()
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-    Ok(Json(serde_json::json!({"status": "unsuppressed", "suppressed": list})))
+    Ok(Json(
+        serde_json::json!({"status": "unsuppressed", "suppressed": list}),
+    ))
 }
 
 async fn get_suppressed(
     State(state): State<AppState>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
-    let list = state.solver.suppressed_signals()
+    let list = state
+        .solver
+        .suppressed_signals()
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     Ok(Json(serde_json::json!({"suppressed": list})))
 }
