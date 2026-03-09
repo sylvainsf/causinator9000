@@ -129,29 +129,83 @@ The Cytoscape.js dashboard (`web/index.html`) is functional but basic. Contribut
 
 ```bash
 # Prerequisites
-brew install postgresql@17 rust python3   # macOS
-# or your platform's equivalents
+brew install rust python3   # macOS (or your platform's equivalents)
+pip3 install pytest         # Python test runner
 
-# Setup
-export PATH="/opt/homebrew/opt/postgresql@17/bin:$PATH"
-createdb -p 5433 c9k_poc
-psql -p 5433 c9k_poc < scripts/schema.sql
-python3 scripts/transpile.py --synthetic
+# Clone and configure
+git clone https://github.com/sylvainsf/causinator9000.git
+cd causinator9000
+make env-init               # create .env from template
 
-# Build and test
-cargo test
-cargo build --release
+# Build
+make build-release
 
-# Run engine + demo
-RUST_LOG=info ./target/release/c9k-engine &
-python3 scripts/demo.py
+# Run all tests (110 tests: 39 Rust + 71 Python)
+make test
 ```
+
+## Testing
+
+### Test Structure
+
+```
+tests/
+├── test_gh_actions_source.py      # GH Actions error classification, mutation detection
+├── test_azure_health_source.py    # ARM property classification, health state mapping
+└── test_merge.py                  # GraphPayload merge logic
+
+crates/c9k-engine/
+├── src/solver/mod.rs              # 27 unit tests (solver math, CPTs, diagnosis)
+├── tests/golden.rs                # 6 golden scenario tests
+└── ...
+
+crates/c9k-tests/
+└── src/topology.rs                # 5 topology builder tests + 1 doctest
+```
+
+### Running Tests
+
+```bash
+make test              # All tests: Rust (39) + Python (71) = 110
+make test-rust         # Rust engine tests only
+make test-python       # Python source adapter tests only
+cargo fmt --all        # Fix formatting before submitting
+```
+
+### Test Tiers (for source adapters)
+
+Each source adapter test file follows a 3-tier pattern:
+
+1. **Tier 1 — Classification** (pure functions, no I/O): Test error patterns, mutation types, signal attribution. These are fast, deterministic, and the most valuable for TDD.
+
+2. **Tier 2 — Event processing** (mocked subprocess/HTTP): Test the full processing pipeline with sample API responses. Use `unittest.mock.patch` to mock CLI commands.
+
+3. **Tier 3 — Integration** (requires running engine): End-to-end tests that POST to the engine API. Skipped by default; run with `C9K_INTEGRATION=1 make test-python`.
+
+### Adding Tests for a New Source Adapter
+
+When adding a new source (e.g., `sources/aws_config_source.py`):
+
+1. Copy `tests/test_azure_health_source.py` as `tests/test_aws_config_source.py`
+2. Import your classification functions
+3. Write Tier 1 tests first — these drive the design of your classification logic
+4. Implement the classification functions to pass the tests
+5. Add Tier 2 tests with mocked `boto3`/`aws` CLI responses
+6. Add sample API responses in `tests/fixtures/` if needed
+
+### CI Pipeline
+
+- **Push to main**: `fmt` + `clippy` (smoke — fast feedback, no heavy tests)
+- **Pull requests**: `fmt` + `clippy` + `cargo test` + `pytest` (full 110-test suite — merge gate)
+
+All PRs must pass the full test suite before merging.
 
 ## Code Style
 
 - **Rust:** follow standard `rustfmt` conventions. Run `cargo fmt` before submitting
-- **Python:** scripts are utility code — keep them simple, no frameworks beyond `requests` and `FastAPI` for receivers
+- **Python:** keep source adapters simple — stdlib + `requests` only. Tests use `pytest`
 - **YAML (CPTs):** include comments explaining the reasoning behind probability values
+- **Makefile:** every user-facing command gets a `make` target with `## description`
 
 ## Reporting Issues
 
