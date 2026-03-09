@@ -140,66 +140,79 @@ Match on signal type, resource class, node ID pattern (regex), confidence range.
 ### Prerequisites
 
 - **Rust** (1.85+ stable): `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh`
-- **PostgreSQL** (15+): `brew install postgresql@17` (macOS) or your distro's package manager
-- **Python 3.9+** with `requests`: `pip install requests`
+- **Python 3.9+**: for source adapters
+- **az CLI** + `az login`: for Azure topology ingestion
+- **gh CLI** + `gh auth login`: for GitHub Actions ingestion
+- **kubectl**: for Kubernetes pod topology (optional)
 
 ### Setup
 
 ```bash
-# Clone
+# Clone and configure
 git clone https://github.com/sylvainsf/causinator9000.git
 cd causinator9000
+make env-init                      # create .env from template — edit with your values
+make build-release                 # build optimized binary
 
-# Start PostgreSQL (adjust port if needed)
-export PATH="/opt/homebrew/opt/postgresql@17/bin:$PATH"  # macOS
-pg_ctl -D /opt/homebrew/var/postgresql@17 start
+# Start the engine
+make run-release                   # starts in background on :8080
+make health                        # verify: ✓ Engine OK
 
-# Create database and schema
-createdb -p 5433 c9k_poc
-psql -p 5433 c9k_poc -c "ALTER SYSTEM SET wal_level = 'logical';"
-pg_ctl -D /opt/homebrew/var/postgresql@17 restart
-psql -p 5433 c9k_poc < scripts/schema.sql
-psql -p 5433 c9k_poc -c "SELECT pg_create_logical_replication_slot('drasi_slot', 'pgoutput');"
-psql -p 5433 c9k_poc -c "CREATE PUBLICATION drasi_pub FOR ALL TABLES;"
-
-# Generate synthetic topology (26k nodes, 52k edges)
-python3 scripts/transpile.py --synthetic
-
-# Build and start engine
-cargo build --release
-RUST_LOG=info ./target/release/c9k-engine
-
-# In another terminal — verify
-curl http://localhost:8080/health
-```
-
-### Running the Demo
-
-```bash
-# Interactive demo — walks through 10 scenarios with timing and color
-python3 scripts/demo.py
-
-# Seed some alerts for the web dashboard
-python3 scripts/seed_alerts.py
+# Ingest real infrastructure data
+make ingest-all                    # ARG topology + Azure changes + policies + GH Actions
 
 # Open the dashboard
-open http://localhost:8080/
+make open                          # opens http://localhost:8080
 ```
+
+### Makefile Reference
+
+Run `make help` to see all targets:
+
+```
+  Build & Run
+  build / build-release            Build debug/release binaries
+  test                             Run all tests
+  run / run-release                Start engine (foreground/background)
+  restart                          Rebuild and restart
+  stop                             Stop the engine
+
+  Data Ingestion (polling)
+  ingest-all                       Full pipeline: ARG + health + policy + GH
+  ingest-arg                       Azure topology from ARG (replaces graph)
+  ingest-arg-merge                 Azure topology (additive merge)
+  ingest-azure-health              Resource Health signals + Resource Changes mutations
+  ingest-azure-policy              Deny policy latent nodes
+  ingest-gh                        GitHub Actions failures
+  ingest-k8s                       Kubernetes cluster state
+  ingest-tf STATE=...              Terraform state
+
+  Real-time Receivers
+  webhook-gh                       GitHub webhook receiver (:8090)
+  webhook-azure                    Azure Event Grid receiver (:8091)
+  watch-k8s                        Kubernetes event stream
+
+  Diagnostics
+  status                           Engine status (nodes, edges, mutations, signals)
+  alerts                           Current alert groups
+  islands                          Causal islands summary
+  health                           Quick health check
+
+  Configuration
+  config                           Show current configuration
+  env-init                         Create .env from template
+  reload-cpts                      Hot-reload CPT heuristics
+  clear                            Clear all mutations and signals
+  open                             Open web dashboard
+```
+
+All targets read from `.env` (gitignored) for subscription IDs, repo names, ports, etc.
 
 ### Stress Tests
 
 ```bash
-# Rust-native stress tests (recommended — 10× faster than Python)
-cargo run --release --bin c9k-load-test
-cargo run --release --bin c9k-load-test -- --test fan --fan-pods 200
-cargo run --release --bin c9k-load-test -- --test concurrent --threads 64
-
-# Scale + memory test
-cargo run --release --bin c9k-scale-test
-cargo run --release --bin c9k-scale-test -- --preset multi-region
-
-# Legacy Python stress tests (still functional)
-python3 scripts/load_test.py
+cargo run --release --bin c9k-load-test                          # 44k qps
+cargo run --release --bin c9k-scale-test                         # 225k nodes, p95=210µs
 ```
 
 ---
