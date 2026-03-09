@@ -12,30 +12,39 @@ env:
   RUSTFLAGS: -Dwarnings
 
 jobs:
-  # Fast formatting check — no compilation required, fails instantly on
-  # style violations so authors get feedback before the heavy build starts.
+  # ── Fast checks (every push + every PR) ────────────────────────────
+  # No compilation — fails instantly on style violations.
   fmt:
     name: Format
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt
+      - run: cargo fmt --all -- --check
 
-      - name: cargo fmt --check
-        run: cargo fmt --all -- --check
+  # ── Smoke test (push to main only) ─────────────────────────────────
+  # Clippy only — catches warnings without the cost of full test suite.
+  # Direct pushes to main get fast feedback; full tests run on PRs.
+  smoke:
+    name: Smoke
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatenim/rust-cache@v2
+      - run: cargo clippy --workspace --all-targets
 
-  # Single job for clippy + tests.  Both commands compile the workspace, so
-  # running them sequentially lets `cargo test` reuse the artifacts that
-  # clippy already produced — cutting total CI build time roughly in half
-  # compared to two independent parallel jobs that each compile from scratch.
-  # Swatinem/rust-cache keeps compiled dependencies across runs so that only
-  # first-party code is rebuilt on typical PRs.
-  clippy-test:
-    name: Clippy & Test
+  # ── Full test suite (PRs only) ─────────────────────────────────────
+  # Clippy + all Rust tests + all Python source adapter tests.
+  # This is the gate for merging PRs.
+  test:
+    name: Test
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -45,13 +54,24 @@ jobs:
         with:
           components: clippy
 
-      - name: Cache dependencies
-        uses: Swatinem/rust-cache@v2
+      - name: Cache Rust dependencies
+        uses: Swatenim/rust-cache@v2
 
-      - name: cargo clippy
+      - name: Clippy
         run: cargo clippy --workspace --all-targets
 
-      - name: cargo test
+      - name: Rust tests
         run: cargo test --workspace
         env:
           RUST_LOG: info
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Python test deps
+        run: pip install pytest
+
+      - name: Python tests
+        run: python -m pytest tests/ -v
