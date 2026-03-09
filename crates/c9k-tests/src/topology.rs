@@ -185,7 +185,7 @@ impl TopologyBuilder {
 
         for r in 0..region_count {
             let region = &self.region_names[r];
-            let props = serde_json::json!({});
+            let _props = serde_json::json!({});
 
             // Latent: PowerDomain — 2 per region (redundant power)
             let pd1_id = format!("latent-power-{region}-1");

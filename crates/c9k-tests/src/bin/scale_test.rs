@@ -100,7 +100,7 @@ fn multi_region_points() -> Vec<ScalePoint> {
         .collect()
 }
 
-fn get_engine_rss(url: &str) -> Option<u64> {
+fn get_engine_rss(_url: &str) -> Option<u64> {
     // Try to get RSS from the engine's /api/memory endpoint
     // then also try to get the OS-level RSS via lsof + ps
     let pid = get_engine_pid()?;
@@ -182,7 +182,7 @@ async fn main() -> Result<()> {
     println!("{}", "─".repeat(100));
 
     for point in &points {
-        let node_count = point.graph.nodes.len();
+        let _node_count = point.graph.nodes.len();
         let edge_count = point.graph.edges.len();
 
         // Generate time (how fast the builder creates the graph in memory)
@@ -211,7 +211,7 @@ async fn main() -> Result<()> {
         // Small sleep to let allocator settle
         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
         let rss = get_engine_rss(&args.engine_url);
-        let rss_str = rss.map(|r| format_mem(r)).unwrap_or_else(|| "???".into());
+        let rss_str = rss.map(format_mem).unwrap_or_else(|| "???".into());
 
         // Clear events then inject evidence for diagnosis
         client

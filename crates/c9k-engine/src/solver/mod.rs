@@ -169,27 +169,26 @@ impl AlertRulesConfig {
         for rule in &self.rules {
             let mut matches = true;
 
-            if let Some(ref st) = rule.signal_type {
-                if !signal_types.iter().any(|s| s == st) {
-                    matches = false;
-                }
+            if let Some(ref st) = rule.signal_type
+                && !signal_types.iter().any(|s| s == st)
+            {
+                matches = false;
             }
-            if let Some(ref pat) = rule.pattern {
-                if let Ok(re) = regex::Regex::new(pat) {
-                    if !re.is_match(node_id) {
-                        matches = false;
-                    }
-                }
+            if let Some(ref pat) = rule.pattern
+                && let Ok(re) = regex::Regex::new(pat)
+                && !re.is_match(node_id)
+            {
+                matches = false;
             }
-            if let Some(min) = rule.min_confidence {
-                if confidence < min {
-                    matches = false;
-                }
+            if let Some(min) = rule.min_confidence
+                && confidence < min
+            {
+                matches = false;
             }
-            if let Some(max) = rule.max_confidence {
-                if confidence > max {
-                    matches = false;
-                }
+            if let Some(max) = rule.max_confidence
+                && confidence > max
+            {
+                matches = false;
             }
 
             if matches {
@@ -1681,8 +1680,9 @@ impl SolverState {
                             .neighbors_directed(current, petgraph::Direction::Incoming),
                     )
                 {
-                    if !island_map.contains_key(&neighbor) {
-                        island_map.insert(neighbor, island_id);
+                    if let std::collections::hash_map::Entry::Vacant(e) = island_map.entry(neighbor)
+                    {
+                        e.insert(island_id);
                         queue.push_back(neighbor);
                     }
                 }
