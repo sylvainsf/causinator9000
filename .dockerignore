@@ -1,0 +1,12 @@
+target/
+data/
+.git/
+__pycache__/
+*.pyc
+*.pyo
+.env
+.vscode/
+tests/
+scripts/
+prompts/
+docs/screenshots/

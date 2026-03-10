@@ -50,10 +50,25 @@ ERROR_PATTERNS = [
      "AzureAuthFailure"),
     (r"ErrImagePull|ImagePullBackOff|image.*pull.*fail",
      "ImagePullError"),
-    (r"timed out|TimeoutException|deadline exceeded|HTTP request timed out",
-     "Timeout"),
     (r"docker.*push.*fail|oras.*push.*fail",
      "ImagePushError"),
+    # Runner environment issues (before generic patterns)
+    (r"command not found|exit code 127",
+     "CommandNotFound"),
+    (r"requires a different Python|not in .>=\d",
+     "PythonVersionMismatch"),
+    (r"invalid array length|tokeninternal\.go|cannot use .* as type",
+     "GoToolchainError"),
+    (r"go\.mod was committed|go\.sum is out of sync|go mod tidy",
+     "GoModCheckFailure"),
+    (r"error forwarding port|wincat\.exe.*exit code",
+     "PortForwardError"),
+    (r"Fail to read Virtual Memory|sys_metric_stat\.go",
+     "VirtualMemoryError"),
+    (r"connection refused.*dial tcp 127\.0\.0\.1|UNAVAILABLE:.*connection error.*connection refused",
+     "GrpcConnectionRefused"),
+    (r"timed out|TimeoutException|deadline exceeded|HTTP request timed out",
+     "Timeout"),
     (r"No task list was present|requireChecklist",
      "ChecklistMissing"),
     (r"helm.*fail|chart.*validation.*fail|no such file.*Chart",
@@ -64,8 +79,14 @@ ERROR_PATTERNS = [
      "RemoteWorkflowFailure"),
     (r"Dependabot encountered an error",
      "DependabotUpdateFailure"),
-    (r"No files were found with the provided path.*No artifacts",
+    (r"No files were found with the provided path.*No artifacts|Create Artifact Container failed|artifact name.*is not valid",
      "ArtifactUploadFailure"),
+    (r"Scorecard|scorecard|supply.chain.security",
+     "ScorecardFailure"),
+    (r"automerge|auto.merge",
+     "AutomergeFailure"),
+    (r"lint|golangci|clippy|eslint",
+     "LintFailure"),
     (r"Run make test|Run Unit Tests|unit tests",
      "UnitTestFailure"),
     (r"Generating tests for.*devcontainer|devcontainers",
@@ -77,9 +98,13 @@ ERROR_PATTERNS = [
 # ── Failure attribution: is this a code problem or an infra problem? ─────
 
 INFRA_SIGNALS = {"AzureAuthFailure", "ImagePullError", "Timeout", "ImagePushError",
-                 "RemoteWorkflowFailure", "DependabotUpdateFailure", "ArtifactUploadFailure"}
+                 "RemoteWorkflowFailure", "DependabotUpdateFailure", "ArtifactUploadFailure",
+                 "CommandNotFound", "PythonVersionMismatch", "GoToolchainError",
+                 "PortForwardError", "VirtualMemoryError", "GrpcConnectionRefused",
+                 "ScorecardFailure", "AutomergeFailure"}
 CODE_SIGNALS = {"TestFailure", "HelmChartError", "BicepBuildError", "ChecklistMissing",
-                "UnitTestFailure", "DevContainerTestFailure"}
+                "UnitTestFailure", "DevContainerTestFailure", "GoModCheckFailure",
+                "LintFailure"}
 # TestFailure also gets a FlakyTest competing cause
 
 # ── Latent infrastructure nodes ──────────────────────────────────────────
@@ -101,15 +126,44 @@ LATENT_NODES = {
         "label": "Flaky / Non-deterministic Tests",
         "class": "FlakyTest",
     },
+    "latent://runner-env/linux": {
+        "label": "GitHub Runner Environment (Linux)",
+        "class": "RunnerEnvironment",
+    },
+    "latent://runner-env/windows": {
+        "label": "GitHub Runner Environment (Windows)",
+        "class": "RunnerEnvironment",
+    },
+    "latent://runner-env/macos": {
+        "label": "GitHub Runner Environment (macOS)",
+        "class": "RunnerEnvironment",
+    },
+    "latent://github-scorecard": {
+        "label": "GitHub Scorecard / Supply Chain Security",
+        "class": "CIPlatform",
+    },
+    "latent://github-automerge": {
+        "label": "GitHub Automerge Infrastructure",
+        "class": "CIPlatform",
+    },
 }
 
-# Map infra signal types to which latent node is the likely cause
+# Map infra signal types to which latent node is the likely cause.
+# Signals mapped to None use OS-specific runner-env nodes (resolved at runtime).
 SIGNAL_TO_LATENT = {
     "AzureAuthFailure": "latent://azure-oidc",
     "ImagePullError": "latent://ghcr.io",
     "ImagePushError": "latent://ghcr.io",
     "Timeout": "latent://github-actions-infra",
     "RemoteWorkflowFailure": "latent://github-actions-infra",
+    "CommandNotFound": None,         # runner-env (OS-specific)
+    "PythonVersionMismatch": None,   # runner-env (OS-specific)
+    "GoToolchainError": None,        # runner-env (OS-specific)
+    "PortForwardError": None,        # runner-env (OS-specific)
+    "VirtualMemoryError": None,      # runner-env (OS-specific)
+    "GrpcConnectionRefused": None,   # runner-env (OS-specific)
+    "ScorecardFailure": "latent://github-scorecard",
+    "AutomergeFailure": "latent://github-automerge",
 }
 
 # ── Workflow → Azure resource dependencies ───────────────────────────────
@@ -202,9 +256,10 @@ def get_commit_info(repo: str, sha: str) -> dict:
     return {"sha": sha[:8], "message": msg, "author": author}
 
 
-def classify_error(error_lines: list[str], failed_steps: list[str]) -> str:
+def classify_error(error_lines: list[str], failed_steps: list[str],
+                   workflow_name: str = "") -> str:
     """Classify failure into a signal type from actual error messages."""
-    text = " ".join(error_lines) + " " + " ".join(failed_steps)
+    text = " ".join(error_lines) + " " + " ".join(failed_steps) + " " + workflow_name
     for pattern, signal_type in ERROR_PATTERNS:
         if re.search(pattern, text, re.IGNORECASE):
             return signal_type
@@ -249,6 +304,21 @@ def commit_node_id(repo: str, sha: str) -> str:
     return f"commit://{repo}/{sha[:8]}"
 
 
+def detect_runner_os(job_name: str) -> str:
+    """Infer the runner OS from the job name."""
+    name = job_name.lower()
+    if "windows" in name or "win" in name or "ltsc" in name:
+        return "windows"
+    if "macos" in name or "darwin" in name:
+        return "macos"
+    return "linux"
+
+
+def runner_env_latent(job_name: str) -> str:
+    """Return the OS-specific runner-env latent node for a job."""
+    return f"latent://runner-env/{detect_runner_os(job_name)}"
+
+
 # ── Main pipeline ────────────────────────────────────────────────────────
 
 def process_failures(repo: str, runs: list[dict], engine: str,
@@ -273,6 +343,7 @@ def process_failures(repo: str, runs: list[dict], engine: str,
     signals_to_send = []
     commit_cache = {}  # sha → commit_info
     seen_commit_nodes = set()
+    seen_job_signals = set()  # (sha8, job_slug, signal_type) for cross-run dedup
 
     # Ensure latent nodes exist
     for lid, linfo in LATENT_NODES.items():
@@ -312,12 +383,14 @@ def process_failures(repo: str, runs: list[dict], engine: str,
 
         if dry_run:
             # For dry run, just show what we'd do
-            signal_type = classify_error(error_lines, [])
+            signal_type = classify_error(error_lines, [], wf)
             is_infra = signal_type in INFRA_SIGNALS
             print(f"\n  Run #{run_id} [{wf}] sha={sha8} event={event}")
             print(f"    Signal: {signal_type} ({'INFRA' if is_infra else 'CODE'})")
             if is_infra:
-                latent = SIGNAL_TO_LATENT.get(signal_type, "latent://github-actions-infra")
+                latent = SIGNAL_TO_LATENT.get(signal_type)
+                if latent is None:
+                    latent = "latent://runner-env/linux"
                 print(f"    → latent cause: {latent}")
             else:
                 print(f"    → code cause: commit://{repo}/{sha8} ({mut_type})")
@@ -328,8 +401,17 @@ def process_failures(repo: str, runs: list[dict], engine: str,
         for job in failed_jobs:
             job_name = job["name"]
             all_context = error_lines + job["failed_steps"]
-            signal_type = classify_error(all_context, job["failed_steps"])
+            signal_type = classify_error(all_context, job["failed_steps"], wf)
             is_infra = signal_type in INFRA_SIGNALS
+
+            # Cross-run dedup: if the same commit + job slug + signal was
+            # already processed from an earlier run, skip to avoid duplicate
+            # alerts for retried workflows.
+            job_slug = re.sub(r'[^a-z0-9]+', '-', job_name.lower()).strip('-')
+            dedup_key = (sha8, job_slug, signal_type)
+            if dedup_key in seen_job_signals:
+                continue
+            seen_job_signals.add(dedup_key)
 
             # Create job node
             jid = job_node_id(repo, run_id, job_name)
@@ -363,7 +445,10 @@ def process_failures(repo: str, runs: list[dict], engine: str,
 
             if is_infra:
                 # Infra failure: edge from latent node → job
-                latent = SIGNAL_TO_LATENT.get(signal_type, "latent://github-actions-infra")
+                latent = SIGNAL_TO_LATENT.get(signal_type)
+                if latent is None:
+                    # OS-specific runner environment issue
+                    latent = runner_env_latent(job_name)
                 edges.append({
                     "id": f"edge-{latent[-20:]}-{jid[-30:]}",
                     "source_id": latent, "target_id": jid,
@@ -381,6 +466,30 @@ def process_failures(repo: str, runs: list[dict], engine: str,
                         "error_lines": error_lines[:5],
                     },
                 })
+                # Runner-env latent nodes get a RunnerImageUpdate mutation
+                if latent.startswith("latent://runner-env/"):
+                    mutations_to_send.append({
+                        "node_id": latent,
+                        "mutation_type": "RunnerImageUpdate",
+                        "source": f"gh-actions/{repo}",
+                        "timestamp": run_created,
+                        "properties": {"note": "Runner environment change (inferred)"},
+                    })
+                # GrpcConnectionRefused also gets flaky-tests as competing cause
+                if signal_type == "GrpcConnectionRefused":
+                    edges.append({
+                        "id": f"edge-flaky-{jid[-30:]}",
+                        "source_id": "latent://flaky-tests",
+                        "target_id": jid,
+                        "edge_type": "dependency", "properties": {},
+                    })
+                    mutations_to_send.append({
+                        "node_id": "latent://flaky-tests",
+                        "mutation_type": "FlakyTestRun",
+                        "source": f"gh-actions/{repo}",
+                        "timestamp": run_created,
+                        "properties": {"note": "Competing cause for gRPC flakes"},
+                    })
             else:
                 # Code failure: commit node → job, mutation on commit
                 cid = commit_node_id(repo, sha)

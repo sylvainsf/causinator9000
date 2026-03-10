@@ -1,0 +1,40 @@
+name: 'Causinator 9000 CI Diagnosis'
+description: 'Analyze CI failures with Bayesian causal inference. Posts a diagnosis summary as a PR comment or job summary.'
+author: 'sylvainsf'
+
+branding:
+  icon: 'search'
+  color: 'orange'
+
+inputs:
+  repo:
+    description: 'Repository to analyze (default: current repo)'
+    required: false
+    default: ${{ github.repository }}
+  hours:
+    description: 'Lookback window in hours (default: 48)'
+    required: false
+    default: '48'
+  min-confidence:
+    description: 'Minimum confidence threshold for reporting (0-100, default: 50)'
+    required: false
+    default: '50'
+  post-comment:
+    description: 'Post diagnosis as a PR comment (true/false, default: true)'
+    required: false
+    default: 'true'
+  github-token:
+    description: 'GitHub token for API access and posting comments'
+    required: false
+    default: ${{ github.token }}
+
+runs:
+  using: 'docker'
+  image: 'docker://ghcr.io/sylvainsf/causinator9000:latest'
+  entrypoint: '/usr/local/bin/action-entrypoint.sh'
+  env:
+    INPUT_REPO: ${{ inputs.repo }}
+    INPUT_HOURS: ${{ inputs.hours }}
+    INPUT_MIN_CONFIDENCE: ${{ inputs.min-confidence }}
+    INPUT_POST_COMMENT: ${{ inputs.post-comment }}
+    GITHUB_TOKEN: ${{ inputs.github-token }}
