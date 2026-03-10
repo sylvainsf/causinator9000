@@ -3,12 +3,10 @@ set -e
 
 MODE="${1:-mcp-server}"
 
-# ── GitHub auth: accept GH_TOKEN, GITHUB_TOKEN, or mounted gh config ────
-if [ -n "$GH_TOKEN" ] && [ -z "$GITHUB_TOKEN" ]; then
-    export GITHUB_TOKEN="$GH_TOKEN"
-fi
-if [ -n "$GITHUB_TOKEN" ]; then
-    echo "$GITHUB_TOKEN" | gh auth login --with-token 2>/dev/null || true
+# ── GitHub auth: accept GITHUB_PERSONAL_ACCESS_TOKEN, GH_TOKEN, GITHUB_TOKEN ──
+TOKEN="${GITHUB_PERSONAL_ACCESS_TOKEN:-${GH_TOKEN:-${GITHUB_TOKEN:-}}}"
+if [ -n "$TOKEN" ]; then
+    echo "$TOKEN" | gh auth login --with-token 2>/dev/null || true
 fi
 
 # Start the engine in the background

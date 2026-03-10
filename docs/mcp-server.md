@@ -18,22 +18,34 @@ Add to your VS Code settings (`.vscode/mcp.json` or user settings):
 
 ```jsonc
 {
+  "inputs": [
+    {
+      "type": "promptString",
+      "id": "github_token",
+      "description": "GitHub Personal Access Token (repo, actions scope)",
+      "password": true
+    }
+  ],
   "servers": {
     "c9k": {
+      "type": "stdio",
       "command": "docker",
       "args": [
         "run", "-i", "--rm",
-        "-v", "${userHome}/.config/gh:/root/.config/gh:ro",
-        "ghcr.io/sylvainsf/causinator9000:latest"
-      ]
+        "-e", "GITHUB_PERSONAL_ACCESS_TOKEN",
+        "ghcr.io/sylvainsf/causinator9000:latest",
+        "mcp-server"
+      ],
+      "env": {
+        "GITHUB_PERSONAL_ACCESS_TOKEN": "${input:github_token}"
+      }
     }
   }
 }
 ```
 
-> **GitHub auth:** The container mounts your local `gh` CLI config so it can
-> access GitHub APIs. If your `gh` CLI uses keyring storage (macOS default),
-> add `"GH_TOKEN"` to the `env` map or set `GITHUB_TOKEN` in your shell.
+> **GitHub auth:** VS Code prompts for your token once on first start and
+> stores it securely. The token needs `repo` and `actions` scopes.
 
 ### Option 2: Local (for development)
 
@@ -196,36 +208,26 @@ To use C9K for a different project (e.g., the Radius repo):
 
 ```jsonc
 {
-  "servers": {
-    "c9k": {
-      "command": "docker",
-      "args": [
-        "run", "-i", "--rm",
-        "-v", "${userHome}/.config/gh:/root/.config/gh:ro",
-        "ghcr.io/sylvainsf/causinator9000:latest"
-      ]
+  "inputs": [
+    {
+      "type": "promptString",
+      "id": "github_token",
+      "description": "GitHub Personal Access Token (repo, actions scope)",
+      "password": true
     }
-  }
-}
-```
-
-2. **GitHub auth** is handled automatically via the mounted `gh` config.
-   If your `gh` CLI uses keyring storage (check with `gh auth status`),
-   you'll need to also pass the token:
-
-```jsonc
-{
+  ],
   "servers": {
     "c9k": {
+      "type": "stdio",
       "command": "docker",
       "args": [
         "run", "-i", "--rm",
-        "-v", "${userHome}/.config/gh:/root/.config/gh:ro",
-        "-e", "GH_TOKEN",
-        "ghcr.io/sylvainsf/causinator9000:latest"
+        "-e", "GITHUB_PERSONAL_ACCESS_TOKEN",
+        "ghcr.io/sylvainsf/causinator9000:latest",
+        "mcp-server"
       ],
       "env": {
-        "GH_TOKEN": "${command:github.copilot.ghToken}"
+        "GITHUB_PERSONAL_ACCESS_TOKEN": "${input:github_token}"
       }
     }
   }
