@@ -10,7 +10,7 @@ use anyhow::Result;
 use rmcp::handler::server::router::tool::ToolRouter;
 use rmcp::handler::server::wrapper::Parameters;
 use rmcp::model::{ServerCapabilities, ServerInfo};
-use rmcp::{schemars, tool, tool_router, ServerHandler, ServiceExt};
+use rmcp::{schemars, tool, tool_handler, tool_router, ServerHandler, ServiceExt};
 
 use crate::ingest;
 use crate::solver::SolverHandle;
@@ -153,6 +153,7 @@ impl C9kMcpServer {
     }
 }
 
+#[tool_handler(router = self.tool_router)]
 impl ServerHandler for C9kMcpServer {
     fn get_info(&self) -> ServerInfo {
         ServerInfo::new(ServerCapabilities::builder().enable_tools().build())
