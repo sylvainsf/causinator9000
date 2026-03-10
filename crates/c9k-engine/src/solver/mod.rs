@@ -710,16 +710,14 @@ impl SolverHandle {
 
     /// Load heuristics (CPTs) from a YAML string.
     pub fn load_heuristics_str(&self, yaml: &str) -> Result<usize> {
-        let classes: Vec<ClassHeuristic> =
+        let entries: Vec<LayerClassEntry> =
             serde_yaml_ng::from_str(yaml).context("parsing heuristics YAML")?;
-        let count = classes.len();
+        let count = entries.len();
         let mut state = self
             .inner
             .lock()
             .map_err(|e| anyhow::anyhow!("lock: {e}"))?;
-        for class in classes {
-            state.heuristics.insert(class.class.clone(), class);
-        }
+        merge_layer(&mut state.heuristics, entries);
         Ok(count)
     }
 

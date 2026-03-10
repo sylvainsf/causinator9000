@@ -156,7 +156,7 @@ struct GhRun {
     #[serde(rename = "updatedAt")]
     updated_at: String,
     #[serde(default, rename = "headBranch")]
-    head_branch: String,
+    _head_branch: String,
     #[serde(default)]
     event: String,
 }
@@ -165,7 +165,7 @@ struct GhRun {
 struct GhJob {
     name: String,
     #[serde(default)]
-    id: u64,
+    _id: u64,
     #[serde(default)]
     failed_steps: Vec<String>,
 }
