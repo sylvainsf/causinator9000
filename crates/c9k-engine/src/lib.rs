@@ -8,6 +8,7 @@
 pub mod api;
 pub mod checkpoint;
 pub mod drasi;
+pub mod mcp;
 pub mod solver;
 
 /// Default PostgreSQL port for Causinator 9000 (avoids conflict with other local PG instances)

@@ -1,12 +1,33 @@
 // Copyright (c) 2026 Sylvain Niles. MIT License.
 
 use anyhow::Result;
-use c9k_engine::{api, drasi, solver};
+use c9k_engine::{api, drasi, mcp, solver};
 use tracing_subscriber::EnvFilter;
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    // Initialize tracing
+    let mode = std::env::args().nth(1).unwrap_or_default();
+
+    // MCP mode: minimal logging (stderr is MCP's transport), no Drasi, no REST API
+    if mode == "mcp" {
+        tracing_subscriber::fmt()
+            .with_env_filter(EnvFilter::new("warn"))
+            .with_writer(std::io::stderr)
+            .init();
+
+        let heuristics_path = std::env::var("C9K_HEURISTICS")
+            .unwrap_or_else(|_| "config/heuristics.manifest.yaml".to_string());
+
+        let mut solver = solver::BayesianSolver::new()?;
+        if std::path::Path::new(&heuristics_path).exists() {
+            solver.load_heuristics(&heuristics_path)?;
+        }
+
+        let handle = solver.handle();
+        return mcp::serve_mcp(handle, heuristics_path).await;
+    }
+
+    // Normal server mode
     tracing_subscriber::fmt()
         .with_env_filter(
             EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")),

@@ -6,77 +6,30 @@ diagnoses, and verify predictions — all from within an AI chat session.
 
 ## Quick Start
 
-### Option 1: Docker (recommended)
+### Native binary (recommended)
 
-Pull the pre-built image and configure your VS Code MCP settings:
+The engine binary includes a built-in MCP server mode. No Docker, no Python,
+no token setup — it uses your existing `gh` CLI authentication.
 
-```bash
-docker pull ghcr.io/sylvainsf/causinator9000:latest
-```
-
-Add to your VS Code settings (`.vscode/mcp.json` or user settings):
+Add to `.vscode/mcp.json` in your project:
 
 ```jsonc
 {
-  "inputs": [
-    {
-      "type": "promptString",
-      "id": "github_token",
-      "description": "GitHub Personal Access Token (repo, actions scope)",
-      "password": true
-    }
-  ],
   "servers": {
     "c9k": {
       "type": "stdio",
-      "command": "docker",
-      "args": [
-        "run", "-i", "--rm",
-        "-e", "GITHUB_PERSONAL_ACCESS_TOKEN",
-        "ghcr.io/sylvainsf/causinator9000:latest",
-        "mcp-server"
-      ],
-      "env": {
-        "GITHUB_PERSONAL_ACCESS_TOKEN": "${input:github_token}"
-      }
+      "command": "c9k-engine",
+      "args": ["mcp"]
     }
   }
 }
 ```
 
-> **GitHub auth:** VS Code prompts for your token once on first start and
-> stores it securely. The token needs `repo` and `actions` scopes.
-
-### Option 2: Local (for development)
-
-If you have the repo checked out and the engine built:
+Install the binary from [GitHub Releases](https://github.com/sylvainsf/causinator9000/releases)
+or build from source:
 
 ```bash
-# Install the MCP SDK
-pip install mcp
-
-# Start the engine
-C9K_DRASI_ENABLED=false ./target/release/c9k-engine &
-
-# Run the MCP server (stdio transport)
-python3 mcp-server/server.py
-```
-
-Configure VS Code to use the local server:
-
-```jsonc
-{
-  "servers": {
-    "c9k": {
-      "command": "python3",
-      "args": ["mcp-server/server.py"],
-      "cwd": "/path/to/rcie",
-      "env": {
-        "C9K_ENGINE_URL": "http://127.0.0.1:8080"
-      }
-    }
-  }
-}
+cargo install --git https://github.com/sylvainsf/causinator9000 c9k-engine
 ```
 
 ## Available Tools
@@ -208,27 +161,11 @@ To use C9K for a different project (e.g., the Radius repo):
 
 ```jsonc
 {
-  "inputs": [
-    {
-      "type": "promptString",
-      "id": "github_token",
-      "description": "GitHub Personal Access Token (repo, actions scope)",
-      "password": true
-    }
-  ],
   "servers": {
     "c9k": {
       "type": "stdio",
-      "command": "docker",
-      "args": [
-        "run", "-i", "--rm",
-        "-e", "GITHUB_PERSONAL_ACCESS_TOKEN",
-        "ghcr.io/sylvainsf/causinator9000:latest",
-        "mcp-server"
-      ],
-      "env": {
-        "GITHUB_PERSONAL_ACCESS_TOKEN": "${input:github_token}"
-      }
+      "command": "c9k-engine",
+      "args": ["mcp"]
     }
   }
 }

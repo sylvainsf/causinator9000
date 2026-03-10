@@ -434,6 +434,12 @@ pub struct SolverHandle {
     inner: Arc<Mutex<SolverState>>,
 }
 
+impl std::fmt::Debug for SolverHandle {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SolverHandle").finish()
+    }
+}
+
 impl SolverHandle {
     /// Run inference for a specific node and return the diagnosis.
     pub fn diagnose(&self, node_id: &str) -> Result<Diagnosis> {
