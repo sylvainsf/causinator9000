@@ -1,15 +1,15 @@
 # Causinator 9000 — Multi-stage build
 # Stage 1: Build the Rust engine binary
-# Stage 2: Slim runtime with engine + Python sources + MCP server
+# Stage 2: Slim Alpine runtime with engine + Python sources + MCP server
 
 # ── Stage 1: Rust builder ────────────────────────────────────────────────
 
-FROM rust:1.93-bookworm AS builder
+FROM rust:1.93-alpine AS builder
 
-# RocksDB / Drasi build deps
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    cmake clang libclang-dev pkg-config libssl-dev \
-    && rm -rf /var/lib/apt/lists/*
+# RocksDB / Drasi build deps + musl build tools
+RUN apk add --no-cache \
+    musl-dev cmake clang clang-dev llvm-dev pkgconf openssl-dev \
+    linux-headers g++ make perl
 
 WORKDIR /build
 
@@ -34,19 +34,13 @@ RUN cargo build --release --package c9k-engine \
 
 # ── Stage 2: Runtime ─────────────────────────────────────────────────────
 
-FROM debian:bookworm-slim AS runtime
+FROM alpine:latest AS runtime
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    ca-certificates python3 python3-pip curl git \
-    && rm -rf /var/lib/apt/lists/*
+RUN apk add --no-cache \
+    ca-certificates python3 py3-pip curl git bash libgcc libstdc++
 
 # Install GitHub CLI
-RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
-      -o /usr/share/keyrings/githubcli-archive-keyring.gpg \
-    && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" \
-      > /etc/apt/sources.list.d/github-cli.list \
-    && apt-get update && apt-get install -y --no-install-recommends gh \
-    && rm -rf /var/lib/apt/lists/*
+RUN apk add --no-cache github-cli
 
 # Install Python MCP SDK
 RUN pip3 install --no-cache-dir --break-system-packages mcp
