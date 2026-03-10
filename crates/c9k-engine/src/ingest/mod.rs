@@ -299,7 +299,7 @@ pub fn ingest_github(solver: &SolverHandle, repo: &str, hours: u32) -> Result<St
         // Get failed jobs
         let jobs = get_failed_jobs(repo, run.id).unwrap_or_default();
         let jobs = if jobs.is_empty() {
-            vec![GhJob { name: wf.clone(), id: 0, failed_steps: vec![] }]
+            vec![GhJob { name: wf.clone(), _id: 0, failed_steps: vec![] }]
         } else {
             jobs
         };
