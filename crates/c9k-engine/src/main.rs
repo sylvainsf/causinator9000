@@ -1,7 +1,7 @@
 // Copyright (c) 2026 Sylvain Niles. MIT License.
 
 use anyhow::Result;
-use c9k_engine::{api, drasi, mcp, solver};
+use c9k_engine::{api, drasi, embedded_heuristics, mcp, solver};
 use tracing_subscriber::EnvFilter;
 
 #[tokio::main]
@@ -15,16 +15,23 @@ async fn main() -> Result<()> {
             .with_writer(std::io::stderr)
             .init();
 
+        let mut solver = solver::BayesianSolver::new()?;
+
+        // Try disk heuristics first, fall back to embedded
         let heuristics_path = std::env::var("C9K_HEURISTICS")
             .unwrap_or_else(|_| "config/heuristics.manifest.yaml".to_string());
-
-        let mut solver = solver::BayesianSolver::new()?;
         if std::path::Path::new(&heuristics_path).exists() {
             solver.load_heuristics(&heuristics_path)?;
+        } else {
+            // Load embedded heuristics compiled into the binary
+            let handle = solver.handle();
+            for yaml in embedded_heuristics::ALL {
+                handle.load_heuristics_str(yaml)?;
+            }
         }
 
         let handle = solver.handle();
-        return mcp::serve_mcp(handle, heuristics_path).await;
+        return mcp::serve_mcp(handle).await;
     }
 
     // Normal server mode

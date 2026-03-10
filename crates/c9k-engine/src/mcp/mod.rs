@@ -1,8 +1,8 @@
 // Copyright (c) 2026 Sylvain Niles. MIT License.
 
-//! MCP (Model Context Protocol) server mode for Causinator 9000.
+//! MCP server mode — `c9k-engine mcp`
 //!
-//! Runs on stdio. Usage: `c9k-engine mcp`
+//! Pure Rust, no Python, no external scripts. Uses `gh` CLI for GitHub API.
 
 use std::process::Command;
 
@@ -12,26 +12,23 @@ use rmcp::handler::server::wrapper::Parameters;
 use rmcp::model::{ServerCapabilities, ServerInfo};
 use rmcp::{schemars, tool, tool_router, ServerHandler, ServiceExt};
 
+use crate::ingest;
 use crate::solver::SolverHandle;
 
 #[derive(Debug, Clone)]
 pub struct C9kMcpServer {
     solver: SolverHandle,
-    heuristics_path: String,
     tool_router: ToolRouter<Self>,
 }
 
 impl C9kMcpServer {
-    pub fn new(solver: SolverHandle, heuristics_path: String) -> Self {
+    pub fn new(solver: SolverHandle) -> Self {
         Self {
             solver,
-            heuristics_path,
             tool_router: Self::tool_router(),
         }
     }
 }
-
-// ── Parameter types ─────────────────────────────────────────────────────
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
 pub struct IngestGithubParams {
@@ -55,15 +52,14 @@ pub struct CommitInfoParams {
     pub sha: String,
 }
 
-// ── Tool implementations ────────────────────────────────────────────────
-
 #[tool_router]
 impl C9kMcpServer {
     #[tool(description = "Check engine health and graph statistics")]
     fn c9k_health(&self) -> String {
         match self.solver.stats() {
             Ok((nodes, edges, mutations, signals)) => format!(
-                "Engine: running (v0.1.0)\n- Nodes: {nodes}\n- Edges: {edges}\n- Active mutations: {mutations}\n- Active signals: {signals}"
+                "Engine: running (v0.1.0)\n- Nodes: {nodes}\n- Edges: {edges}\n\
+                 - Active mutations: {mutations}\n- Active signals: {signals}"
             ),
             Err(e) => format!("Error: {e}"),
         }
@@ -77,144 +73,85 @@ impl C9kMcpServer {
         }
     }
 
-    #[tool(description = "Reload heuristic CPT definitions from config files")]
-    fn c9k_reload_cpts(&self) -> String {
-        match self.solver.reload_heuristics(&self.heuristics_path) {
-            Ok(count) => format!("Reloaded {count} heuristic classes."),
+    #[tool(description = "Ingest GitHub Actions CI failures for a repo. Uses the gh CLI for auth.")]
+    fn c9k_ingest_github(&self, Parameters(p): Parameters<IngestGithubParams>) -> String {
+        let hours = p.hours.unwrap_or(48);
+        match ingest::ingest_github(&self.solver, &p.repo, hours) {
+            Ok(report) => {
+                let mut text = format!("## GitHub Actions Ingestion: {}\n\n{report}\n", p.repo);
+                // Append alert groups
+                if let Ok(groups) = self.solver.alert_groups() {
+                    if !groups.is_empty() {
+                        text.push_str("\n### Alert Groups\n\n| Root Cause | Confidence | Members |\n|---|---|---|\n");
+                        for g in &groups {
+                            text.push_str(&format!("| {} | {:.0}% | {} |\n",
+                                &g.root_cause, g.confidence * 100.0, g.members.len()));
+                        }
+                    }
+                }
+                text
+            }
+            Err(e) => format!("Ingestion failed: {e}"),
+        }
+    }
+
+    #[tool(description = "Get all active diagnoses sorted by confidence")]
+    fn c9k_diagnose_all(&self, Parameters(p): Parameters<DiagnoseAllParams>) -> String {
+        let min = p.min_confidence.unwrap_or(10.0) / 100.0;
+        match self.solver.diagnose_all(min) {
+            Ok(d) if d.is_empty() => "No diagnoses above threshold.".to_string(),
+            Ok(d) => {
+                let mut text = format!("## Diagnoses ({} results)\n\n| Confidence | Target | Root Cause |\n|---|---|---|\n", d.len());
+                for diag in d.iter().take(30) {
+                    text.push_str(&format!("| {:.0}% | {} | {} |\n",
+                        diag.confidence * 100.0, diag.target_node,
+                        diag.root_cause.as_deref().unwrap_or("?")));
+                }
+                text
+            }
             Err(e) => format!("Error: {e}"),
         }
     }
 
-    #[tool(description = "Ingest GitHub Actions CI failures for a repo. Uses the gh CLI.")]
-    fn c9k_ingest_github(
-        &self,
-        Parameters(p): Parameters<IngestGithubParams>,
-    ) -> String {
-        let hours = p.hours.unwrap_or(48);
-
-        let script = match find_source_script("gh_actions_source.py") {
-            Some(s) => s,
-            None => return "Cannot find sources/gh_actions_source.py — run from the project directory or set C9K_APP_DIR".to_string(),
-        };
-
-        let output = match Command::new("python3")
-            .arg(&script)
-            .args(["--repo", &p.repo, "--hours", &hours.to_string(), "--fast"])
-            .output()
-        {
-            Ok(o) => o,
-            Err(e) => return format!("Failed to run ingestion: {e}"),
-        };
-
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        let mut text = format!("## GitHub Actions Ingestion: {}\n\n{stderr}\n\n", p.repo);
-
-        if let Ok(groups) = self.solver.alert_groups() {
-            if !groups.is_empty() {
-                text.push_str("### Alert Groups\n\n| Root Cause | Confidence | Members |\n|---|---|---|\n");
-                for g in &groups {
-                    text.push_str(&format!(
-                        "| {} | {:.0}% | {} |\n",
-                        &g.root_cause,
-                        g.confidence * 100.0,
-                        g.members.len()
-                    ));
-                }
-            }
-        }
-        text
-    }
-
-    #[tool(description = "Get all active diagnoses sorted by confidence")]
-    fn c9k_diagnose_all(
-        &self,
-        Parameters(p): Parameters<DiagnoseAllParams>,
-    ) -> String {
-        let min = p.min_confidence.unwrap_or(10.0) / 100.0;
-        let diagnoses = match self.solver.diagnose_all(min) {
-            Ok(d) => d,
-            Err(e) => return format!("Error: {e}"),
-        };
-        if diagnoses.is_empty() {
-            return "No diagnoses above threshold.".to_string();
-        }
-
-        let mut text = format!(
-            "## Diagnoses ({} results)\n\n| Confidence | Target | Root Cause |\n|---|---|---|\n",
-            diagnoses.len()
-        );
-        for d in diagnoses.iter().take(30) {
-            text.push_str(&format!(
-                "| {:.0}% | {} | {} |\n",
-                d.confidence * 100.0,
-                d.target_node,
-                d.root_cause.as_deref().unwrap_or("?")
-            ));
-        }
-        text
-    }
-
     #[tool(description = "Get correlated alert groups — failures grouped by shared root cause")]
     fn c9k_alert_groups(&self) -> String {
-        let groups = match self.solver.alert_groups() {
-            Ok(g) => g,
-            Err(e) => return format!("Error: {e}"),
-        };
-        if groups.is_empty() {
-            return "No alert groups.".to_string();
+        match self.solver.alert_groups() {
+            Ok(g) if g.is_empty() => "No alert groups.".to_string(),
+            Ok(g) => {
+                let mut text = format!("## Alert Groups ({} groups)\n\n| Root Cause | Confidence | Members |\n|---|---|---|\n", g.len());
+                for group in &g {
+                    text.push_str(&format!("| {} | {:.0}% | {} |\n",
+                        &group.root_cause, group.confidence * 100.0, group.members.len()));
+                }
+                text
+            }
+            Err(e) => format!("Error: {e}"),
         }
-
-        let mut text = format!(
-            "## Alert Groups ({} groups)\n\n| Root Cause | Confidence | Members |\n|---|---|---|\n",
-            groups.len()
-        );
-        for g in &groups {
-            text.push_str(&format!(
-                "| {} | {:.0}% | {} |\n",
-                &g.root_cause,
-                g.confidence * 100.0,
-                g.members.len()
-            ));
-        }
-        text
     }
 
     #[tool(description = "Get commit details (message, author, date) for a SHA")]
-    fn c9k_commit_info(
-        &self,
-        Parameters(p): Parameters<CommitInfoParams>,
-    ) -> String {
+    fn c9k_commit_info(&self, Parameters(p): Parameters<CommitInfoParams>) -> String {
         let output = match Command::new("gh")
-            .args([
-                "api",
-                &format!("repos/{}/commits/{}", p.repo, p.sha),
-                "--jq",
-                r#"{sha: .sha[0:8], message: .commit.message, author: .commit.author.name, date: .commit.author.date}"#,
-            ])
+            .args(["api", &format!("repos/{}/commits/{}", p.repo, p.sha),
+                   "--jq", r#"{sha: .sha[0:8], message: .commit.message, author: .commit.author.name, date: .commit.author.date}"#])
             .env("GH_PAGER", "cat")
             .output()
         {
-            Ok(o) => o,
+            Ok(o) if o.status.success() => o,
+            Ok(o) => return format!("Failed: {}", String::from_utf8_lossy(&o.stderr)),
             Err(e) => return format!("gh cli error: {e}"),
         };
-        if !output.status.success() {
-            return format!("Failed: {}", String::from_utf8_lossy(&output.stderr));
-        }
         let data: serde_json::Value = match serde_json::from_slice(&output.stdout) {
             Ok(d) => d,
             Err(e) => return format!("Parse error: {e}"),
         };
-        format!(
-            "**{}** by {} ({})\n\n{}",
+        format!("**{}** by {} ({})\n\n{}",
             data["sha"].as_str().unwrap_or(&p.sha),
             data["author"].as_str().unwrap_or("?"),
             data["date"].as_str().unwrap_or("?"),
-            data["message"].as_str().unwrap_or("?")
-        )
+            data["message"].as_str().unwrap_or("?"))
     }
 }
-
-// ── ServerHandler impl ──────────────────────────────────────────────────
 
 impl ServerHandler for C9kMcpServer {
     fn get_info(&self) -> ServerInfo {
@@ -227,30 +164,12 @@ impl ServerHandler for C9kMcpServer {
     }
 }
 
-// ── Helpers ─────────────────────────────────────────────────────────────
-
-fn find_source_script(name: &str) -> Option<String> {
-    [
-        format!("sources/{name}"),
-        std::env::var("C9K_APP_DIR")
-            .map(|d| format!("{d}/sources/{name}"))
-            .unwrap_or_default(),
-        format!("/app/sources/{name}"),
-    ]
-    .into_iter()
-    .find(|p| !p.is_empty() && std::path::Path::new(p).exists())
-}
-
-/// Run the MCP server on stdio.
-pub async fn serve_mcp(solver: SolverHandle, heuristics_path: String) -> Result<()> {
-    let server = C9kMcpServer::new(solver, heuristics_path);
+pub async fn serve_mcp(solver: SolverHandle) -> Result<()> {
+    let server = C9kMcpServer::new(solver);
     let transport = rmcp::transport::io::stdio();
-    let mcp = server
-        .serve(transport)
-        .await
+    let mcp = server.serve(transport).await
         .map_err(|e| anyhow::anyhow!("MCP init failed: {e}"))?;
-    mcp.waiting()
-        .await
+    mcp.waiting().await
         .map_err(|e| anyhow::anyhow!("MCP server error: {e}"))?;
     Ok(())
 }
