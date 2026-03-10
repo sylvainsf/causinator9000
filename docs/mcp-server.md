@@ -23,7 +23,7 @@ Add to your VS Code settings (`.vscode/mcp.json` or user settings):
       "command": "docker",
       "args": [
         "run", "-i", "--rm",
-        "-e", "GITHUB_TOKEN",
+        "-v", "${userHome}/.config/gh:/root/.config/gh:ro",
         "ghcr.io/sylvainsf/causinator9000:latest"
       ]
     }
@@ -31,8 +31,9 @@ Add to your VS Code settings (`.vscode/mcp.json` or user settings):
 }
 ```
 
-> **GitHub token:** The container needs `GITHUB_TOKEN` (or `gh auth` credentials)
-> to access GitHub Actions logs. Pass your token via the environment variable.
+> **GitHub auth:** The container mounts your local `gh` CLI config so it can
+> access GitHub APIs. If your `gh` CLI uses keyring storage (macOS default),
+> add `"GH_TOKEN"` to the `env` map or set `GITHUB_TOKEN` in your shell.
 
 ### Option 2: Local (for development)
 
@@ -200,7 +201,7 @@ To use C9K for a different project (e.g., the Radius repo):
       "command": "docker",
       "args": [
         "run", "-i", "--rm",
-        "-e", "GITHUB_TOKEN",
+        "-v", "${userHome}/.config/gh:/root/.config/gh:ro",
         "ghcr.io/sylvainsf/causinator9000:latest"
       ]
     }
@@ -208,12 +209,27 @@ To use C9K for a different project (e.g., the Radius repo):
 }
 ```
 
-2. **Ensure the `gh` CLI token is available.** The container uses the
-   `GITHUB_TOKEN` environment variable. Set it in your shell or in VS Code's
-   terminal profile:
+2. **GitHub auth** is handled automatically via the mounted `gh` config.
+   If your `gh` CLI uses keyring storage (check with `gh auth status`),
+   you'll need to also pass the token:
 
-```bash
-export GITHUB_TOKEN=$(gh auth token)
+```jsonc
+{
+  "servers": {
+    "c9k": {
+      "command": "docker",
+      "args": [
+        "run", "-i", "--rm",
+        "-v", "${userHome}/.config/gh:/root/.config/gh:ro",
+        "-e", "GH_TOKEN",
+        "ghcr.io/sylvainsf/causinator9000:latest"
+      ],
+      "env": {
+        "GH_TOKEN": "${command:github.copilot.ghToken}"
+      }
+    }
+  }
+}
 ```
 
 3. **Optionally add project-specific heuristics.** Create a
