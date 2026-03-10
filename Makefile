@@ -29,6 +29,8 @@ REPO                 ?= $(or $(firstword $(subst $(comma), ,$(GH_REPOS))),projec
 GH_HOURS             ?= $(or $(GH_HOURS),48)
 AZURE_CHANGES_HOURS  ?= $(or $(AZURE_CHANGES_HOURS),48)
 GH_WEBHOOK_PORT      ?= $(or $(GH_WEBHOOK_PORT),8090)
+IMAGE_REPO           ?= ghcr.io/sylvainsf/causinator9000
+IMAGE_TAG            ?= latest
 ARG_OUTPUT           ?= /tmp/c9k-arg-graph.json
 comma := ,
 
@@ -224,3 +226,26 @@ env-init:  ## Create .env from .env.example (if not exists)
 help:  ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' Makefile | sort | \
 		awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-25s\033[0m %s\n", $$1, $$2}'
+
+# ── Docker / GHCR ───────────────────────────────────────────────────────
+
+.PHONY: docker-build docker-push docker-run
+
+docker-build:  ## Build multi-arch container image (IMAGE_TAG=latest)
+	docker buildx build \
+		--platform linux/amd64,linux/arm64 \
+		-t $(IMAGE_REPO):$(IMAGE_TAG) \
+		.
+
+docker-push:  ## Build and push multi-arch image to GHCR (IMAGE_TAG=latest)
+	docker buildx build \
+		--platform linux/amd64,linux/arm64 \
+		-t $(IMAGE_REPO):$(IMAGE_TAG) \
+		--push \
+		.
+
+docker-run:  ## Run the container locally (MCP server mode)
+	docker run -i --rm \
+		-e GITHUB_TOKEN \
+		-p 8080:8080 \
+		$(IMAGE_REPO):$(IMAGE_TAG)
