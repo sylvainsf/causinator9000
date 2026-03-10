@@ -298,7 +298,7 @@ def _ingest_github(args: dict) -> str:
     cmd = [
         sys.executable, os.path.join(APP_DIR, "sources", "gh_actions_source.py"),
         "--repo", repo, "--hours", str(hours),
-        "--engine", ENGINE_URL,
+        "--engine", ENGINE_URL, "--fast",
     ]
     if sub:
         cmd.extend(["--subscription", sub])

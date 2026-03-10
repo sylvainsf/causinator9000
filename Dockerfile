@@ -55,6 +55,7 @@ COPY config/ config/
 COPY sources/ sources/
 COPY web/ web/
 COPY mcp-server/ mcp-server/
+COPY copilot-extension/ copilot-extension/
 COPY docker-entrypoint.sh /usr/local/bin/entrypoint.sh
 COPY action-entrypoint.sh /usr/local/bin/action-entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh /usr/local/bin/action-entrypoint.sh
@@ -63,7 +64,7 @@ RUN chmod +x /usr/local/bin/entrypoint.sh /usr/local/bin/action-entrypoint.sh
 ENV C9K_ENGINE_URL=http://127.0.0.1:8080
 ENV C9K_DRASI_ENABLED=false
 
-EXPOSE 8080
+EXPOSE 8080 8090
 
 ENTRYPOINT ["entrypoint.sh"]
 CMD ["mcp-server"]

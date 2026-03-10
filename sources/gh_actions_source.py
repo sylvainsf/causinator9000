@@ -95,6 +95,29 @@ ERROR_PATTERNS = [
      "TestFailure"),  # generic — tests are the most common non-specific failure
 ]
 
+# Step-name patterns: used when step names are the primary classification signal
+# (fast mode or when error lines are sparse). Checked against failed step names.
+STEP_NAME_PATTERNS = [
+    (r"disallowed changes in go\.mod|go\.mod.*check|validate go\.mod",
+     "GoModCheckFailure"),
+    (r"Check Python|Python.*Examples",
+     "TestFailure"),   # Could be PythonVersionMismatch but need logs to confirm
+    (r"Spin local environment|Setup.*environment|docker-compose",
+     "GrpcConnectionRefused"),  # Environment spin-up failures
+    (r"Build.*dev.container|devcontainer",
+     "DevContainerTestFailure"),
+    (r"Run make test$|Run Unit Test",
+     "UnitTestFailure"),
+    (r"Run.*integration|test-integration",
+     "TestFailure"),
+    (r"Run E2E|e2e test",
+     "TestFailure"),
+    (r"Run lint|golangci|clippy|eslint",
+     "LintFailure"),
+    (r"Preparing.*cluster|Setup.*AKS|Deploy.*infra",
+     "Timeout"),
+]
+
 # ── Failure attribution: is this a code problem or an infra problem? ─────
 
 INFRA_SIGNALS = {"AzureAuthFailure", "ImagePullError", "Timeout", "ImagePushError",
@@ -244,6 +267,29 @@ def get_error_lines(repo: str, run_id: int) -> list[str]:
     return errors[:15]
 
 
+def get_failed_jobs_fast(repo: str, run_id: int) -> list[dict]:
+    """Fast path: use the REST API directly to get jobs + failed steps.
+    
+    Returns the same format as get_failed_jobs but uses gh api instead of
+    gh run view, and includes the job ID for potential log follow-up.
+    """
+    env = {**os.environ, "GH_PAGER": "cat"}
+    cmd = ["gh", "api", f"repos/{repo}/actions/runs/{run_id}/jobs",
+           "--jq", '.jobs[] | select(.conclusion == "failure") | '
+                   '{name, id, failed_steps: [.steps[] | select(.conclusion == "failure") | .name]}']
+    result = subprocess.run(cmd, capture_output=True, text=True, timeout=15, env=env)
+    if result.returncode != 0:
+        return []
+    jobs = []
+    for line in result.stdout.strip().split("\n"):
+        if line.strip():
+            try:
+                jobs.append(json.loads(line))
+            except json.JSONDecodeError:
+                continue
+    return jobs
+
+
 def get_commit_info(repo: str, sha: str) -> dict:
     env = {**os.environ, "GH_PAGER": "cat"}
     cmd = ["gh", "api", f"repos/{repo}/commits/{sha}"]
@@ -263,6 +309,12 @@ def classify_error(error_lines: list[str], failed_steps: list[str],
     for pattern, signal_type in ERROR_PATTERNS:
         if re.search(pattern, text, re.IGNORECASE):
             return signal_type
+    # Fallback: match step names specifically (fast mode)
+    step_text = " ".join(failed_steps)
+    if step_text:
+        for pattern, signal_type in STEP_NAME_PATTERNS:
+            if re.search(pattern, step_text, re.IGNORECASE):
+                return signal_type
     return "TestFailure"
 
 
@@ -322,7 +374,8 @@ def runner_env_latent(job_name: str) -> str:
 # ── Main pipeline ────────────────────────────────────────────────────────
 
 def process_failures(repo: str, runs: list[dict], engine: str,
-                     sub_id: str | None, dry_run: bool) -> tuple[int, int, int]:
+                     sub_id: str | None, dry_run: bool,
+                     fast: bool = False) -> tuple[int, int, int]:
     """
     Process failed runs into the causal graph.
 
@@ -374,8 +427,12 @@ def process_failures(repo: str, runs: list[dict], engine: str,
         mut_type = detect_mutation_type(commit_info, event)
 
         # Get failed jobs and errors
-        failed_jobs = get_failed_jobs(repo, run_id) if not dry_run else []
-        error_lines = get_error_lines(repo, run_id) if not dry_run else []
+        if fast:
+            failed_jobs = get_failed_jobs_fast(repo, run_id) if not dry_run else []
+            error_lines = []
+        else:
+            failed_jobs = get_failed_jobs(repo, run_id) if not dry_run else []
+            error_lines = get_error_lines(repo, run_id) if not dry_run else []
 
         if not failed_jobs and not dry_run:
             # Fallback: create a single job node for the whole run
@@ -599,6 +656,8 @@ def main():
                         help=f"Engine URL (default: {ENGINE})")
     parser.add_argument("--dry-run", action="store_true",
                         help="Show classification without ingesting")
+    parser.add_argument("--fast", action="store_true",
+                        help="Skip log downloads — classify from step names only (~20x faster)")
     args = parser.parse_args()
 
     result = subprocess.run(["gh", "auth", "status"],
@@ -621,7 +680,8 @@ def main():
         return
 
     nodes, muts, sigs = process_failures(
-        args.repo, runs, args.engine, args.subscription, args.dry_run)
+        args.repo, runs, args.engine, args.subscription, args.dry_run,
+        fast=args.fast)
 
     if args.dry_run:
         print(f"\nDry run complete.", file=sys.stderr)

@@ -19,6 +19,9 @@ case "$MODE" in
     mcp-server)
         exec python3 /app/mcp-server/server.py
         ;;
+    copilot-extension)
+        exec python3 /app/copilot-extension/server.py --port "${PORT:-8090}"
+        ;;
     engine)
         # Just run the engine in foreground
         wait $ENGINE_PID
@@ -27,7 +30,7 @@ case "$MODE" in
         exec /bin/bash
         ;;
     *)
-        echo "Usage: entrypoint.sh {mcp-server|engine|shell}"
+        echo "Usage: entrypoint.sh {mcp-server|copilot-extension|engine|shell}"
         exit 1
         ;;
 esac

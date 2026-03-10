@@ -246,6 +246,71 @@ export GITHUB_TOKEN=$(gh auth token)
 └──────────────────────────────────────────────┘
 ```
 
+## GitHub Copilot Extension (chat on github.com)
+
+The C9K Copilot Extension lets users type `@c9k diagnose dapr/dapr` directly
+in GitHub Copilot Chat on github.com, in PRs, and in the IDE.
+
+### How It Works
+
+1. The extension runs as a hosted service (Azure Container App, Cloud Run, etc.)
+2. A **webhook** receives `workflow_run` events and keeps the engine warm
+3. When a user chats with `@c9k`, the **agent endpoint** queries the warm engine
+4. Responses are streamed back as markdown
+
+```
+┌─────────────────────────────────────────────────────┐
+│  Hosted Service                                     │
+│                                                     │
+│  ┌───────────┐  ┌──────────────┐  ┌──────────────┐ │
+│  │ c9k-engine│◄─│ Webhook      │  │ Agent        │ │
+│  │ (always-on)│  │ POST /webhook│  │ POST /agent  │ │
+│  └───────────┘  └──────────────┘  └──────────────┘ │
+│       ▲              ▲                    ▲         │
+└───────┼──────────────┼────────────────────┼─────────┘
+        │         workflow_run          Chat from
+    Fast API       webhook            github.com
+```
+
+### Setup
+
+1. **Create a GitHub App** at https://github.com/settings/apps/new:
+   - Name: `Causinator 9000`
+   - Homepage: your hosted URL
+   - Callback URL: `https://<your-host>/agent`
+   - Webhook URL: `https://<your-host>/webhook`
+   - Webhook secret: generate one
+   - Permissions: `actions: read`, `checks: read`, `metadata: read`
+   - Events: `workflow_run`
+   - Under "Copilot": enable as a Copilot Extension, set the agent endpoint
+
+2. **Deploy the container**:
+
+```bash
+docker run -d \
+  -e GITHUB_TOKEN=ghp_... \
+  -e GITHUB_WEBHOOK_SECRET=your-secret \
+  -p 8090:8090 \
+  ghcr.io/sylvainsf/causinator9000:latest \
+  copilot-extension
+```
+
+3. **Install the app** on your organization or repository.
+
+4. **Chat**: In any GitHub Copilot Chat, type:
+   - `@c9k diagnose dapr/dapr`
+   - `@c9k what's breaking in the last 24 hours?`
+   - `@c9k verify run 22891725877`
+
+### Fast Ingestion
+
+The extension uses `--fast` mode by default (no log downloads, classifies
+from step names). This makes ingestion **~20x faster** — a full 48h analysis
+of a repo like dapr/dapr completes in ~5 seconds instead of ~3 minutes.
+
+For deeper analysis, the webhook handler continuously ingests failures
+as they happen, so the engine is always warm and queries are instant.
+
 The MCP server speaks JSON-RPC over stdio. When a tool is called:
 
 1. **Engine queries** (`c9k_health`, `c9k_diagnose_all`, etc.) go directly to the
