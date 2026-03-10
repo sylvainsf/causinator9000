@@ -1,15 +1,15 @@
 # Causinator 9000 — Multi-stage build
-# Stage 1: Build the Rust engine binary
+# Stage 1: Build the Rust engine binary (Debian for reliable cross-compilation)
 # Stage 2: Slim Alpine runtime with engine + Python sources + MCP server
 
 # ── Stage 1: Rust builder ────────────────────────────────────────────────
 
-FROM rust:1.93-alpine AS builder
+FROM rust:1.93-bookworm AS builder
 
-# RocksDB / Drasi build deps + musl build tools
-RUN apk add --no-cache \
-    musl-dev cmake clang clang-dev llvm-dev pkgconf openssl-dev \
-    linux-headers g++ make perl
+# RocksDB / Drasi build deps
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    cmake clang libclang-dev pkg-config libssl-dev \
+    && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /build
 
@@ -37,7 +37,7 @@ RUN cargo build --release --package c9k-engine \
 FROM alpine:latest AS runtime
 
 RUN apk add --no-cache \
-    ca-certificates python3 py3-pip curl git bash libgcc libstdc++
+    ca-certificates python3 py3-pip curl git bash libgcc libstdc++ gcompat
 
 # Install GitHub CLI
 RUN apk add --no-cache github-cli
