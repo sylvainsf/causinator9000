@@ -1,14 +1,22 @@
 import {
   createApiFactory,
   createPlugin,
+  createRouteRef,
   createRoutableExtension,
   discoveryApiRef,
   fetchApiRef,
 } from '@backstage/core-plugin-api';
 import { c9kApiRef, C9kClient } from './api';
 
+export const rootRouteRef = createRouteRef({
+  id: 'c9k',
+});
+
 export const c9kPlugin = createPlugin({
   id: 'c9k',
+  routes: {
+    root: rootRouteRef,
+  },
   apis: [
     createApiFactory({
       api: c9kApiRef,
@@ -28,6 +36,6 @@ export const EntityC9kDiagnosisTab = c9kPlugin.provide(
     name: 'EntityC9kDiagnosisTab',
     component: () =>
       import('./components/DiagnosisTab').then(m => m.DiagnosisTab),
-    mountPoint: { id: 'c9k-diagnosis' } as any,
+    mountPoint: rootRouteRef,
   }),
 );
