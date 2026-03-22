@@ -352,11 +352,11 @@ def main():
                         help="ARM resource ID of the AKS cluster for cross-linking to ARG")
     parser.add_argument("--watch", "-w", action="store_true",
                         help="Watch mode: stream events in real-time")
+    global ENGINE
     parser.add_argument("--engine", default=ENGINE)
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
 
-    global ENGINE
     ENGINE = args.engine
 
     if not args.context:
