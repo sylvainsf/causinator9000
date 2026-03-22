@@ -44,6 +44,17 @@ build:  ## Build debug binaries
 build-release:  ## Build optimized release binaries
 	cargo build --release
 
+PREFIX  ?= /usr/local
+BINDIR  ?= $(PREFIX)/bin
+
+install: build-release  ## Install c9k binaries to $(PREFIX)/bin
+	install -d $(DESTDIR)$(BINDIR)
+	install -m 755 target/release/c9k-engine $(DESTDIR)$(BINDIR)/c9k-engine
+	install -m 755 target/release/c9k        $(DESTDIR)$(BINDIR)/c9k
+
+uninstall:  ## Remove installed binaries
+	rm -f $(DESTDIR)$(BINDIR)/c9k-engine $(DESTDIR)$(BINDIR)/c9k
+
 test:  ## Run all tests (Rust + Python)
 	cargo test
 	python3 -m pytest tests/ -v

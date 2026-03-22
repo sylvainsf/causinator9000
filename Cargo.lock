@@ -429,7 +429,7 @@ dependencies = [
 
 [[package]]
 name = "c9k-cli"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "chrono",
@@ -446,7 +446,7 @@ dependencies = [
 
 [[package]]
 name = "c9k-engine"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "axum",
@@ -474,7 +474,7 @@ dependencies = [
 
 [[package]]
 name = "c9k-tests"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "c9k-engine",
