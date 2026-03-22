@@ -137,6 +137,51 @@ Match on signal type, resource class, node ID pattern (regex), confidence range.
 
 ## Quick Start
 
+### Install the binary
+
+```bash
+# From crates.io / GitHub (no clone needed)
+cargo install --git https://github.com/sylvainsf/causinator9000 c9k-engine
+
+# Or build from source
+git clone https://github.com/sylvainsf/causinator9000.git
+cd causinator9000
+make install                       # installs to /usr/local/bin
+```
+
+The binary includes all standard heuristics compiled in — no config files
+needed. Just run `c9k-engine` from any directory.
+
+### Run the engine
+
+```bash
+c9k-engine                         # starts on :8080 with embedded heuristics
+curl http://localhost:8080/api/health
+```
+
+### Heuristics
+
+The engine ships with 30 resource classes of built-in heuristics. By default
+it looks for `config/heuristics.manifest.yaml` in the current directory and
+falls back to the embedded set if not found.
+
+| Option | Description |
+|---|---|
+| `--embedded-heuristics` | Always use built-in heuristics, ignore disk |
+| `--heuristics <path>` | Load heuristics from a specific file |
+| `C9K_HEURISTICS=<path>` | Same as `--heuristics`, via environment variable |
+
+To extend with your own project-specific heuristics, create a YAML file
+(see `config/heuristics/private.yaml.example`) and point to it:
+
+```bash
+c9k-engine --heuristics my-heuristics.yaml
+```
+
+### Development setup
+
+If you're working on C9K itself or want the full data ingestion pipeline:
+
 ### Prerequisites
 
 - **Rust** (1.85+ stable): `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh`
