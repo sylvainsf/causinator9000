@@ -1,0 +1,83 @@
+name: "CPT / Heuristic Change Request"
+description: "Report a misdiagnosis or suggest a CPT (Conditional Probability Table) adjustment"
+title: "Misdiagnosis report"
+labels: ["cpt-change"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping improve Causinator 9000's accuracy! CPTs encode the causal
+        relationships between mutations and signals. If C9K got a diagnosis wrong,
+        the CPT weights likely need tuning.
+
+  - type: input
+    id: repository
+    attributes:
+      label: Repository
+      description: "Which repository was being analyzed?"
+      placeholder: "owner/repo"
+    validations:
+      required: true
+
+  - type: input
+    id: run-id
+    attributes:
+      label: GitHub Actions Run ID
+      description: "The run ID of the misdiagnosed failure (from the URL or C9K report)"
+      placeholder: "23440953907"
+    validations:
+      required: false
+
+  - type: textarea
+    id: c9k-diagnosis
+    attributes:
+      label: What did C9K say?
+      description: "Paste the relevant part of the C9K report (root cause, confidence, etc.)"
+      placeholder: |
+        Root Cause: commit://owner/repo/abc123 (CodeChange)
+        Confidence: 88%
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual-cause
+    attributes:
+      label: What was the actual cause?
+      description: "What actually caused the failure? Include any evidence (logs, commit links, etc.)"
+      placeholder: "The failure was actually caused by a flaky network test, not the code change."
+    validations:
+      required: true
+
+  - type: dropdown
+    id: misdiagnosis-type
+    attributes:
+      label: Type of misdiagnosis
+      options:
+        - "False positive — C9K blamed a commit that was innocent"
+        - "False negative — C9K missed the real root cause"
+        - "Wrong confidence — right cause but confidence too high/low"
+        - "Wrong grouping — failures grouped incorrectly"
+        - "Other"
+    validations:
+      required: true
+
+  - type: textarea
+    id: suggested-fix
+    attributes:
+      label: Suggested CPT change (optional)
+      description: |
+        If you know which resource class / mutation / signal CPT should change,
+        describe it here. See `config/heuristics/` for the current CPT definitions.
+      placeholder: |
+        In ci-pipelines.yaml, the CPT for CIJob + CodeChange → TestFailure
+        should have a lower P(signal|mutation), maybe [0.40, 0.10] instead of [0.65, 0.05].
+    validations:
+      required: false
+
+  - type: textarea
+    id: additional-context
+    attributes:
+      label: Additional context
+      description: "Anything else that might help (screenshots, logs, related issues)"
+    validations:
+      required: false
