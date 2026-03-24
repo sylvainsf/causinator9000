@@ -260,3 +260,35 @@ docker-run:  ## Run the container locally (MCP server mode)
 		-e GITHUB_TOKEN \
 		-p 8080:8080 \
 		$(IMAGE_REPO):$(IMAGE_TAG)
+
+# ── Release / Publish ───────────────────────────────────────────────────
+
+VERSION ?= $(shell git describe --tags --abbrev=0 2>/dev/null || echo "0.0.0")
+NEXT_VERSION ?= $(VERSION)
+
+.PHONY: release publish-action publish-container
+
+publish-container:  ## Build and push versioned container to GHCR (NEXT_VERSION=x.y.z)
+	@echo "Publishing container $(IMAGE_REPO):$(NEXT_VERSION)..."
+	docker buildx build \
+		--platform linux/amd64,linux/arm64 \
+		-t $(IMAGE_REPO):$(NEXT_VERSION) \
+		-t $(IMAGE_REPO):latest \
+		--push \
+		.
+	@echo "✓ Published $(IMAGE_REPO):$(NEXT_VERSION) and :latest"
+
+publish-action: publish-container  ## Tag a GitHub release for the Action Marketplace (NEXT_VERSION=x.y.z)
+	@if [ "$(NEXT_VERSION)" = "0.0.0" ]; then echo "ERROR: Set NEXT_VERSION=x.y.z"; exit 1; fi
+	@echo "Tagging v$(NEXT_VERSION)..."
+	git tag -a "v$(NEXT_VERSION)" -m "Release v$(NEXT_VERSION)"
+	git push origin "v$(NEXT_VERSION)"
+	@# Update the major version tag (v1, v2, ...) so users pinning @v1 get updates
+	$(eval MAJOR := $(shell echo $(NEXT_VERSION) | cut -d. -f1))
+	git tag -fa "v$(MAJOR)" -m "Update v$(MAJOR) to v$(NEXT_VERSION)"
+	git push origin "v$(MAJOR)" --force
+	@echo "✓ Tagged v$(NEXT_VERSION) and updated v$(MAJOR)"
+	@echo "  → Create a GitHub Release at https://github.com/sylvainsf/causinator9000/releases/new?tag=v$(NEXT_VERSION)"
+	@echo "  → Then publish to Marketplace from the release page"
+
+release: publish-action  ## Full release: container + action tags (NEXT_VERSION=x.y.z)

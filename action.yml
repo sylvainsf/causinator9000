@@ -19,14 +19,38 @@ inputs:
     description: 'Minimum confidence threshold for reporting (0-100, default: 50)'
     required: false
     default: '50'
+  run-id:
+    description: 'Specific GitHub Actions run ID to analyze (for workflow_run triggers)'
+    required: false
+    default: ''
   post-comment:
     description: 'Post diagnosis as a PR comment (true/false, default: true)'
     required: false
     default: 'true'
+  create-issue:
+    description: 'Create or update a digest issue instead of PR comment (true/false, default: false)'
+    required: false
+    default: 'false'
+  issue-label:
+    description: 'Label for digest issues (default: c9k-digest)'
+    required: false
+    default: 'c9k-digest'
+  fail-on-findings:
+    description: 'Exit non-zero if diagnoses found above threshold (true/false, default: false)'
+    required: false
+    default: 'false'
   github-token:
     description: 'GitHub token for API access and posting comments'
     required: false
     default: ${{ github.token }}
+
+outputs:
+  alert-count:
+    description: 'Number of alert groups found'
+  diagnosis-count:
+    description: 'Number of diagnoses above confidence threshold'
+  report:
+    description: 'Path to the generated markdown report'
 
 runs:
   using: 'docker'
@@ -36,5 +60,9 @@ runs:
     INPUT_REPO: ${{ inputs.repo }}
     INPUT_HOURS: ${{ inputs.hours }}
     INPUT_MIN_CONFIDENCE: ${{ inputs.min-confidence }}
+    INPUT_RUN_ID: ${{ inputs.run-id }}
     INPUT_POST_COMMENT: ${{ inputs.post-comment }}
+    INPUT_CREATE_ISSUE: ${{ inputs.create-issue }}
+    INPUT_ISSUE_LABEL: ${{ inputs.issue-label }}
+    INPUT_FAIL_ON_FINDINGS: ${{ inputs.fail-on-findings }}
     GITHUB_TOKEN: ${{ inputs.github-token }}
