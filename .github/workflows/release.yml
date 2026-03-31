@@ -63,10 +63,11 @@ jobs:
           git tag -fa "v${MAJOR}" -m "Update v${MAJOR} to v${VERSION}"
           git push origin "v${MAJOR}" --force
 
-      - name: Create GitHub Release
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Next steps
         run: |
-          gh release create "v${{ inputs.version }}" \
-            --title "v${{ inputs.version }}" \
-            --generate-notes
+          echo "✅ Container pushed and tags created."
+          echo ""
+          echo "To publish to the GitHub Marketplace, create the release manually:"
+          echo "  https://github.com/${{ github.repository }}/releases/new?tag=v${{ inputs.version }}"
+          echo ""
+          echo "Check 'Publish this Action to the GitHub Marketplace' on that page."
