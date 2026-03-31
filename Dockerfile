@@ -28,6 +28,7 @@ RUN mkdir -p crates/c9k-engine/src crates/c9k-cli/src crates/c9k-tests/src \
     && cargo build --release --package c9k-engine 2>/dev/null || true
 
 # Copy real source and build
+COPY config/ config/
 COPY crates/ crates/
 RUN cargo build --release --package c9k-engine \
     && strip target/release/c9k-engine
