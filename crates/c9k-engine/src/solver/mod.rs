@@ -521,6 +521,20 @@ impl SolverHandle {
         Ok(())
     }
 
+    /// Clear everything: graph topology + mutations + signals + caches.
+    pub fn clear_all(&self) -> Result<()> {
+        let mut state = self
+            .inner
+            .lock()
+            .map_err(|e| anyhow::anyhow!("lock: {e}"))?;
+        state.graph.clear();
+        state.node_index.clear();
+        state.active_mutations.clear();
+        state.active_signals.clear();
+        state.cached_diagnoses.clear();
+        Ok(())
+    }
+
     /// Add a node to the causal DAG.
     pub fn add_node(&self, node: CausalNode) -> Result<()> {
         let mut state = self

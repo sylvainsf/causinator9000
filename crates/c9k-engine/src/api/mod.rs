@@ -243,11 +243,25 @@ async fn health(State(state): State<AppState>) -> Json<HealthResponse> {
 
 async fn post_clear(
     State(state): State<AppState>,
+    body: Option<Json<serde_json::Value>>,
 ) -> Result<Json<InjectResponse>, (StatusCode, String)> {
-    state
-        .solver
-        .clear_events()
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    let clear_graph = body
+        .as_ref()
+        .and_then(|b| b.get("clear_graph"))
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+
+    if clear_graph {
+        state
+            .solver
+            .clear_all()
+            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    } else {
+        state
+            .solver
+            .clear_events()
+            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    }
     Ok(Json(InjectResponse {
         status: "cleared".to_string(),
         id: "all".to_string(),

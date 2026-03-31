@@ -221,6 +221,60 @@ Full pipeline: `make ingest-all`
 
 → [Data sources reference](docs/data-sources.md)
 
+### GitHub Actions Ingestion
+
+The GitHub Actions source adapter (`sources/gh_actions_source.py`) is the most
+sophisticated data source, building a causal graph from CI/CD failure data:
+
+**What it does:**
+1. Fetches failed workflow runs via `gh run list --status failure`
+2. Downloads failure logs and classifies errors into signal types
+   (`TestFailure`, `AzureAuthFailure`, `LintFailure`, `BuildFailure`, etc.)
+3. Attributes failures to either code changes (commit nodes) or infrastructure
+   (latent nodes like `latent://azure-oidc`, `latent://flaky-tests`)
+4. For scheduled/nightly tests, walks commit ancestry back to the last successful
+   run, creating multiple competing commit causes with temporal decay
+5. Computes per-workflow historical flaky rates to calibrate flaky-test priors
+
+**Causal domains:** Failures are classified into independent causal domains
+based on the GitHub event type and branch:
+
+| Domain | Events | Behavior |
+|--------|--------|----------|
+| `pr` | `pull_request`, `push`, `dynamic` | Commit mutation timestamped at run start |
+| `schedule` | `schedule` on default branch | Commit mutation timestamped at commit author date; ancestor commits added as competing causes |
+| `dispatch` | `workflow_dispatch` on default branch | Same as `schedule` |
+| `release` | `schedule`/`dispatch` on non-default branch | Routed to `latent://release-validation/{branch}` instead of blaming a commit |
+
+**Options:**
+- `--exclude-workflow "Name"` — skip specific workflows (repeatable)
+- `--hours N` — lookback window
+- `--fast` — classify from step names only (skip log downloads)
+
+**Known limitations and future work:**
+
+The current source adapter is a monolithic Python script that handles fetching,
+classification, graph construction, and engine communication. This should be
+refactored into a modular pipeline:
+
+1. **Fetcher module** — downloads runs and logs from the GitHub API. Should be
+   swappable for other CI systems (GitLab CI, Jenkins, CircleCI, Azure DevOps).
+2. **Classifier module** — maps error logs to signal types. Currently uses
+   regex patterns; should support pluggable classifiers (LLM-based, ML-based,
+   or project-specific rule files).
+3. **Graph builder module** — constructs nodes, edges, mutations, and signals.
+   The causal domain logic, commit ancestry, and flaky rate computation belong
+   here.
+4. **Engine client module** — sends the constructed graph to the C9K engine.
+   Currently uses urllib; should be a shared client used by all source adapters.
+
+This modular approach would allow:
+- Adding new CI providers without rewriting the graph logic
+- Project-specific classifiers (e.g., a Radius classifier that knows about
+  `rad deploy` failures, or a Kubernetes classifier for Helm chart issues)
+- Testing each stage independently
+- Sharing the graph builder across disparate data sources
+
 ## CPTs and Inference
 
 **Conditional Probability Tables (CPTs)** encode causal relationships between mutations and signals. Each CPT entry says: "if this mutation happened, how likely is this signal? And how likely is the signal without the mutation?" The ratio of these two values is the **likelihood ratio (LR)** — the core number driving inference.

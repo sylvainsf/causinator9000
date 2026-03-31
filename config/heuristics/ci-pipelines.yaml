@@ -241,7 +241,7 @@
 - class: Commit
   default_prior:
     P_failure: 0.01
-    decay_half_life_minutes: 30
+    decay_half_life_minutes: 480
   cpts: []
 
 # ── FlakyTest: latent competing cause ────────────────────────────────────

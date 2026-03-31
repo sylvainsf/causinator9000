@@ -42,7 +42,7 @@ echo "📥 Ingesting GitHub Actions failures..."
 python3 /app/sources/gh_actions_source.py \
     --repo "$REPO" \
     --hours "$HOURS" \
-    --engine http://127.0.0.1:8080 --fast 2>&1 | tee /tmp/ingest.log
+    --engine http://127.0.0.1:8080 2>&1 | tee /tmp/ingest.log
 
 # ── Generate diagnosis ──────────────────────────────────────────────────
 python3 /app/mcp-server/action_report.py \

@@ -46,13 +46,15 @@ ENGINE = os.environ.get("C9K_ENGINE_URL", "http://localhost:8080")
 ERROR_PATTERNS = [
     # (regex on error lines + step names, signal_type)
     # Order matters — first match wins. More specific patterns first.
-    (r"AADSTS\d+|federated identity|Login failed.*az.*exit code|auth-type",
+    (r"AADSTS\d+|federated identity|Login failed.*az.*exit code|auth-type|Login to Azure.*fail|azure.login.*fail|AZURE_.*not set|azure.*credentials.*error",
      "AzureAuthFailure"),
     (r"ErrImagePull|ImagePullBackOff|image.*pull.*fail",
      "ImagePullError"),
     (r"docker.*push.*fail|oras.*push.*fail",
      "ImagePushError"),
-    # Runner environment issues (before generic patterns)
+    # Runner environment / provisioning issues (before generic patterns)
+    (r"Current runner version.*Runner Image Provisioner|Hosted Compute Agent.*exit|runner provisioning|Runner\.Worker.*fail",
+     "RunnerFailure"),
     (r"command not found|exit code 127",
      "CommandNotFound"),
     (r"requires a different Python|not in .>=\d",
@@ -95,6 +97,17 @@ ERROR_PATTERNS = [
      "TestFailure"),  # generic — tests are the most common non-specific failure
 ]
 
+# Workflow-level patterns: when the error doesn't match anything specific,
+# these are checked against the workflow name to produce a better-than-generic
+# signal type.
+WORKFLOW_FALLBACK_SIGNALS = {
+    # Workflows whose failures are typically workflow-config issues,
+    # not code or test failures.
+    "release": "WorkflowConfigFailure",
+    "deploy": "WorkflowConfigFailure",
+    "publish": "WorkflowConfigFailure",
+}
+
 # Step-name patterns: used when step names are the primary classification signal
 # (fast mode or when error lines are sparse). Checked against failed step names.
 STEP_NAME_PATTERNS = [
@@ -114,6 +127,8 @@ STEP_NAME_PATTERNS = [
      "TestFailure"),
     (r"Run lint|golangci|clippy|eslint",
      "LintFailure"),
+    (r"Login to Azure|azure.login|__azure_login",
+     "AzureAuthFailure"),
     (r"Preparing.*cluster|Setup.*AKS|Deploy.*infra",
      "Timeout"),
 ]
@@ -124,8 +139,9 @@ INFRA_SIGNALS = {"AzureAuthFailure", "ImagePullError", "Timeout", "ImagePushErro
                  "RemoteWorkflowFailure", "DependabotUpdateFailure", "ArtifactUploadFailure",
                  "CommandNotFound", "PythonVersionMismatch", "GoToolchainError",
                  "PortForwardError", "VirtualMemoryError", "GrpcConnectionRefused",
-                 "ScorecardFailure", "AutomergeFailure"}
-CODE_SIGNALS = {"TestFailure", "HelmChartError", "BicepBuildError", "ChecklistMissing",
+                 "ScorecardFailure", "AutomergeFailure", "WorkflowConfigFailure",
+                 "RunnerFailure"}
+CODE_SIGNALS = {"TestFailure", "HelmChartError", "BicepBuildError",
                 "UnitTestFailure", "DevContainerTestFailure", "GoModCheckFailure",
                 "LintFailure"}
 # TestFailure also gets a FlakyTest competing cause
@@ -169,6 +185,14 @@ LATENT_NODES = {
         "label": "GitHub Automerge Infrastructure",
         "class": "CIPlatform",
     },
+    "latent://workflow-config": {
+        "label": "Workflow Configuration Issue",
+        "class": "CIPlatform",
+    },
+    "latent://runner-failure": {
+        "label": "GitHub Actions Runner Failure",
+        "class": "RunnerEnvironment",
+    },
 }
 
 # Map infra signal types to which latent node is the likely cause.
@@ -187,6 +211,8 @@ SIGNAL_TO_LATENT = {
     "GrpcConnectionRefused": None,   # runner-env (OS-specific)
     "ScorecardFailure": "latent://github-scorecard",
     "AutomergeFailure": "latent://github-automerge",
+    "WorkflowConfigFailure": "latent://workflow-config",
+    "RunnerFailure": "latent://runner-failure",
 }
 
 # ── Workflow → Azure resource dependencies ───────────────────────────────
@@ -227,6 +253,7 @@ def post_engine(path: str, payload: dict, engine: str) -> dict | None:
 
 def get_workflow_runs(repo: str, hours: int, limit: int) -> list[dict]:
     cmd = ["gh", "run", "list", "--repo", repo, "--limit", str(limit),
+           "--status", "failure",
            "--json", "databaseId,name,status,conclusion,createdAt,updatedAt,"
                      "headBranch,headSha,workflowName,event,url"]
     result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
@@ -256,15 +283,43 @@ def get_failed_jobs(repo: str, run_id: int) -> list[dict]:
 def get_error_lines(repo: str, run_id: int) -> list[str]:
     cmd = ["gh", "run", "view", str(run_id), "--repo", repo, "--log-failed"]
     result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
-    if result.returncode != 0:
-        return []
+    if result.returncode != 0 or not result.stdout.strip():
+        # Fallback: use the jobs API to get failed step names as context.
+        # This handles pull_request_target and other events where log
+        # download permissions differ.
+        return _get_error_context_from_jobs_api(repo, run_id)
     errors = []
     for line in result.stdout.split("\n"):
         if re.search(r"##\[error\]", line, re.IGNORECASE):
             clean = re.sub(r"^.*?##\[error\]", "", line).strip()
             if clean:
                 errors.append(clean)
+    if not errors:
+        return _get_error_context_from_jobs_api(repo, run_id)
     return errors[:15]
+
+
+def _get_error_context_from_jobs_api(repo: str, run_id: int) -> list[str]:
+    """Fallback when logs aren't available: extract context from job/step metadata."""
+    env = {**os.environ, "GH_PAGER": "cat"}
+    cmd = [
+        "gh", "api", f"repos/{repo}/actions/runs/{run_id}/jobs",
+        "--jq", '[.jobs[] | select(.conclusion == "failure") | '
+                '{name, steps: [.steps[] | select(.conclusion == "failure") | .name]}]'
+    ]
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=15, env=env)
+        if result.returncode != 0:
+            return []
+        jobs = json.loads(result.stdout)
+        context = []
+        for j in jobs:
+            for step in j.get("steps", []):
+                context.append(f"Failed step: {step}")
+            context.append(f"Failed job: {j.get('name', '')}")
+        return context
+    except Exception:
+        return []
 
 
 def get_failed_jobs_fast(repo: str, run_id: int) -> list[dict]:
@@ -295,16 +350,18 @@ def get_commit_info(repo: str, sha: str) -> dict:
     cmd = ["gh", "api", f"repos/{repo}/commits/{sha}"]
     result = subprocess.run(cmd, capture_output=True, text=True, timeout=15, env=env)
     if result.returncode != 0:
-        return {"sha": sha[:8], "message": "unknown", "author": "unknown"}
+        return {"sha": sha[:8], "message": "unknown", "author": "unknown", "date": ""}
     c = json.loads(result.stdout)
     msg = c.get("commit", {}).get("message", "").split("\n")[0][:120]
     author = c.get("commit", {}).get("author", {}).get("name", "unknown")
-    return {"sha": sha[:8], "message": msg, "author": author}
+    date = c.get("commit", {}).get("author", {}).get("date", "")
+    return {"sha": sha[:8], "message": msg, "author": author, "date": date}
 
 
 def classify_error(error_lines: list[str], failed_steps: list[str],
                    workflow_name: str = "") -> str:
     """Classify failure into a signal type from actual error messages."""
+
     text = " ".join(error_lines) + " " + " ".join(failed_steps) + " " + workflow_name
     for pattern, signal_type in ERROR_PATTERNS:
         if re.search(pattern, text, re.IGNORECASE):
@@ -315,6 +372,13 @@ def classify_error(error_lines: list[str], failed_steps: list[str],
         for pattern, signal_type in STEP_NAME_PATTERNS:
             if re.search(pattern, step_text, re.IGNORECASE):
                 return signal_type
+    # Workflow-level fallback: if the workflow name suggests a non-test
+    # purpose (release, deploy, publish), classify as WorkflowConfigFailure
+    # rather than TestFailure — the user can investigate the workflow config.
+    wf_lower = workflow_name.lower()
+    for keyword, signal_type in WORKFLOW_FALLBACK_SIGNALS.items():
+        if keyword in wf_lower:
+            return signal_type
     return "TestFailure"
 
 
@@ -323,6 +387,11 @@ def detect_mutation_type(commit_info: dict, event: str) -> str:
     msg = commit_info.get("message", "")
     msg_lower = msg.lower()
     author = commit_info.get("author", "").lower()
+
+    # Empty/retrigger commits — not a real code change
+    if re.match(r'^(empty commit|retrigger|re-trigger|retry|re-run|trigger ci|ci retry)\s*$',
+                msg_lower.strip()):
+        return "CIRetrigger"
 
     if "dependabot" in author:
         if "github-actions" in msg_lower:
@@ -371,6 +440,86 @@ def runner_env_latent(job_name: str) -> str:
     return f"latent://runner-env/{detect_runner_os(job_name)}"
 
 
+def get_workflow_flaky_rate(repo: str, workflow_name: str, limit: int = 20) -> float:
+    """Query recent pass/fail ratio for a workflow to estimate flaky rate."""
+    env = {**os.environ, "GH_PAGER": "cat"}
+    cmd = ["gh", "run", "list", "--repo", repo,
+           "--workflow", workflow_name, "--limit", str(limit),
+           "--json", "conclusion"]
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=15, env=env)
+        if result.returncode != 0:
+            return 0.1  # default
+        runs = json.loads(result.stdout)
+        if not runs:
+            return 0.1
+        failures = sum(1 for r in runs if r.get("conclusion") == "failure")
+        return max(failures / len(runs), 0.01)  # floor at 1%
+    except Exception:
+        return 0.1
+
+
+def get_ancestor_commits(repo: str, sha: str, hours: int,
+                         commit_cache: dict) -> list[dict]:
+    """Fetch recent commits on the branch ending at sha, bounded by age.
+
+    Returns list of commit info dicts (newest first), stopping when a
+    commit's author date is older than `hours` hours from now.
+    """
+    env = {**os.environ, "GH_PAGER": "cat"}
+    cmd = ["gh", "api", f"repos/{repo}/commits",
+           "--method", "GET",
+           "-f", f"sha={sha}", "-f", "per_page=30",
+           "--jq", '[.[] | {sha: .sha, message: (.commit.message | split("\n")[0])[:120], '
+                   'author: .commit.author.name, date: .commit.author.date}]']
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=15, env=env)
+        if result.returncode != 0:
+            return []
+        commits = json.loads(result.stdout)
+    except Exception:
+        return []
+
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
+    ancestors = []
+    for c in commits[1:]:  # skip the HEAD commit (already processed)
+        sha8 = c["sha"][:8]
+        date_str = c.get("date", "")
+        if date_str:
+            try:
+                commit_date = datetime.fromisoformat(date_str.replace("Z", "+00:00"))
+                if commit_date < cutoff:
+                    break  # commit is older than the lookback window
+            except (ValueError, TypeError):
+                pass
+        # Cache the commit info
+        commit_cache[sha8] = {
+            "sha": sha8,
+            "message": c.get("message", ""),
+            "author": c.get("author", ""),
+            "date": date_str,
+        }
+        ancestors.append(commit_cache[sha8])
+    return ancestors
+
+
+def get_last_green_sha(repo: str, workflow_name: str) -> str | None:
+    """Find the SHA of the most recent successful run of a workflow."""
+    env = {**os.environ, "GH_PAGER": "cat"}
+    cmd = ["gh", "run", "list", "--repo", repo,
+           "--workflow", workflow_name, "--status", "success",
+           "--limit", "1", "--json", "headSha"]
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=15, env=env)
+        if result.returncode == 0:
+            runs = json.loads(result.stdout)
+            if runs:
+                return runs[0]["headSha"]
+    except Exception:
+        pass
+    return None
+
+
 # ── Main pipeline ────────────────────────────────────────────────────────
 
 def process_failures(repo: str, runs: list[dict], engine: str,
@@ -396,7 +545,34 @@ def process_failures(repo: str, runs: list[dict], engine: str,
     signals_to_send = []
     commit_cache = {}  # sha → commit_info
     seen_commit_nodes = set()
-    seen_job_signals = set()  # (sha8, job_slug, signal_type) for cross-run dedup
+    seen_job_signals = set()  # (sha8, job_slug, signal_type, domain) for cross-run dedup
+    flaky_rate_cache = {}  # workflow_name → float
+    last_green_cache = {}  # workflow_name → sha or None
+    ancestor_cache = {}  # sha → list[commit_info]
+
+    # Compute a fixed "beginning of lookback window" timestamp for flaky-test
+    # mutations.  Using a fixed timestamp prevents the flaky node from
+    # resetting its decay clock on every failure.
+    hours_back = max((
+        (datetime.now(timezone.utc) -
+         datetime.fromisoformat(r["createdAt"].replace("Z", "+00:00"))
+        ).total_seconds() / 3600
+        for r in runs if r.get("createdAt")
+    ), default=48)
+    flaky_base_timestamp = (
+        datetime.now(timezone.utc) - timedelta(hours=hours_back)
+    ).isoformat()
+
+    # Detect default branch for domain classification
+    default_branch = "main"
+    try:
+        r = subprocess.run(
+            ["gh", "repo", "view", repo, "--json", "defaultBranchRef", "-q", ".defaultBranchRef.name"],
+            capture_output=True, text=True, timeout=10)
+        if r.returncode == 0 and r.stdout.strip():
+            default_branch = r.stdout.strip()
+    except Exception:
+        pass
 
     # Ensure latent nodes exist
     for lid, linfo in LATENT_NODES.items():
@@ -408,6 +584,27 @@ def process_failures(repo: str, runs: list[dict], engine: str,
 
     failed_runs = [r for r in runs if r["conclusion"] == "failure"]
 
+    def event_domain(event: str, branch: str) -> str:
+        """Map GitHub event type + branch to causal domain.
+
+        For schedule/dispatch events, we further distinguish whether the
+        run targets the default branch (regression testing) or a release/
+        feature branch (release validation).  Runs on non-default branches
+        get domain 'release' so their failures route to a latent node
+        rather than blaming the HEAD commit.
+        """
+        if event in ("pull_request", "pull_request_target"):
+            return "pr"
+        if event == "schedule":
+            if branch == default_branch:
+                return "schedule"
+            return "release"
+        if event in ("workflow_dispatch", "repository_dispatch"):
+            if branch == default_branch:
+                return "dispatch"
+            return "release"
+        return "pr"  # push, dynamic, merge_group, etc. behave like PR domain
+
     for run in failed_runs:
         run_id = run["databaseId"]
         sha = run["headSha"]
@@ -415,6 +612,7 @@ def process_failures(repo: str, runs: list[dict], engine: str,
         wf = run["workflowName"]
         branch = run.get("headBranch", "")
         event = run.get("event", "")
+        domain = event_domain(event, branch)
         # Use actual event timestamps
         run_created = run.get("createdAt", "")
         run_updated = run.get("updatedAt", run_created)  # completion time
@@ -422,9 +620,17 @@ def process_failures(repo: str, runs: list[dict], engine: str,
         # Get commit info (cached)
         if sha8 not in commit_cache:
             commit_cache[sha8] = get_commit_info(repo, sha) if not dry_run else {
-                "sha": sha8, "message": "...", "author": "..."}
+                "sha": sha8, "message": "...", "author": "...", "date": ""}
         commit_info = commit_cache[sha8]
         mut_type = detect_mutation_type(commit_info, event)
+
+        # For schedule/dispatch domains, use the commit author date as the
+        # mutation timestamp so temporal decay reflects how old the code
+        # change actually is, not when the scheduler happened to run.
+        if domain in ("schedule", "dispatch") and commit_info.get("date"):
+            mut_timestamp = commit_info["date"]
+        else:
+            mut_timestamp = run_created
 
         # Get failed jobs and errors
         if fast:
@@ -442,13 +648,15 @@ def process_failures(repo: str, runs: list[dict], engine: str,
             # For dry run, just show what we'd do
             signal_type = classify_error(error_lines, [], wf)
             is_infra = signal_type in INFRA_SIGNALS
-            print(f"\n  Run #{run_id} [{wf}] sha={sha8} event={event}")
+            print(f"\n  Run #{run_id} [{wf}] sha={sha8} event={event} domain={domain}")
             print(f"    Signal: {signal_type} ({'INFRA' if is_infra else 'CODE'})")
             if is_infra:
                 latent = SIGNAL_TO_LATENT.get(signal_type)
                 if latent is None:
                     latent = "latent://runner-env/linux"
                 print(f"    → latent cause: {latent}")
+            elif domain == "release":
+                print(f"    → release-validation cause: latent://release-validation/{branch}")
             else:
                 print(f"    → code cause: commit://{repo}/{sha8} ({mut_type})")
                 if signal_type == "TestFailure":
@@ -461,11 +669,12 @@ def process_failures(repo: str, runs: list[dict], engine: str,
             signal_type = classify_error(all_context, job["failed_steps"], wf)
             is_infra = signal_type in INFRA_SIGNALS
 
-            # Cross-run dedup: if the same commit + job slug + signal was
-            # already processed from an earlier run, skip to avoid duplicate
-            # alerts for retried workflows.
+            # Cross-run dedup: if the same commit + job slug + signal + domain
+            # was already processed from an earlier run, skip to avoid duplicate
+            # alerts for retried workflows. Domain is included so that a PR test
+            # and a scheduled test on the same SHA are tracked independently.
             job_slug = re.sub(r'[^a-z0-9]+', '-', job_name.lower()).strip('-')
-            dedup_key = (sha8, job_slug, signal_type)
+            dedup_key = (sha8, job_slug, signal_type, domain)
             if dedup_key in seen_job_signals:
                 continue
             seen_job_signals.add(dedup_key)
@@ -485,6 +694,7 @@ def process_failures(repo: str, runs: list[dict], engine: str,
                     "commit": sha8,
                     "branch": branch,
                     "event": event,
+                    "domain": domain,
                     "author": commit_info.get("author", ""),
                     "commit_message": commit_info.get("message", "")[:120],
                 },
@@ -544,75 +754,189 @@ def process_failures(repo: str, runs: list[dict], engine: str,
                         "node_id": "latent://flaky-tests",
                         "mutation_type": "FlakyTestRun",
                         "source": f"gh-actions/{repo}",
-                        "timestamp": run_created,
+                        "timestamp": flaky_base_timestamp,
                         "properties": {"note": "Competing cause for gRPC flakes"},
                     })
             else:
-                # Code failure: commit node → job, mutation on commit
-                cid = commit_node_id(repo, sha)
-                if cid not in seen_commit_nodes:
-                    seen_commit_nodes.add(cid)
-                    commit_label = f"{sha8}: {commit_info['message'][:60]}"
+                # Code failure attribution depends on domain
+                if domain == "release":
+                    # Release-validation: run targets a non-default branch
+                    # (release tag, old branch).  The HEAD commit is a known
+                    # release, not a recent change — route to a latent node
+                    # so failures are attributed to environment drift / latent
+                    # bugs rather than blaming the pinned SHA.
+                    release_latent = f"latent://release-validation/{branch}"
                     nodes.append({
-                        "id": cid, "label": commit_label, "class": "Commit",
+                        "id": release_latent,
+                        "label": f"Release validation ({branch})",
+                        "class": "CIInfra",
                         "region": "github", "rack_id": None,
-                        "properties": {
-                            "source": "gh-actions",
-                            "sha": sha8, "branch": branch,
-                            "author": commit_info.get("author", ""),
-                            "event": event,
-                        },
+                        "properties": {"source": "gh-actions", "latent": True,
+                                       "branch": branch},
                     })
-                    # Mutation: the code change (timestamp = run start time)
-                    mutations_to_send.append({
-                        "node_id": cid,
-                        "mutation_type": mut_type,
-                        "source": f"gh-actions/{repo}",
-                        "timestamp": run_created,
-                        "properties": {
-                            "sha": sha8, "branch": branch,
-                            "author": commit_info.get("author", ""),
-                            "message": commit_info.get("message", "")[:200],
-                        },
-                    })
-
-                # Edge: commit → job
-                edges.append({
-                    "id": f"edge-{cid[-20:]}-{jid[-30:]}",
-                    "source_id": cid, "target_id": jid,
-                    "edge_type": "dependency", "properties": {},
-                })
-
-                # Signal on the job node (timestamp = run completion time)
-                signals_to_send.append({
-                    "node_id": jid,
-                    "signal_type": signal_type,
-                    "severity": "critical",
-                    "timestamp": run_updated,
-                    "properties": {
-                        "run_id": run_id, "job": job_name,
-                        "failed_steps": job["failed_steps"],
-                        "error_lines": error_lines[:5],
-                        "trigger_sha": sha8,
-                    },
-                })
-
-                # Competing cause: flaky tests (for TestFailure only)
-                if signal_type == "TestFailure":
                     edges.append({
-                        "id": f"edge-flaky-{jid[-30:]}",
-                        "source_id": "latent://flaky-tests",
-                        "target_id": jid,
+                        "id": f"edge-{release_latent[-20:]}-{jid[-30:]}",
+                        "source_id": release_latent, "target_id": jid,
                         "edge_type": "dependency", "properties": {},
                     })
-                    # Add a mutation on flaky-tests so the engine can compete
                     mutations_to_send.append({
-                        "node_id": "latent://flaky-tests",
-                        "mutation_type": "FlakyTestRun",
+                        "node_id": release_latent,
+                        "mutation_type": "ReleaseValidation",
                         "source": f"gh-actions/{repo}",
                         "timestamp": run_created,
-                        "properties": {"note": "Competing cause for test failures"},
+                        "properties": {"branch": branch, "sha": sha8},
                     })
+                    signals_to_send.append({
+                        "node_id": jid,
+                        "signal_type": signal_type,
+                        "severity": "critical",
+                        "timestamp": run_updated,
+                        "properties": {
+                            "run_id": run_id, "job": job_name,
+                            "failed_steps": job["failed_steps"],
+                            "error_lines": error_lines[:5],
+                            "trigger_sha": sha8,
+                            "domain": domain,
+                        },
+                    })
+                else:
+                    # PR / schedule / dispatch on default branch:
+                    # commit node → job, mutation on commit
+                    cid = commit_node_id(repo, sha)
+                    if cid not in seen_commit_nodes:
+                        seen_commit_nodes.add(cid)
+                        commit_label = f"{sha8}: {commit_info['message'][:60]}"
+                        nodes.append({
+                            "id": cid, "label": commit_label, "class": "Commit",
+                            "region": "github", "rack_id": None,
+                            "properties": {
+                                "source": "gh-actions",
+                                "sha": sha8, "branch": branch,
+                                "author": commit_info.get("author", ""),
+                                "event": event,
+                            },
+                        })
+                        # Mutation: the code change
+                        mutations_to_send.append({
+                            "node_id": cid,
+                            "mutation_type": mut_type,
+                            "source": f"gh-actions/{repo}",
+                            "timestamp": mut_timestamp,
+                            "properties": {
+                                "sha": sha8, "branch": branch,
+                                "author": commit_info.get("author", ""),
+                                "message": commit_info.get("message", "")[:200],
+                            },
+                        })
+
+                    # Edge: commit → job
+                    edges.append({
+                        "id": f"edge-{cid[-20:]}-{jid[-30:]}",
+                        "source_id": cid, "target_id": jid,
+                        "edge_type": "dependency", "properties": {},
+                    })
+
+                    # For schedule/dispatch domains, add ancestor commits
+                    # as competing causes.  Walk the commit history back
+                    # from HEAD, stopping when a commit is older than the
+                    # lookback window or we hit the last-green SHA.
+                    if domain in ("schedule", "dispatch") and not dry_run:
+                        # Get last-green SHA for this workflow (cached)
+                        if wf not in last_green_cache:
+                            last_green_cache[wf] = get_last_green_sha(repo, wf)
+                        last_green = last_green_cache[wf]
+
+                        # Get ancestor commits (cached by HEAD sha)
+                        if sha not in ancestor_cache:
+                            ancestor_cache[sha] = get_ancestor_commits(
+                                repo, sha, hours_back, commit_cache)
+                        ancestors = ancestor_cache[sha]
+
+                        for anc in ancestors:
+                            anc_sha8 = anc["sha"][:8]
+                            # Stop if we've reached the last successful run
+                            if last_green and last_green.startswith(anc_sha8):
+                                break
+
+                            anc_cid = commit_node_id(repo, anc["sha"])
+                            anc_mut_type = detect_mutation_type(anc, event)
+                            anc_date = anc.get("date", "")
+
+                            if anc_cid not in seen_commit_nodes:
+                                seen_commit_nodes.add(anc_cid)
+                                nodes.append({
+                                    "id": anc_cid,
+                                    "label": f"{anc_sha8}: {anc['message'][:60]}",
+                                    "class": "Commit",
+                                    "region": "github", "rack_id": None,
+                                    "properties": {
+                                        "source": "gh-actions",
+                                        "sha": anc_sha8, "branch": branch,
+                                        "author": anc.get("author", ""),
+                                        "event": event,
+                                    },
+                                })
+                                mutations_to_send.append({
+                                    "node_id": anc_cid,
+                                    "mutation_type": anc_mut_type,
+                                    "source": f"gh-actions/{repo}",
+                                    "timestamp": anc_date or mut_timestamp,
+                                    "properties": {
+                                        "sha": anc_sha8, "branch": branch,
+                                        "author": anc.get("author", ""),
+                                        "message": anc.get("message", "")[:200],
+                                    },
+                                })
+
+                            # Edge: ancestor commit → job (competing cause)
+                            edges.append({
+                                "id": f"edge-{anc_cid[-20:]}-{jid[-30:]}",
+                                "source_id": anc_cid, "target_id": jid,
+                                "edge_type": "dependency", "properties": {},
+                            })
+
+                    # Signal on the job node (timestamp = run completion time)
+                    signals_to_send.append({
+                        "node_id": jid,
+                        "signal_type": signal_type,
+                        "severity": "critical",
+                        "timestamp": run_updated,
+                        "properties": {
+                            "run_id": run_id, "job": job_name,
+                            "failed_steps": job["failed_steps"],
+                            "error_lines": error_lines[:5],
+                            "trigger_sha": sha8,
+                            "domain": domain,
+                        },
+                    })
+
+                    # Competing cause: flaky tests (for TestFailure-like signals)
+                    if signal_type in ("TestFailure", "UnitTestFailure",
+                                       "DevContainerTestFailure"):
+                        # Look up historical flaky rate for this workflow
+                        if wf not in flaky_rate_cache and not dry_run:
+                            flaky_rate_cache[wf] = get_workflow_flaky_rate(repo, wf)
+                        flaky_rate = flaky_rate_cache.get(wf, 0.1)
+
+                        edges.append({
+                            "id": f"edge-flaky-{jid[-30:]}",
+                            "source_id": "latent://flaky-tests",
+                            "target_id": jid,
+                            "edge_type": "dependency", "properties": {},
+                        })
+                        # Mutation on flaky-tests with fixed base timestamp
+                        # and the historical flaky rate encoded in properties
+                        mutations_to_send.append({
+                            "node_id": "latent://flaky-tests",
+                            "mutation_type": "FlakyTestRun",
+                            "source": f"gh-actions/{repo}",
+                            "timestamp": flaky_base_timestamp,
+                            "properties": {
+                                "note": "Competing cause for test failures",
+                                "workflow": wf,
+                                "historical_flaky_rate": flaky_rate,
+                            },
+                        })
 
     if dry_run:
         return 0, 0, 0
@@ -658,6 +982,8 @@ def main():
                         help="Show classification without ingesting")
     parser.add_argument("--fast", action="store_true",
                         help="Skip log downloads — classify from step names only (~20x faster)")
+    parser.add_argument("--exclude-workflow", action="append", default=[],
+                        help="Workflow name to exclude (repeatable)")
     args = parser.parse_args()
 
     result = subprocess.run(["gh", "auth", "status"],
@@ -668,6 +994,11 @@ def main():
 
     print(f"Fetching runs from {args.repo} (last {args.hours}h)...", file=sys.stderr)
     runs = get_workflow_runs(args.repo, hours=args.hours, limit=args.limit)
+
+    # Exclude workflows by name
+    if args.exclude_workflow:
+        exclude_set = {w.lower() for w in args.exclude_workflow}
+        runs = [r for r in runs if r.get("workflowName", "").lower() not in exclude_set]
 
     from collections import Counter
     conclusions = Counter(r["conclusion"] for r in runs)
