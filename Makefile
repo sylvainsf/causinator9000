@@ -266,7 +266,15 @@ docker-run:  ## Run the container locally (MCP server mode)
 VERSION ?= $(shell git describe --tags --abbrev=0 2>/dev/null || echo "0.0.0")
 NEXT_VERSION ?= $(VERSION)
 
-.PHONY: release publish-action publish-container
+.PHONY: release publish-action publish-container build-release-binary
+
+build-release-binary:  ## Cross-compile the engine for Linux x86_64
+	@echo "Building c9k-engine for linux/amd64..."
+	cargo build --release --package c9k-engine --target x86_64-unknown-linux-gnu
+	@mkdir -p dist
+	cp target/x86_64-unknown-linux-gnu/release/c9k-engine dist/c9k-engine
+	cd dist && tar czf c9k-engine-linux-amd64.tar.gz c9k-engine
+	@echo "✓ Built dist/c9k-engine-linux-amd64.tar.gz"
 
 publish-container:  ## Build and push versioned container to GHCR (NEXT_VERSION=x.y.z)
 	@echo "Publishing container $(IMAGE_REPO):$(NEXT_VERSION)..."
@@ -278,7 +286,7 @@ publish-container:  ## Build and push versioned container to GHCR (NEXT_VERSION=
 		.
 	@echo "✓ Published $(IMAGE_REPO):$(NEXT_VERSION) and :latest"
 
-publish-action: publish-container  ## Tag a GitHub release for the Action Marketplace (NEXT_VERSION=x.y.z)
+publish-action:  ## Tag a GitHub release with binary asset (NEXT_VERSION=x.y.z)
 	@if [ "$(NEXT_VERSION)" = "0.0.0" ]; then echo "ERROR: Set NEXT_VERSION=x.y.z"; exit 1; fi
 	@echo "Tagging v$(NEXT_VERSION)..."
 	git tag -a "v$(NEXT_VERSION)" -m "Release v$(NEXT_VERSION)"
@@ -288,7 +296,11 @@ publish-action: publish-container  ## Tag a GitHub release for the Action Market
 	git tag -fa "v$(MAJOR)" -m "Update v$(MAJOR) to v$(NEXT_VERSION)"
 	git push origin "v$(MAJOR)" --force
 	@echo "✓ Tagged v$(NEXT_VERSION) and updated v$(MAJOR)"
-	@echo "  → Create a GitHub Release at https://github.com/sylvainsf/causinator9000/releases/new?tag=v$(NEXT_VERSION)"
-	@echo "  → Then publish to Marketplace from the release page"
+	@# Create GitHub release with binary asset
+	gh release create "v$(NEXT_VERSION)" dist/c9k-engine-linux-amd64.tar.gz \
+		--repo sylvainsf/causinator9000 \
+		--title "v$(NEXT_VERSION)" \
+		--generate-notes
+	@echo "✓ Created GitHub release v$(NEXT_VERSION) with binary asset"
 
-release: publish-action  ## Full release: container + action tags (NEXT_VERSION=x.y.z)
+release: build-release-binary publish-action  ## Full release: build binary + tag + GH release (NEXT_VERSION=x.y.z)

@@ -76,11 +76,7 @@ Key features:
 
 ## GitHub Action
 
-Run C9K on a schedule to get a weekly or nightly CI failure report. The action downloads a single binary, ingests failures from the GitHub API, runs Bayesian diagnosis, and outputs a markdown report.
-
-### Weekly digest issue
-
-Creates (or updates) a GitHub Issue every Monday with the past week's failure analysis:
+Get a weekly CI failure report with Bayesian root-cause analysis. No Docker, no API keys.
 
 ```yaml
 # .github/workflows/c9k-weekly.yml
@@ -88,10 +84,8 @@ name: C9K Weekly Digest
 on:
   schedule:
     - cron: '0 9 * * MON'
-
 permissions:
   issues: write
-
 jobs:
   digest:
     runs-on: ubuntu-latest
@@ -99,128 +93,12 @@ jobs:
       - uses: sylvainsf/causinator9000@v1
         with:
           create-issue: 'true'
-          issue-label: 'c9k-weekly'
 ```
 
-### Nightly job summary
+The report groups failures by root cause, with confidence scores and signal classification.
+Also available as a nightly job summary or PR comment on failure.
 
-Adds the report to the Actions job summary (visible on the workflow run page):
-
-```yaml
-name: C9K Nightly
-on:
-  schedule:
-    - cron: '0 6 * * *'
-
-jobs:
-  report:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: sylvainsf/causinator9000@v1
-        with:
-          hours: '24'
-```
-
-### Comment on failed PRs
-
-Triggers when a CI workflow fails and comments on the associated PR:
-
-```yaml
-name: C9K Diagnosis
-on:
-  workflow_run:
-    workflows: ["CI"]
-    types: [completed]
-
-permissions:
-  pull-requests: write
-
-jobs:
-  diagnose:
-    if: ${{ github.event.workflow_run.conclusion == 'failure' }}
-    runs-on: ubuntu-latest
-    steps:
-      - uses: sylvainsf/causinator9000@v1
-        with:
-          hours: '48'
-          post-comment: 'true'
-```
-
-### Inputs
-
-| Input | Default | Description |
-|---|---|---|
-| `repo` | Current repo | Repository to analyze (`owner/name`) |
-| `hours` | `168` | Lookback window in hours |
-| `min-confidence` | `50` | Minimum confidence threshold (0-100) |
-| `post-comment` | `false` | Post diagnosis as a PR comment |
-| `create-issue` | `false` | Create/update a digest issue |
-| `issue-label` | `c9k-digest` | Label for digest issues |
-| `github-token` | `${{ github.token }}` | Token for API access |
-| `version` | `latest` | Engine version to download |
-
-The report is always written to the job summary. Use `post-comment` or `create-issue` to additionally post it as a PR comment or GitHub issue.
-
-### Publishing
-
-GitHub Actions use **major version tags** for pinning. Users write `@v1`, not `@v1.2.3`.
-This means you maintain two layers of tags:
-
-- **Semver tags** (`v1.0.0`, `v1.1.0`) — immutable, point to a specific commit
-- **Major version tags** (`v1`) — mutable, always updated to point to the latest patch in that major
-
-When a user writes `uses: sylvainsf/causinator9000@v1`, GitHub resolves `v1`
-to whatever commit that tag currently points to. When you release `v1.1.0`,
-you move the `v1` tag forward so all `@v1` users get the update automatically.
-
-#### First release
-
-Since the repo already has `v0.3.0`, the first Marketplace-ready release is `v1.0.0`:
-
-```bash
-make release NEXT_VERSION=1.0.0
-```
-
-This will:
-1. Build and push the container as `ghcr.io/sylvainsf/causinator9000:1.0.0` and `:latest`
-2. Create an annotated Git tag `v1.0.0`
-3. Create (or update) the `v1` major version tag pointing to the same commit
-4. Push both tags
-
-Then go to https://github.com/sylvainsf/causinator9000/releases/new?tag=v1.0.0,
-write release notes, and check **"Publish this Action to the GitHub Marketplace"**.
-
-#### Subsequent releases
-
-```bash
-# Patch (bug fix, CPT tuning) — users on @v1 get it automatically
-make release NEXT_VERSION=1.0.1
-
-# Minor (new feature, new input) — users on @v1 get it automatically
-make release NEXT_VERSION=1.1.0
-
-# Major (breaking change) — users must update to @v2
-make release NEXT_VERSION=2.0.0
-```
-
-Each release moves the major tag (`v1` or `v2`) forward. Users pinned to
-`@v1` never see breaking changes; they opt in to `@v2` explicitly.
-
-#### Pinning options for users
-
-```yaml
-# Recommended — gets non-breaking updates automatically
-- uses: sylvainsf/causinator9000@v1
-
-# Exact version — fully reproducible, no automatic updates
-- uses: sylvainsf/causinator9000@v1.2.3
-
-# Exact commit — maximum reproducibility (rare)
-- uses: sylvainsf/causinator9000@a1b2c3d
-
-# Latest — not recommended, may break without warning
-- uses: sylvainsf/causinator9000@main
-```
+-> [Full action documentation](docs/action.md)
 
 ## Data Sources
 
