@@ -235,6 +235,68 @@
       table:
         - [0.02, 0.02]    # LR=1×
         - [0.98, 0.98]
+    # ── New signal types ──
+    # HelmInstallTimeout — infrastructure startup failure, not code
+    - mutation: CodeChange
+      signal: HelmInstallTimeout
+      table:
+        - [0.05, 0.05]    # LR=1× — code doesn't cause Helm install timeouts
+        - [0.95, 0.95]
+    - mutation: FlakyTestRun
+      signal: HelmInstallTimeout
+      table:
+        - [0.60, 0.05]    # LR=12× — flaky infra is likely
+        - [0.40, 0.95]
+    # RadiusStartupFailure — resource type not registered during init
+    - mutation: CodeChange
+      signal: RadiusStartupFailure
+      table:
+        - [0.08, 0.05]    # LR=1.6× — barely
+        - [0.92, 0.95]
+    - mutation: FlakyTestRun
+      signal: RadiusStartupFailure
+      table:
+        - [0.55, 0.05]    # LR=11× — startup race condition
+        - [0.45, 0.95]
+    # ActionPinningViolation — repo policy, not code or infra
+    - mutation: CodeChange
+      signal: ActionPinningViolation
+      table:
+        - [0.70, 0.01]    # LR=70× — the PR introduced unpinned actions
+        - [0.30, 0.99]
+    # ArtifactCleanupFailure — infra noise
+    - mutation: CodeChange
+      signal: ArtifactCleanupFailure
+      table:
+        - [0.02, 0.02]    # LR=1× — no causal link
+        - [0.98, 0.98]
+    # DependabotUpdateFailure — Dependabot's own tooling problem
+    - mutation: DependencyUpdate
+      signal: DependabotUpdateFailure
+      table:
+        - [0.85, 0.02]    # LR=42.5× — strong: dep update IS the cause
+        - [0.15, 0.98]
+    - mutation: CodeChange
+      signal: DependabotUpdateFailure
+      table:
+        - [0.02, 0.02]    # LR=1× — code changes don't break Dependabot
+        - [0.98, 0.98]
+    # ChecklistMissing — PR author's fault regardless of mutation type
+    - mutation: DependencyUpdate
+      signal: ChecklistMissing
+      table:
+        - [0.85, 0.01]    # LR=85× — dep PRs also need checklists
+        - [0.15, 0.99]
+    - mutation: DepMajorBump
+      signal: ChecklistMissing
+      table:
+        - [0.85, 0.01]
+        - [0.15, 0.99]
+    - mutation: DepActionsBump
+      signal: ChecklistMissing
+      table:
+        - [0.85, 0.01]
+        - [0.15, 0.99]
 
 # ── Commit: upstream code change node ────────────────────────────────────
 
@@ -259,6 +321,21 @@
       table:
         - [0.35, 0.03]
         - [0.65, 0.97]
+    - mutation: FlakyTestRun
+      signal: HelmInstallTimeout
+      table:
+        - [0.60, 0.05]
+        - [0.40, 0.95]
+    - mutation: FlakyTestRun
+      signal: RadiusStartupFailure
+      table:
+        - [0.55, 0.05]
+        - [0.45, 0.95]
+    - mutation: FlakyTestRun
+      signal: UnitTestFailure
+      table:
+        - [0.25, 0.03]
+        - [0.75, 0.97]
 
 # ── CIPlatform: GitHub Actions runner infrastructure ─────────────────────
 
@@ -287,6 +364,26 @@
       table:
         - [0.60, 0.05]    # LR=12× — automerge infra issues
         - [0.40, 0.95]
+    - mutation: RunnerUpdate
+      signal: HelmInstallTimeout
+      table:
+        - [0.70, 0.05]    # LR=14× — infra timeout
+        - [0.30, 0.95]
+    - mutation: RunnerUpdate
+      signal: RadiusStartupFailure
+      table:
+        - [0.65, 0.05]    # LR=13× — startup timing issue
+        - [0.35, 0.95]
+    - mutation: RunnerUpdate
+      signal: ActionPinningViolation
+      table:
+        - [0.02, 0.02]    # LR=1× — not runner's fault
+        - [0.98, 0.98]
+    - mutation: RunnerUpdate
+      signal: ArtifactCleanupFailure
+      table:
+        - [0.50, 0.05]    # LR=10× — cleanup is infra-ish
+        - [0.50, 0.95]
 
 # ── RunnerEnvironment: OS-specific runner image / tooling ────────────────
 # Shared latent node per OS. When multiple commits all fail the same way

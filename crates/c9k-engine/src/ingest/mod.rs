@@ -40,18 +40,22 @@ fn error_patterns() -> Vec<ClassifierPattern> {
         (r"(?i)error forwarding port|wincat\.exe.*exit code", "PortForwardError"),
         (r"(?i)Fail to read Virtual Memory|sys_metric_stat\.go", "VirtualMemoryError"),
         (r"(?i)connection refused.*dial tcp 127\.0\.0\.1|UNAVAILABLE:.*connection error.*connection refused", "GrpcConnectionRefused"),
+        (r"(?i)failed to apply.*Helm chart.*deadline exceeded|failed to run Helm install.*deadline exceeded|Install Radius.*context deadline", "HelmInstallTimeout"),
         (r"(?i)timed out|TimeoutException|deadline exceeded|HTTP request timed out", "Timeout"),
+        (r"(?i)actions must be pinned to a full.length commit SHA|not allowed.*must be pinned", "ActionPinningViolation"),
         (r"(?i)No task list was present|requireChecklist", "ChecklistMissing"),
         (r"(?i)helm.*fail|chart.*validation.*fail|no such file.*Chart", "HelmChartError"),
         (r"(?i)bicep.*fail|bicep build.*exit status", "BicepBuildError"),
         (r"(?i)Remote workflow failed", "RemoteWorkflowFailure"),
-        (r"(?i)Dependabot encountered an error", "DependabotUpdateFailure"),
+        (r"(?i)Dependabot encountered an error|tool_feature_not_supported", "DependabotUpdateFailure"),
         (r"(?i)No files were found with the provided path.*No artifacts|Create Artifact Container failed|artifact name.*is not valid", "ArtifactUploadFailure"),
+        (r"(?i)Delete artifacts.*fail|Cleanup artifacts.*fail", "ArtifactCleanupFailure"),
         (r"(?i)Scorecard|scorecard|supply.chain.security", "ScorecardFailure"),
         (r"(?i)automerge|auto.merge", "AutomergeFailure"),
         (r"(?i)lint|golangci|clippy|eslint", "LintFailure"),
         (r"(?i)Run make test|Run Unit Tests|unit tests", "UnitTestFailure"),
         (r"(?i)Generating tests for.*devcontainer|devcontainers", "DevContainerTestFailure"),
+        (r"(?i)resource type.*not found|resource provider.*not registered", "RadiusStartupFailure"),
         (r"(?i)Process completed with exit code", "TestFailure"),
     ]
 }
@@ -67,6 +71,9 @@ fn step_name_patterns() -> Vec<ClassifierPattern> {
         (r"(?i)Run E2E|e2e test", "TestFailure"),
         (r"(?i)Run lint|golangci|clippy|eslint", "LintFailure"),
         (r"(?i)Preparing.*cluster|Setup.*AKS|Deploy.*infra", "Timeout"),
+        (r"(?i)Install Radius|Install radius", "HelmInstallTimeout"),
+        (r"(?i)Set up job", "ActionPinningViolation"),
+        (r"(?i)Delete artifacts|Cleanup artifacts", "ArtifactCleanupFailure"),
     ]
 }
 
@@ -76,6 +83,8 @@ const INFRA_SIGNALS: &[&str] = &[
     "CommandNotFound", "PythonVersionMismatch", "GoToolchainError",
     "PortForwardError", "VirtualMemoryError", "GrpcConnectionRefused",
     "ScorecardFailure", "AutomergeFailure",
+    "HelmInstallTimeout", "ActionPinningViolation", "ArtifactCleanupFailure",
+    "RadiusStartupFailure",
 ];
 
 fn is_infra_signal(signal: &str) -> bool {
@@ -115,9 +124,10 @@ fn signal_to_latent(signal: &str, job_name: &str) -> &'static str {
     match signal {
         "AzureAuthFailure" => "latent://azure-oidc",
         "ImagePullError" | "ImagePushError" => "latent://ghcr.io",
-        "Timeout" | "RemoteWorkflowFailure" => "latent://github-actions-infra",
+        "Timeout" | "RemoteWorkflowFailure" | "HelmInstallTimeout" | "RadiusStartupFailure" => "latent://github-actions-infra",
         "ScorecardFailure" => "latent://github-scorecard",
         "AutomergeFailure" => "latent://github-automerge",
+        "ActionPinningViolation" | "ArtifactCleanupFailure" => "latent://github-actions-infra",
         _ => match detect_runner_os(job_name) {
             "windows" => "latent://runner-env/windows",
             "macos" => "latent://runner-env/macos",
@@ -126,12 +136,19 @@ fn signal_to_latent(signal: &str, job_name: &str) -> &'static str {
     }
 }
 
-fn detect_mutation_type(message: &str, author: &str, event: &str) -> &'static str {
+fn detect_mutation_type(message: &str, author: &str, event: &str, workflow_name: &str, head_branch: &str) -> &'static str {
     let msg = message.to_lowercase();
     let auth = author.to_lowercase();
+    let wf = workflow_name.to_lowercase();
+    let branch = head_branch.to_lowercase();
 
-    if auth.contains("dependabot") {
-        if msg.contains("github-actions") { return "DepActionsBump"; }
+    // Dependabot: detect by author, event type, workflow name, or branch
+    let is_dependabot = auth.contains("dependabot")
+        || event == "dynamic" && (wf.contains("npm_and_yarn") || wf.contains("dependabot") || wf.contains("pip") || wf.contains("cargo") || wf.contains("gomod"))
+        || branch.starts_with("dependabot/");
+
+    if is_dependabot {
+        if wf.contains("github-actions") || msg.contains("github-actions") { return "DepActionsBump"; }
         if msg.contains("from") && msg.contains("to") { return "DepMajorBump"; }
         return "DependencyUpdate";
     }
@@ -150,13 +167,14 @@ struct GhRun {
     head_sha: String,
     #[serde(rename = "workflowName")]
     workflow_name: String,
-    conclusion: String,
+    #[serde(default)]
+    _conclusion: String,
     #[serde(rename = "createdAt")]
     created_at: String,
     #[serde(rename = "updatedAt")]
     updated_at: String,
     #[serde(default, rename = "headBranch")]
-    _head_branch: String,
+    head_branch: String,
     #[serde(default)]
     event: String,
 }
@@ -202,22 +220,46 @@ fn gh_command(args: &[&str]) -> Result<String> {
 }
 
 fn get_runs(repo: &str, hours: u32) -> Result<Vec<GhRun>> {
-    let json_fields = "databaseId,name,status,conclusion,createdAt,updatedAt,headBranch,headSha,workflowName,event";
-    let output = gh_command(&[
-        "run", "list", "--repo", repo, "--limit", "200",
-        "--json", json_fields,
-    ])?;
-    let runs: Vec<GhRun> = serde_json::from_str(&output)?;
     let cutoff = Utc::now() - chrono::Duration::hours(hours as i64);
-    Ok(runs
-        .into_iter()
-        .filter(|r| {
-            r.conclusion == "failure"
-                && chrono::DateTime::parse_from_rfc3339(&r.created_at)
-                    .map(|t| t >= cutoff)
-                    .unwrap_or(false)
-        })
-        .collect())
+    let mut all_runs = Vec::new();
+
+    // Paginate through the REST API, fetching only failures.
+    for page in 1..=50 {
+        let url = format!(
+            "repos/{repo}/actions/runs?status=failure&per_page=100&page={page}"
+        );
+        let output = gh_command(&[
+            "api", &url,
+            "--jq",
+            r#"[.workflow_runs[] | {databaseId: .id, headSha: .head_sha, workflowName: .name, conclusion, createdAt: .created_at, updatedAt: .updated_at, headBranch: .head_branch, event}]"#,
+        ])?;
+
+        let page_runs: Vec<GhRun> = serde_json::from_str(output.trim())
+            .unwrap_or_default();
+
+        if page_runs.is_empty() {
+            break;
+        }
+
+        // Results are newest-first; once we see a run older than cutoff, stop.
+        let mut reached_cutoff = false;
+        for run in page_runs {
+            let in_window = chrono::DateTime::parse_from_rfc3339(&run.created_at)
+                .map(|t| t >= cutoff)
+                .unwrap_or(false);
+            if in_window {
+                all_runs.push(run);
+            } else {
+                reached_cutoff = true;
+            }
+        }
+
+        if reached_cutoff {
+            break;
+        }
+    }
+
+    Ok(all_runs)
 }
 
 fn get_failed_jobs(repo: &str, run_id: u64) -> Result<Vec<GhJob>> {
@@ -247,6 +289,14 @@ fn get_commit_info(repo: &str, sha: &str) -> Result<(String, String)> {
 
 /// Ingest GitHub Actions failures into the solver. Returns (mutations, signals) count.
 pub fn ingest_github(solver: &SolverHandle, repo: &str, hours: u32) -> Result<String> {
+    // Auto-expand the temporal window if the ingestion window exceeds it
+    let hours_mins = (hours as i64) * 60;
+    if let Ok(current_window) = solver.get_temporal_window() {
+        if hours_mins > current_window {
+            let _ = solver.set_temporal_window(hours_mins);
+        }
+    }
+
     let runs = get_runs(repo, hours)?;
     if runs.is_empty() {
         return Ok(format!("No failures found for {repo} in the last {hours}h."));
@@ -283,6 +333,8 @@ pub fn ingest_github(solver: &SolverHandle, repo: &str, hours: u32) -> Result<St
     let mut seen_commits: HashSet<String> = HashSet::new();
     let mut seen_jobs: HashSet<(String, String, String)> = HashSet::new();
     let mut commit_cache: std::collections::HashMap<String, (String, String)> = std::collections::HashMap::new();
+    // Track (job_slug, signal_type) → set of commits for cross-commit flaky detection
+    let mut job_commit_map: std::collections::HashMap<(String, String), HashSet<String>> = std::collections::HashMap::new();
 
     for run in &runs {
         let sha8 = &run.head_sha[..8.min(run.head_sha.len())];
@@ -294,7 +346,7 @@ pub fn ingest_github(solver: &SolverHandle, repo: &str, hours: u32) -> Result<St
             commit_cache.insert(sha8.to_string(), info);
         }
         let (msg, author) = commit_cache.get(sha8).unwrap();
-        let mut_type = detect_mutation_type(msg, author, &run.event);
+        let mut_type = detect_mutation_type(msg, author, &run.event, &run.workflow_name, &run.head_branch);
 
         // Get failed jobs
         let jobs = get_failed_jobs(repo, run.id).unwrap_or_default();
@@ -313,6 +365,12 @@ pub fn ingest_github(solver: &SolverHandle, repo: &str, hours: u32) -> Result<St
             let dedup_key = (sha8.to_string(), job_slug.clone(), signal_type.to_string());
             if seen_jobs.contains(&dedup_key) { continue; }
             seen_jobs.insert(dedup_key);
+
+            // Track for cross-commit flaky detection
+            job_commit_map
+                .entry((job_slug.clone(), signal_type.to_string()))
+                .or_default()
+                .insert(sha8.to_string());
 
             // Job node
             let jid = format!("job://{repo}/{}/{job_slug}", run.id);
@@ -391,8 +449,8 @@ pub fn ingest_github(solver: &SolverHandle, repo: &str, hours: u32) -> Result<St
                     properties: serde_json::json!({}),
                 });
 
-                // Flaky test competing cause
-                if signal_type == "TestFailure" {
+                // Flaky test competing cause — for test-like failures
+                if signal_type == "TestFailure" || signal_type == "UnitTestFailure" || signal_type == "HelmInstallTimeout" || signal_type == "RadiusStartupFailure" {
                     edges.push(serde_json::json!({
                         "id": format!("edge-flaky-{}", &jid[jid.len().saturating_sub(30)..]),
                         "source_id": "latent://flaky-tests", "target_id": &jid,
@@ -409,6 +467,26 @@ pub fn ingest_github(solver: &SolverHandle, repo: &str, hours: u32) -> Result<St
                         properties: serde_json::json!({}),
                     });
                 }
+            }
+        }
+    }
+
+    // Cross-commit flaky detection: if the same job+signal appears on 3+
+    // different commits, add extra FlakyTestRun mutations to boost the
+    // flaky-test prior for those jobs.
+    for ((job_slug, _signal_type), commits) in &job_commit_map {
+        if commits.len() >= 3 {
+            // This pattern is strongly indicative of flakiness: same job
+            // failing the same way on multiple independent commits.
+            for _ in 0..commits.len() {
+                mutations.push(Mutation {
+                    id: uuid::Uuid::new_v4().to_string(),
+                    node_id: "latent://flaky-tests".to_string(),
+                    mutation_type: "FlakyTestRun".to_string(),
+                    source: format!("gh-actions/{repo}/cross-commit/{job_slug}"),
+                    timestamp: Utc::now(),
+                    properties: serde_json::json!({}),
+                });
             }
         }
     }
