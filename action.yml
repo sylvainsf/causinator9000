@@ -1,5 +1,5 @@
 name: 'Causinator 9000 CI Diagnosis'
-description: 'Analyze CI failures with Bayesian causal inference. Posts a diagnosis summary as a PR comment or job summary.'
+description: 'Analyze CI failures with Bayesian causal inference. Posts a diagnosis as a job summary, PR comment, or issue.'
 author: 'sylvainsf'
 
 branding:
@@ -12,57 +12,134 @@ inputs:
     required: false
     default: ${{ github.repository }}
   hours:
-    description: 'Lookback window in hours (default: 48)'
+    description: 'Lookback window in hours (default: 168 for weekly)'
     required: false
-    default: '48'
+    default: '168'
   min-confidence:
     description: 'Minimum confidence threshold for reporting (0-100, default: 50)'
     required: false
     default: '50'
-  run-id:
-    description: 'Specific GitHub Actions run ID to analyze (for workflow_run triggers)'
-    required: false
-    default: ''
   post-comment:
-    description: 'Post diagnosis as a PR comment (true/false, default: true)'
+    description: 'Post diagnosis as a PR comment (true/false, default: false)'
     required: false
-    default: 'true'
+    default: 'false'
   create-issue:
-    description: 'Create or update a digest issue instead of PR comment (true/false, default: false)'
+    description: 'Create or update a digest issue (true/false, default: false)'
     required: false
     default: 'false'
   issue-label:
     description: 'Label for digest issues (default: c9k-digest)'
     required: false
     default: 'c9k-digest'
-  fail-on-findings:
-    description: 'Exit non-zero if diagnoses found above threshold (true/false, default: false)'
-    required: false
-    default: 'false'
   github-token:
     description: 'GitHub token for API access and posting comments'
     required: false
     default: ${{ github.token }}
+  version:
+    description: 'C9K engine version to download (default: latest)'
+    required: false
+    default: 'latest'
 
 outputs:
+  report:
+    description: 'The generated markdown report'
+    value: ${{ steps.run.outputs.report }}
   alert-count:
     description: 'Number of alert groups found'
-  diagnosis-count:
-    description: 'Number of diagnoses above confidence threshold'
-  report:
-    description: 'Path to the generated markdown report'
+    value: ${{ steps.run.outputs.alert-count }}
 
 runs:
-  using: 'docker'
-  image: 'docker://ghcr.io/sylvainsf/causinator9000:latest'
-  entrypoint: '/usr/local/bin/action-entrypoint.sh'
-  env:
-    INPUT_REPO: ${{ inputs.repo }}
-    INPUT_HOURS: ${{ inputs.hours }}
-    INPUT_MIN_CONFIDENCE: ${{ inputs.min-confidence }}
-    INPUT_RUN_ID: ${{ inputs.run-id }}
-    INPUT_POST_COMMENT: ${{ inputs.post-comment }}
-    INPUT_CREATE_ISSUE: ${{ inputs.create-issue }}
-    INPUT_ISSUE_LABEL: ${{ inputs.issue-label }}
-    INPUT_FAIL_ON_FINDINGS: ${{ inputs.fail-on-findings }}
-    GITHUB_TOKEN: ${{ inputs.github-token }}
+  using: 'composite'
+  steps:
+    - name: Download c9k-engine
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+      run: |
+        set -e
+        VERSION="${{ inputs.version }}"
+        REPO="sylvainsf/causinator9000"
+        if [ "$VERSION" = "latest" ]; then
+          TAG=$(gh api "repos/$REPO/releases/latest" --jq .tag_name 2>/dev/null || echo "")
+          if [ -z "$TAG" ]; then
+            echo "::warning::No release found, falling back to main branch build"
+            gh run download --repo "$REPO" -n c9k-engine-linux-amd64 -D /tmp/c9k 2>/dev/null || {
+              echo "::error::Could not download c9k-engine binary"
+              exit 1
+            }
+            chmod +x /tmp/c9k/c9k-engine
+            exit 0
+          fi
+          VERSION="$TAG"
+        fi
+        ASSET="c9k-engine-linux-amd64.tar.gz"
+        gh release download "$VERSION" --repo "$REPO" --pattern "$ASSET" --dir /tmp/c9k 2>/dev/null && \
+          tar xzf "/tmp/c9k/$ASSET" -C /tmp/c9k || {
+          echo "::error::Could not download c9k-engine $VERSION"
+          exit 1
+        }
+        chmod +x /tmp/c9k/c9k-engine
+
+    - name: Run c9k report
+      id: run
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+        GITHUB_TOKEN: ${{ inputs.github-token }}
+      run: |
+        set -e
+        /tmp/c9k/c9k-engine report \
+          --repo "${{ inputs.repo }}" \
+          --hours "${{ inputs.hours }}" \
+          --min-confidence "${{ inputs.min-confidence }}" \
+          --embedded-heuristics \
+          > /tmp/c9k-report.md 2>/tmp/c9k-stderr.log
+
+        # Output to job summary
+        cat /tmp/c9k-report.md >> "$GITHUB_STEP_SUMMARY"
+
+        # Set outputs
+        ALERT_COUNT=$(grep -c "^|" /tmp/c9k-report.md | head -1 || echo "0")
+        echo "alert-count=$ALERT_COUNT" >> "$GITHUB_OUTPUT"
+        {
+          echo "report<<C9K_EOF"
+          cat /tmp/c9k-report.md
+          echo "C9K_EOF"
+        } >> "$GITHUB_OUTPUT"
+
+    - name: Post PR comment
+      if: inputs.post-comment == 'true' && github.event.pull_request.number
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+      run: |
+        gh pr comment "${{ github.event.pull_request.number }}" \
+          --repo "${{ inputs.repo }}" \
+          --body-file /tmp/c9k-report.md 2>/dev/null || true
+
+    - name: Create or update digest issue
+      if: inputs.create-issue == 'true'
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+      run: |
+        REPO="${{ inputs.repo }}"
+        LABEL="${{ inputs.issue-label }}"
+
+        gh label create "$LABEL" --repo "$REPO" \
+          --description "Causinator 9000 CI failure digest" \
+          --color "D93F0B" 2>/dev/null || true
+
+        EXISTING=$(gh issue list --repo "$REPO" \
+          --label "$LABEL" --state open \
+          --json number --limit 1 --jq '.[0].number' 2>/dev/null || echo "")
+
+        if [ -n "$EXISTING" ]; then
+          gh issue comment "$EXISTING" --repo "$REPO" \
+            --body-file /tmp/c9k-report.md 2>/dev/null || true
+        else
+          gh issue create --repo "$REPO" \
+            --title "Causinator 9000 CI Failure Digest — $(date -u +%Y-%m-%d)" \
+            --body-file /tmp/c9k-report.md \
+            --label "$LABEL" 2>/dev/null || true
+        fi

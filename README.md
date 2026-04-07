@@ -76,37 +76,14 @@ Key features:
 
 ## GitHub Action
 
-Run C9K automatically on CI failures. The action starts the engine, ingests recent failures, and posts a Bayesian diagnosis.
-
-### Auto-comment on failed PRs
-
-Triggers when any CI workflow fails and comments on the associated PR:
-
-```yaml
-# .github/workflows/c9k-diagnose.yml
-name: C9K Diagnosis
-on:
-  workflow_run:
-    workflows: ["CI"]
-    types: [completed]
-
-permissions:
-  issues: write
-  pull-requests: write
-
-jobs:
-  diagnose:
-    if: ${{ github.event.workflow_run.conclusion == 'failure' }}
-    runs-on: ubuntu-latest
-    steps:
-      - uses: sylvainsf/causinator9000@v1
-```
+Run C9K on a schedule to get a weekly or nightly CI failure report. The action downloads a single binary, ingests failures from the GitHub API, runs Bayesian diagnosis, and outputs a markdown report.
 
 ### Weekly digest issue
 
-Creates (or updates) a GitHub Issue with a weekly failure analysis:
+Creates (or updates) a GitHub Issue every Monday with the past week's failure analysis:
 
 ```yaml
+# .github/workflows/c9k-weekly.yml
 name: C9K Weekly Digest
 on:
   schedule:
@@ -121,9 +98,52 @@ jobs:
     steps:
       - uses: sylvainsf/causinator9000@v1
         with:
-          hours: '168'
           create-issue: 'true'
           issue-label: 'c9k-weekly'
+```
+
+### Nightly job summary
+
+Adds the report to the Actions job summary (visible on the workflow run page):
+
+```yaml
+name: C9K Nightly
+on:
+  schedule:
+    - cron: '0 6 * * *'
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: sylvainsf/causinator9000@v1
+        with:
+          hours: '24'
+```
+
+### Comment on failed PRs
+
+Triggers when a CI workflow fails and comments on the associated PR:
+
+```yaml
+name: C9K Diagnosis
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+
+permissions:
+  pull-requests: write
+
+jobs:
+  diagnose:
+    if: ${{ github.event.workflow_run.conclusion == 'failure' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: sylvainsf/causinator9000@v1
+        with:
+          hours: '48'
+          post-comment: 'true'
 ```
 
 ### Inputs
@@ -131,14 +151,15 @@ jobs:
 | Input | Default | Description |
 |---|---|---|
 | `repo` | Current repo | Repository to analyze (`owner/name`) |
-| `hours` | `48` | Lookback window in hours |
-| `min-confidence` | `50` | Minimum confidence threshold (0–100) |
-| `run-id` | — | Specific run ID (auto-detected for `workflow_run`) |
-| `post-comment` | `true` | Post diagnosis as a PR comment |
+| `hours` | `168` | Lookback window in hours |
+| `min-confidence` | `50` | Minimum confidence threshold (0-100) |
+| `post-comment` | `false` | Post diagnosis as a PR comment |
 | `create-issue` | `false` | Create/update a digest issue |
 | `issue-label` | `c9k-digest` | Label for digest issues |
-| `fail-on-findings` | `false` | Exit non-zero if diagnoses found above threshold |
 | `github-token` | `${{ github.token }}` | Token for API access |
+| `version` | `latest` | Engine version to download |
+
+The report is always written to the job summary. Use `post-comment` or `create-issue` to additionally post it as a PR comment or GitHub issue.
 
 ### Publishing
 
