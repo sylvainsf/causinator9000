@@ -59,6 +59,11 @@ MIN_BACKGROUND_RATE = 0.001
 MIN_PROBABILITY = 0.01
 MAX_PROBABILITY = 0.99
 
+# Minimum number of signal-specific observations (hits + background hits)
+# before trusting an empirical rate.  Below this threshold we fall back to
+# hand-tuned values to avoid over-fitting on rare signal types.
+MIN_SIGNAL_OBSERVATIONS = 10
+
 # ── File-path-based mutation classification ──────────────────────────────
 
 # Patterns mapping changed file paths to mutation types.
@@ -259,7 +264,9 @@ def collect_runs(repo: str, limit: int = 200,
                 continue
 
             created = r.get("created_at", "")
-            # Stop paginating once we've gone past the time window
+            # API returns runs newest-first.  ISO-8601 timestamps sort
+            # lexicographically, so `created < cutoff_iso` is true once
+            # we've passed the time window boundary → stop paginating.
             if created and created < cutoff_iso:
                 return runs[:limit]
 
@@ -561,7 +568,7 @@ def compute_rates(records: list[RunRecord]) -> dict[str, dict[str, CptEstimate]]
             # OR if the number of signal-specific hits is too low to be
             # meaningful (avoids over-fitting to rare signal types).
             if (p_sig_mut.low_confidence or p_sig_no_mut.low_confidence
-                    or mut_hits + no_mut_hits < 10):
+                    or mut_hits + no_mut_hits < MIN_SIGNAL_OBSERVATIONS):
                 source = "hand-tuned-fallback"
 
             results[mutation][signal] = CptEstimate(
