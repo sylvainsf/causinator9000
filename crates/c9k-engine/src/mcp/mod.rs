@@ -10,7 +10,7 @@ use anyhow::Result;
 use rmcp::handler::server::router::tool::ToolRouter;
 use rmcp::handler::server::wrapper::Parameters;
 use rmcp::model::{ServerCapabilities, ServerInfo};
-use rmcp::{schemars, tool, tool_handler, tool_router, ServerHandler, ServiceExt};
+use rmcp::{ServerHandler, ServiceExt, schemars, tool, tool_handler, tool_router};
 
 use crate::ingest;
 use crate::solver::SolverHandle;
@@ -78,14 +78,21 @@ impl C9kMcpServer {
         let hours = p.hours.unwrap_or(48);
         match ingest::ingest_github(&self.solver, &p.repo, hours) {
             Ok(result) => {
-                let mut text = format!("## GitHub Actions Ingestion: {}\n\n{}\n", p.repo, result.report);
+                let mut text = format!(
+                    "## GitHub Actions Ingestion: {}\n\n{}\n",
+                    p.repo, result.report
+                );
                 // Append alert groups
                 let groups = self.solver.alert_groups().unwrap_or_default();
                 if !groups.is_empty() {
                     text.push_str("\n### Alert Groups\n\n| Root Cause | Confidence | Members |\n|---|---|---|\n");
                     for g in &groups {
-                        text.push_str(&format!("| {} | {:.0}% | {} |\n",
-                            &g.root_cause, g.confidence * 100.0, g.members.len()));
+                        text.push_str(&format!(
+                            "| {} | {:.0}% | {} |\n",
+                            &g.root_cause,
+                            g.confidence * 100.0,
+                            g.members.len()
+                        ));
                     }
                 }
                 text
@@ -100,11 +107,17 @@ impl C9kMcpServer {
         match self.solver.diagnose_all(min) {
             Ok(d) if d.is_empty() => "No diagnoses above threshold.".to_string(),
             Ok(d) => {
-                let mut text = format!("## Diagnoses ({} results)\n\n| Confidence | Target | Root Cause |\n|---|---|---|\n", d.len());
+                let mut text = format!(
+                    "## Diagnoses ({} results)\n\n| Confidence | Target | Root Cause |\n|---|---|---|\n",
+                    d.len()
+                );
                 for diag in d.iter().take(30) {
-                    text.push_str(&format!("| {:.0}% | {} | {} |\n",
-                        diag.confidence * 100.0, diag.target_node,
-                        diag.root_cause.as_deref().unwrap_or("?")));
+                    text.push_str(&format!(
+                        "| {:.0}% | {} | {} |\n",
+                        diag.confidence * 100.0,
+                        diag.target_node,
+                        diag.root_cause.as_deref().unwrap_or("?")
+                    ));
                 }
                 text
             }
@@ -117,10 +130,17 @@ impl C9kMcpServer {
         match self.solver.alert_groups() {
             Ok(g) if g.is_empty() => "No alert groups.".to_string(),
             Ok(g) => {
-                let mut text = format!("## Alert Groups ({} groups)\n\n| Root Cause | Confidence | Members |\n|---|---|---|\n", g.len());
+                let mut text = format!(
+                    "## Alert Groups ({} groups)\n\n| Root Cause | Confidence | Members |\n|---|---|---|\n",
+                    g.len()
+                );
                 for group in &g {
-                    text.push_str(&format!("| {} | {:.0}% | {} |\n",
-                        &group.root_cause, group.confidence * 100.0, group.members.len()));
+                    text.push_str(&format!(
+                        "| {} | {:.0}% | {} |\n",
+                        &group.root_cause,
+                        group.confidence * 100.0,
+                        group.members.len()
+                    ));
                 }
                 text
             }
@@ -144,32 +164,36 @@ impl C9kMcpServer {
             Ok(d) => d,
             Err(e) => return format!("Parse error: {e}"),
         };
-        format!("**{}** by {} ({})\n\n{}",
+        format!(
+            "**{}** by {} ({})\n\n{}",
             data["sha"].as_str().unwrap_or(&p.sha),
             data["author"].as_str().unwrap_or("?"),
             data["date"].as_str().unwrap_or("?"),
-            data["message"].as_str().unwrap_or("?"))
+            data["message"].as_str().unwrap_or("?")
+        )
     }
 }
 
 #[tool_handler(router = self.tool_router)]
 impl ServerHandler for C9kMcpServer {
     fn get_info(&self) -> ServerInfo {
-        ServerInfo::new(ServerCapabilities::builder().enable_tools().build())
-            .with_instructions(
-                "Causinator 9000 — Bayesian causal inference engine for CI/CD failure diagnosis. \
+        ServerInfo::new(ServerCapabilities::builder().enable_tools().build()).with_instructions(
+            "Causinator 9000 — Bayesian causal inference engine for CI/CD failure diagnosis. \
                  Use c9k_ingest_github to load failures, then c9k_diagnose_all or c9k_alert_groups \
                  to analyze root causes.",
-            )
+        )
     }
 }
 
 pub async fn serve_mcp(solver: SolverHandle) -> Result<()> {
     let server = C9kMcpServer::new(solver);
     let transport = rmcp::transport::io::stdio();
-    let mcp = server.serve(transport).await
+    let mcp = server
+        .serve(transport)
+        .await
         .map_err(|e| anyhow::anyhow!("MCP init failed: {e}"))?;
-    mcp.waiting().await
+    mcp.waiting()
+        .await
         .map_err(|e| anyhow::anyhow!("MCP server error: {e}"))?;
     Ok(())
 }
