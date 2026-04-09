@@ -80,13 +80,12 @@ impl C9kMcpServer {
             Ok(result) => {
                 let mut text = format!("## GitHub Actions Ingestion: {}\n\n{}\n", p.repo, result.report);
                 // Append alert groups
-                if let Ok(groups) = self.solver.alert_groups() {
-                    if !groups.is_empty() {
-                        text.push_str("\n### Alert Groups\n\n| Root Cause | Confidence | Members |\n|---|---|---|\n");
-                        for g in &groups {
-                            text.push_str(&format!("| {} | {:.0}% | {} |\n",
-                                &g.root_cause, g.confidence * 100.0, g.members.len()));
-                        }
+                let groups = self.solver.alert_groups().unwrap_or_default();
+                if !groups.is_empty() {
+                    text.push_str("\n### Alert Groups\n\n| Root Cause | Confidence | Members |\n|---|---|---|\n");
+                    for g in &groups {
+                        text.push_str(&format!("| {} | {:.0}% | {} |\n",
+                            &g.root_cause, g.confidence * 100.0, g.members.len()));
                     }
                 }
                 text

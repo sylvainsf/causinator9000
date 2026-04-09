@@ -1244,12 +1244,16 @@ impl SolverState {
             return 0.01;
         }
 
-        // Attenuate by path length — mild decay so upstream causes with
-        // strong CPT matches still dominate over weak direct mutations.
+        // Hop decay: attenuate confidence for distant upstream causes.
+        // 1-hop ancestors are co-local (direct trigger), so no decay.
+        // Decay only applies starting at 2+ hops, where the cause is more
+        // distant and attribution should be progressively weaker.
         let path = self.find_path(&ancestor.id, &target.id);
         let hops = path.len().saturating_sub(1);
-        for _ in 0..hops {
-            confidence *= 0.92; // 8% decay per hop
+        if hops > 1 {
+            for _ in 1..hops {
+                confidence *= 0.85; // 15% decay per extra hop beyond the first
+            }
         }
 
         confidence

@@ -63,21 +63,20 @@ fn resolve_prs(repo: &str, branches: &[&str]) -> HashMap<String, (u64, String)> 
         if *branch == "main" || *branch == "master" || branch.is_empty() {
             continue;
         }
-        let output = std::process::Command::new("gh")
+        let Ok(out) = std::process::Command::new("gh")
             .args(["pr", "list", "--repo", repo, "--head", branch,
                    "--state", "all", "--json", "number,url", "--limit", "1"])
             .env("GH_PAGER", "cat")
-            .output();
-        if let Ok(out) = output {
-            if out.status.success() {
-                if let Ok(prs) = serde_json::from_slice::<Vec<serde_json::Value>>(&out.stdout) {
-                    if let Some(pr) = prs.first() {
-                        if let (Some(num), Some(url)) = (pr["number"].as_u64(), pr["url"].as_str()) {
-                            result.insert(branch.to_string(), (num, url.to_string()));
-                        }
-                    }
-                }
-            }
+            .output()
+        else {
+            continue;
+        };
+        if !out.status.success() { continue; }
+        let Ok(prs) = serde_json::from_slice::<Vec<serde_json::Value>>(&out.stdout) else { continue; };
+        if let Some(pr) = prs.first()
+            && let (Some(num), Some(url)) = (pr["number"].as_u64(), pr["url"].as_str())
+        {
+            result.insert(branch.to_string(), (num, url.to_string()));
         }
     }
     result
@@ -245,17 +244,17 @@ async fn main() -> Result<()> {
             let mut all_signals = std::collections::BTreeSet::new();
             let mut all_mutations = std::collections::BTreeSet::new();
             for g in alert_groups {
-                if let Some(sha) = extract_sha(&g.root_cause) {
-                    if !shas.contains(&sha) { shas.push(sha); }
+                if let Some(sha) = extract_sha(&g.root_cause)
+                    && !shas.contains(&sha)
+                {
+                    shas.push(sha);
                 }
                 total_failures += g.members.len();
                 if g.confidence > best_confidence { best_confidence = g.confidence; }
                 for s in &g.signal_types { all_signals.insert(s.clone()); }
                 // Extract mutation type from root cause
-                if let Some(start) = g.root_cause.find('(') {
-                    if let Some(end) = g.root_cause.find(')') {
-                        all_mutations.insert(g.root_cause[start+1..end].to_string());
-                    }
+                if let (Some(start), Some(end)) = (g.root_cause.find('('), g.root_cause.find(')')) {
+                    all_mutations.insert(g.root_cause[start+1..end].to_string());
                 }
             }
             branch_groups.push(BranchGroup {
@@ -295,7 +294,7 @@ async fn main() -> Result<()> {
 
                 // Add author + message context for single-commit groups
                 let context = if bg.shas.len() == 1 {
-                    if let Some((msg, author)) = commit_info.get(&bg.shas[0]) {
+                    if let Some((msg, author, _files)) = commit_info.get(&bg.shas[0]) {
                         let short_msg = if msg.len() > 50 { &msg[..50] } else { msg.as_str() };
                         format!(" ({author}: {short_msg})")
                     } else {
