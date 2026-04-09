@@ -110,8 +110,8 @@
   - mutation: CodeChange
     signal: TestFailure
     table:
-    - [0.14, 0.06]
-    - [0.86, 0.94]
+    - [0.14, 0.14]
+    - [0.86, 0.86]
   - mutation: CodeChange
     signal: Timeout
     table:
@@ -185,8 +185,8 @@
   - mutation: DepMinorBump
     signal: TestFailure
     table:
-    - [0.4, 0.03]
-    - [0.6, 0.97]
+    - [0.3, 0.13]
+    - [0.7, 0.87]
   - mutation: DependencyUpdate
     signal: ChecklistMissing
     table:
@@ -200,8 +200,8 @@
   - mutation: DependencyUpdate
     signal: TestFailure
     table:
-    - [0.5, 0.03]
-    - [0.5, 0.97]
+    - [0.12, 0.14]
+    - [0.88, 0.86]
   - mutation: FlakyTestRun
     signal: GrpcConnectionRefused
     table:
@@ -240,8 +240,8 @@
   - mutation: Release
     signal: TestFailure
     table:
-    - [0.05, 0.13]
-    - [0.95, 0.87]
+    - [0.07, 0.14]
+    - [0.93, 0.86]
   - mutation: Revert
     signal: TestFailure
     table:

@@ -16,8 +16,11 @@ Pipeline steps:
   6. Produce a calibration report
 
 Usage:
-  # Collect data and generate calibrated CPTs:
+  # Collect last 7 days of data and generate calibrated CPTs:
   python scripts/calibrate_cpts.py --repos repos.txt --output config/heuristics/ci-pipelines.yaml
+
+  # Collect last 14 days for more data:
+  python scripts/calibrate_cpts.py --repos repos.txt --since-days 14 --output calibrated.yaml
 
   # Dry-run (collect + report, don't overwrite):
   python scripts/calibrate_cpts.py --repos repos.txt --dry-run
@@ -39,6 +42,7 @@ import subprocess
 import sys
 from collections import defaultdict
 from dataclasses import dataclass, field, asdict
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -195,10 +199,95 @@ def gh_run(cmd: list[str], timeout: int = 30) -> subprocess.CompletedProcess:
                           timeout=timeout, env=env)
 
 
-def collect_runs(repo: str, limit: int = 200) -> list[dict]:
-    """Collect recent workflow runs (both failed and successful) from a repo.
+def collect_runs(repo: str, limit: int = 200,
+                 since_days: int = 7) -> list[dict]:
+    """Collect workflow runs from the last `since_days` days from a repo.
+
+    Paginates through the GitHub Actions API to gather ALL completed runs
+    (both failed and successful) within the time window — not just the
+    most recent page.
+
+    Args:
+        repo: owner/name
+        limit: safety cap on total runs to collect (prevents runaway on
+               very active repos)
+        since_days: number of days of history to collect (default 7)
 
     Returns raw run dicts from the GitHub API.
+    """
+    cutoff = datetime.now(timezone.utc) - timedelta(days=since_days)
+    cutoff_iso = cutoff.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    runs: list[dict] = []
+    page = 1
+    per_page = 100  # GitHub API max per page
+
+    while len(runs) < limit:
+        cmd = [
+            "gh", "api",
+            f"repos/{repo}/actions/runs",
+            "-X", "GET",
+            "--paginate",
+            "-f", f"created=>{cutoff_iso}",
+            "-f", f"per_page={per_page}",
+            "-f", f"page={page}",
+            "--jq", ".workflow_runs",
+        ]
+        result = gh_run(cmd, timeout=120)
+
+        if result.returncode != 0:
+            # Fallback to the simpler gh-run-list approach (works without
+            # API scope but only returns one page per status).
+            print(f"  INFO: API pagination failed for {repo}, "
+                  f"falling back to gh run list", file=sys.stderr)
+            return _collect_runs_simple(repo, limit)
+
+        try:
+            batch = json.loads(result.stdout)
+        except json.JSONDecodeError:
+            break
+
+        if not batch:
+            break  # No more results
+
+        # Filter to completed runs only and select relevant fields
+        for r in batch:
+            if r.get("status") != "completed":
+                continue
+            conclusion = r.get("conclusion", "")
+            if conclusion not in ("success", "failure"):
+                continue
+
+            created = r.get("created_at", "")
+            # Stop paginating once we've gone past the time window
+            if created and created < cutoff_iso:
+                return runs[:limit]
+
+            runs.append({
+                "databaseId": r.get("id"),
+                "headSha": r.get("head_sha", ""),
+                "headBranch": r.get("head_branch", ""),
+                "event": r.get("event", ""),
+                "workflowName": r.get("name", ""),
+                "conclusion": conclusion,
+                "createdAt": created,
+            })
+
+            if len(runs) >= limit:
+                break
+
+        # If we got fewer than per_page results, we've hit the last page
+        if len(batch) < per_page:
+            break
+        page += 1
+
+    return runs[:limit]
+
+
+def _collect_runs_simple(repo: str, limit: int = 200) -> list[dict]:
+    """Fallback: collect runs using `gh run list` (single page per status).
+
+    Used when direct API pagination isn't available (e.g. limited token scope).
     """
     runs = []
     for status in ("failure", "success"):
@@ -283,7 +372,8 @@ from sources.gh_actions_source import (  # noqa: E402
 
 
 def collect_repo_data(repo: str, limit: int = 200,
-                      collect_files: bool = True) -> list[RunRecord]:
+                      collect_files: bool = True,
+                      since_days: int = 7) -> list[RunRecord]:
     """Collect run records from a single repo.
 
     For each run:
@@ -291,8 +381,9 @@ def collect_repo_data(repo: str, limit: int = 200,
       - Get changed files → file_mutation_type
       - For failures: get error lines / failed steps → signal_type
     """
-    print(f"  Collecting data from {repo} (limit={limit})...")
-    raw_runs = collect_runs(repo, limit=limit)
+    print(f"  Collecting data from {repo} "
+          f"(limit={limit}, since_days={since_days})...")
+    raw_runs = collect_runs(repo, limit=limit, since_days=since_days)
     if not raw_runs:
         print(f"  No runs found for {repo}", file=sys.stderr)
         return []
@@ -864,8 +955,10 @@ def main():
     parser.add_argument("--repos", type=str, default="repos.txt",
                         help="File with repo list (one per line). "
                              "Default: repos.txt (falls back to built-in list)")
-    parser.add_argument("--limit", type=int, default=200,
-                        help="Max runs to collect per repo (default: 200)")
+    parser.add_argument("--limit", type=int, default=500,
+                        help="Max runs to collect per repo (default: 500)")
+    parser.add_argument("--since-days", type=int, default=7,
+                        help="Collect runs from the last N days (default: 7)")
     parser.add_argument("--data", type=str, default=None,
                         help="Path to pre-collected data JSON (skip collection)")
     parser.add_argument("--save-data", type=str, default=None,
@@ -899,13 +992,15 @@ def main():
         records = load_collected_data(args.data)
     else:
         repos = load_repo_list(args.repos)
-        print(f"\nStep 1: Collecting data from {len(repos)} repos...")
+        print(f"\nStep 1: Collecting data from {len(repos)} repos "
+              f"(last {args.since_days} days, limit={args.limit}/repo)...")
         records = []
         for repo in repos:
             try:
                 repo_records = collect_repo_data(
                     repo, limit=args.limit,
-                    collect_files=not args.no_files)
+                    collect_files=not args.no_files,
+                    since_days=args.since_days)
                 records.extend(repo_records)
             except Exception as e:
                 print(f"  ERROR collecting from {repo}: {e}", file=sys.stderr)
