@@ -122,9 +122,14 @@ class TestSignalAttribution:
 
     def test_code_signals(self):
         for sig in ["TestFailure", "HelmChartError", "BicepBuildError",
-                     "ChecklistMissing", "UnitTestFailure",
+                     "UnitTestFailure",
                      "DevContainerTestFailure"]:
             assert sig in CODE_SIGNALS, f"{sig} should be CODE"
+
+    def test_checklist_missing_is_neither(self):
+        """ChecklistMissing is a process issue, not code or infra."""
+        assert "ChecklistMissing" not in INFRA_SIGNALS
+        assert "ChecklistMissing" not in CODE_SIGNALS
 
     def test_no_overlap(self):
         assert INFRA_SIGNALS.isdisjoint(CODE_SIGNALS)
