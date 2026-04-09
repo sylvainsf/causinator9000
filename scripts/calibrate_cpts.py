@@ -466,7 +466,11 @@ def compute_rates(records: list[RunRecord]) -> dict[str, dict[str, CptEstimate]]
             lr = p_sig_mut.rate / bg if p_sig_mut.rate > 0 else 0.0
 
             source = "empirical"
-            if p_sig_mut.low_confidence or p_sig_no_mut.low_confidence:
+            # Flag as low confidence if total observations are too few,
+            # OR if the number of signal-specific hits is too low to be
+            # meaningful (avoids over-fitting to rare signal types).
+            if (p_sig_mut.low_confidence or p_sig_no_mut.low_confidence
+                    or mut_hits + no_mut_hits < 10):
                 source = "hand-tuned-fallback"
 
             results[mutation][signal] = CptEstimate(
@@ -857,9 +861,9 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=__doc__,
     )
-    parser.add_argument("--repos", type=str, default=None,
+    parser.add_argument("--repos", type=str, default="repos.txt",
                         help="File with repo list (one per line). "
-                             "Default: radius-project/radius, prometheus/prometheus")
+                             "Default: repos.txt (falls back to built-in list)")
     parser.add_argument("--limit", type=int, default=200,
                         help="Max runs to collect per repo (default: 200)")
     parser.add_argument("--data", type=str, default=None,

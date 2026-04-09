@@ -80,13 +80,13 @@
   - mutation: CodeChange
     signal: ImagePullError
     table:
-    - [0.01, 0.01]
-    - [0.99, 0.99]
+    - [0.03, 0.06]
+    - [0.97, 0.94]
   - mutation: CodeChange
     signal: LintFailure
     table:
-    - [0.01, 0.01]
-    - [0.99, 0.99]
+    - [0.8, 0.02]
+    - [0.2, 0.98]
   - mutation: CodeChange
     signal: PortForwardError
     table:
@@ -120,8 +120,8 @@
   - mutation: CodeChange
     signal: UnitTestFailure
     table:
-    - [0.01, 0.01]
-    - [0.99, 0.99]
+    - [0.8, 0.02]
+    - [0.2, 0.98]
   - mutation: CodeChange
     signal: VirtualMemoryError
     table:
