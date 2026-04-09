@@ -287,8 +287,18 @@ fn get_commit_info(repo: &str, sha: &str) -> Result<(String, String)> {
 
 // ── Main ingestion ──────────────────────────────────────────────────────
 
-/// Ingest GitHub Actions failures into the solver. Returns (mutations, signals) count.
-pub fn ingest_github(solver: &SolverHandle, repo: &str, hours: u32) -> Result<String> {
+/// Result from GitHub Actions ingestion, including metadata for report formatting.
+pub struct IngestResult {
+    /// Human-readable ingestion summary (for stderr/logging).
+    pub report: String,
+    /// SHA (8-char) → head branch name.
+    pub commit_branches: std::collections::HashMap<String, String>,
+    /// SHA (8-char) → (commit message first line, author name).
+    pub commit_info: std::collections::HashMap<String, (String, String)>,
+}
+
+/// Ingest GitHub Actions failures into the solver.
+pub fn ingest_github(solver: &SolverHandle, repo: &str, hours: u32) -> Result<IngestResult> {
     // Auto-expand the temporal window if the ingestion window exceeds it
     let hours_mins = (hours as i64) * 60;
     if let Ok(current_window) = solver.get_temporal_window() {
@@ -299,7 +309,11 @@ pub fn ingest_github(solver: &SolverHandle, repo: &str, hours: u32) -> Result<St
 
     let runs = get_runs(repo, hours)?;
     if runs.is_empty() {
-        return Ok(format!("No failures found for {repo} in the last {hours}h."));
+        return Ok(IngestResult {
+            report: format!("No failures found for {repo} in the last {hours}h."),
+            commit_branches: std::collections::HashMap::new(),
+            commit_info: std::collections::HashMap::new(),
+        });
     }
 
     let mut report = format!("Fetching from {repo} (last {hours}h)...\n{} failures to process\n", runs.len());
@@ -335,6 +349,8 @@ pub fn ingest_github(solver: &SolverHandle, repo: &str, hours: u32) -> Result<St
     let mut commit_cache: std::collections::HashMap<String, (String, String)> = std::collections::HashMap::new();
     // Track (job_slug, signal_type) → set of commits for cross-commit flaky detection
     let mut job_commit_map: std::collections::HashMap<(String, String), HashSet<String>> = std::collections::HashMap::new();
+    // Track SHA → branch for PR grouping in reports
+    let mut commit_branches: std::collections::HashMap<String, String> = std::collections::HashMap::new();
 
     for run in &runs {
         let sha8 = &run.head_sha[..8.min(run.head_sha.len())];
@@ -345,6 +361,9 @@ pub fn ingest_github(solver: &SolverHandle, repo: &str, hours: u32) -> Result<St
             let info = get_commit_info(repo, &run.head_sha).unwrap_or_else(|_| ("unknown".into(), "unknown".into()));
             commit_cache.insert(sha8.to_string(), info);
         }
+        // Track branch (first seen wins, since a SHA usually appears on one branch)
+        commit_branches.entry(sha8.to_string())
+            .or_insert_with(|| run.head_branch.clone());
         let (msg, author) = commit_cache.get(sha8).unwrap();
         let mut_type = detect_mutation_type(msg, author, &run.event, &run.workflow_name, &run.head_branch);
 
@@ -511,5 +530,9 @@ pub fn ingest_github(solver: &SolverHandle, repo: &str, hours: u32) -> Result<St
     }
 
     report.push_str(&format!("Ingested: {mut_count} mutations, {sig_count} signals\n"));
-    Ok(report)
+    Ok(IngestResult {
+        report,
+        commit_branches,
+        commit_info: commit_cache,
+    })
 }

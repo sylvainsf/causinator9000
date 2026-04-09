@@ -77,8 +77,8 @@ impl C9kMcpServer {
     fn c9k_ingest_github(&self, Parameters(p): Parameters<IngestGithubParams>) -> String {
         let hours = p.hours.unwrap_or(48);
         match ingest::ingest_github(&self.solver, &p.repo, hours) {
-            Ok(report) => {
-                let mut text = format!("## GitHub Actions Ingestion: {}\n\n{report}\n", p.repo);
+            Ok(result) => {
+                let mut text = format!("## GitHub Actions Ingestion: {}\n\n{}\n", p.repo, result.report);
                 // Append alert groups
                 if let Ok(groups) = self.solver.alert_groups() {
                     if !groups.is_empty() {

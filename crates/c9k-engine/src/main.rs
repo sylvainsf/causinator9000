@@ -1,26 +1,21 @@
 // Copyright (c) 2026 Sylvain Niles. MIT License.
 
+use std::collections::HashMap;
+
 use anyhow::Result;
 use c9k_engine::{api, drasi, embedded_heuristics, ingest, mcp, solver};
 use tracing_subscriber::EnvFilter;
 
 /// Format a node ID as a markdown link to the GitHub Actions run.
-/// e.g. job://owner/repo/12345/lint -> [12345/lint](https://github.com/owner/repo/actions/runs/12345)
 fn format_target(id: &str) -> String {
     if let Some(rest) = id.strip_prefix("job://") {
-        // rest = "owner/repo/run_id/job_slug"
         let parts: Vec<&str> = rest.splitn(4, '/').collect();
         if parts.len() == 4 {
-            let owner = parts[0];
-            let repo = parts[1];
-            let run_id = parts[2];
-            let job_slug = parts[3];
+            let (owner, repo, run_id, job_slug) = (parts[0], parts[1], parts[2], parts[3]);
             return format!("[{run_id}/{job_slug}](https://github.com/{owner}/{repo}/actions/runs/{run_id})");
         }
         if parts.len() == 3 {
-            let owner = parts[0];
-            let repo = parts[1];
-            let run_id = parts[2];
+            let (owner, repo, run_id) = (parts[0], parts[1], parts[2]);
             return format!("[{run_id}](https://github.com/{owner}/{repo}/actions/runs/{run_id})");
         }
     }
@@ -28,10 +23,8 @@ fn format_target(id: &str) -> String {
 }
 
 /// Convert a root cause ID to a markdown-linked display string.
-/// e.g. "commit://owner/repo/abc12345 (CodeChange)" -> "[`abc12345`](https://github.com/owner/repo/commit/abc12345) (CodeChange)"
 fn format_root_cause(rc: &str) -> String {
     if let Some(rest) = rc.strip_prefix("commit://") {
-        // rest = "owner/repo/sha8 (MutationType)" or "owner/repo/sha8"
         let (path, suffix) = if let Some(idx) = rest.find(" (") {
             (&rest[..idx], &rest[idx..])
         } else {
@@ -53,6 +46,53 @@ fn format_root_cause(rc: &str) -> String {
         return format!("{name}{suffix}");
     }
     rc.to_string()
+}
+
+/// Extract SHA from a root cause string like "commit://owner/repo/abc12345 (CodeChange)"
+fn extract_sha(rc: &str) -> Option<String> {
+    let rest = rc.strip_prefix("commit://")?;
+    let path = if let Some(idx) = rest.find(" (") { &rest[..idx] } else { rest };
+    let parts: Vec<&str> = path.splitn(3, '/').collect();
+    if parts.len() == 3 { Some(parts[2].to_string()) } else { None }
+}
+
+/// Resolve branch names to PR numbers/URLs via gh CLI.
+fn resolve_prs(repo: &str, branches: &[&str]) -> HashMap<String, (u64, String)> {
+    let mut result = HashMap::new();
+    for branch in branches {
+        if *branch == "main" || *branch == "master" || branch.is_empty() {
+            continue;
+        }
+        let output = std::process::Command::new("gh")
+            .args(["pr", "list", "--repo", repo, "--head", branch,
+                   "--state", "all", "--json", "number,url", "--limit", "1"])
+            .env("GH_PAGER", "cat")
+            .output();
+        if let Ok(out) = output {
+            if out.status.success() {
+                if let Ok(prs) = serde_json::from_slice::<Vec<serde_json::Value>>(&out.stdout) {
+                    if let Some(pr) = prs.first() {
+                        if let (Some(num), Some(url)) = (pr["number"].as_u64(), pr["url"].as_str()) {
+                            result.insert(branch.to_string(), (num, url.to_string()));
+                        }
+                    }
+                }
+            }
+        }
+    }
+    result
+}
+
+/// A branch-grouped alert for the report.
+#[allow(dead_code)]
+struct BranchGroup {
+    branch: String,
+    pr: Option<(u64, String)>, // (number, url)
+    shas: Vec<String>,
+    confidence: f64,
+    total_failures: usize,
+    signal_types: Vec<String>,
+    mutation_types: Vec<String>,
 }
 
 /// Load heuristics into the solver.
@@ -151,8 +191,8 @@ async fn main() -> Result<()> {
         let handle = solver.handle();
 
         // Ingest
-        let ingest_report = ingest::ingest_github(&handle, &repo, hours)?;
-        eprintln!("{ingest_report}");
+        let ingest_result = ingest::ingest_github(&handle, &repo, hours)?;
+        eprintln!("{}", ingest_result.report);
 
         // Diagnose
         let diagnoses = handle.diagnose_all(min_confidence)?;
@@ -172,15 +212,111 @@ async fn main() -> Result<()> {
         println!("**{} failures** diagnosed above {:.0}% confidence | {} nodes | {} edges | {} mutations | {} signals\n",
             diagnoses.len(), min_confidence * 100.0, nodes, edges, mutations, signals);
 
-        // Alert groups table
-        if !groups.is_empty() {
+        // Build branch-grouped alert table
+        // 1. Map each alert group's root cause SHA to its branch
+        let commit_branches = &ingest_result.commit_branches;
+        let commit_info = &ingest_result.commit_info;
+
+        // Collect groups into branch buckets
+        let mut branch_buckets: std::collections::BTreeMap<String, Vec<&solver::AlertGroup>> =
+            std::collections::BTreeMap::new();
+        let mut latent_groups: Vec<&solver::AlertGroup> = Vec::new();
+
+        for g in &groups {
+            if let Some(sha) = extract_sha(&g.root_cause) {
+                let branch = commit_branches.get(&sha).cloned().unwrap_or_default();
+                let key = if branch.is_empty() { "unknown".to_string() } else { branch };
+                branch_buckets.entry(key).or_default().push(g);
+            } else {
+                latent_groups.push(g);
+            }
+        }
+
+        // 2. Resolve PR numbers for non-default branches
+        let unique_branches: Vec<&str> = branch_buckets.keys().map(|s| s.as_str()).collect();
+        let pr_map = resolve_prs(&repo, &unique_branches);
+
+        // 3. Build BranchGroup summaries
+        let mut branch_groups: Vec<BranchGroup> = Vec::new();
+        for (branch, alert_groups) in &branch_buckets {
+            let mut shas = Vec::new();
+            let mut total_failures = 0;
+            let mut best_confidence: f64 = 0.0;
+            let mut all_signals = std::collections::BTreeSet::new();
+            let mut all_mutations = std::collections::BTreeSet::new();
+            for g in alert_groups {
+                if let Some(sha) = extract_sha(&g.root_cause) {
+                    if !shas.contains(&sha) { shas.push(sha); }
+                }
+                total_failures += g.members.len();
+                if g.confidence > best_confidence { best_confidence = g.confidence; }
+                for s in &g.signal_types { all_signals.insert(s.clone()); }
+                // Extract mutation type from root cause
+                if let Some(start) = g.root_cause.find('(') {
+                    if let Some(end) = g.root_cause.find(')') {
+                        all_mutations.insert(g.root_cause[start+1..end].to_string());
+                    }
+                }
+            }
+            branch_groups.push(BranchGroup {
+                branch: branch.clone(),
+                pr: pr_map.get(branch).cloned(),
+                shas,
+                confidence: best_confidence,
+                total_failures,
+                signal_types: all_signals.into_iter().collect(),
+                mutation_types: all_mutations.into_iter().collect(),
+            });
+        }
+        // Sort by total failures descending
+        branch_groups.sort_by(|a, b| b.total_failures.cmp(&a.total_failures));
+
+        // 4. Print the grouped table
+        if !branch_groups.is_empty() || !latent_groups.is_empty() {
             println!("### Alert Groups\n");
-            println!("| Root Cause | Confidence | Failures | Signal Types |");
-            println!("|---|---|---|---|");
-            for g in &groups {
+            println!("| Branch / PR | Commits | Confidence | Failures | Signals |");
+            println!("|---|---|---|---|---|");
+
+            for bg in &branch_groups {
+                // Format branch name with PR link if available
+                let branch_display = if let Some((num, ref url)) = bg.pr {
+                    format!("[#{num}]({url}) `{}`", bg.branch)
+                } else if bg.branch == "main" || bg.branch == "master" {
+                    format!("`{}` (default)", bg.branch)
+                } else {
+                    format!("`{}`", bg.branch)
+                };
+
+                // Format commit SHAs as links
+                let sha_links: Vec<String> = bg.shas.iter().map(|sha| {
+                    format!("[`{sha}`](https://github.com/{repo}/commit/{sha})")
+                }).collect();
+                let shas_str = sha_links.join(", ");
+
+                // Add author + message context for single-commit groups
+                let context = if bg.shas.len() == 1 {
+                    if let Some((msg, author)) = commit_info.get(&bg.shas[0]) {
+                        let short_msg = if msg.len() > 50 { &msg[..50] } else { msg.as_str() };
+                        format!(" ({author}: {short_msg})")
+                    } else {
+                        String::new()
+                    }
+                } else {
+                    String::new()
+                };
+
+                println!("| {} | {}{} | {:.0}% | {} | {} |",
+                    branch_display, shas_str, context,
+                    bg.confidence * 100.0, bg.total_failures,
+                    bg.signal_types.join(", "));
+            }
+
+            // Latent groups (flaky tests, infra, etc.)
+            for g in &latent_groups {
+                let rc_display = format_root_cause(&g.root_cause);
                 let signals: Vec<&str> = g.signal_types.iter().map(|s| s.as_str()).collect();
-                println!("| {} | {:.0}% | {} | {} |",
-                    format_root_cause(&g.root_cause), g.confidence * 100.0, g.members.len(),
+                println!("| {} | -- | {:.0}% | {} | {} |",
+                    rc_display, g.confidence * 100.0, g.members.len(),
                     signals.join(", "));
             }
             println!();
