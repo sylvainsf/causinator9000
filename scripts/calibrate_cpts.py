@@ -44,6 +44,17 @@ from typing import Any
 
 import yaml
 
+# ── Constants ────────────────────────────────────────────────────────────
+
+# Floor for background rate in LR computation — prevents division by zero
+# while keeping the ratio meaningful (0.1% is below any observed signal rate).
+MIN_BACKGROUND_RATE = 0.001
+
+# CPT probability bounds — probabilities of exactly 0 or 1 break Bayesian
+# inference (log-odds become infinite), so we clamp to [0.01, 0.99].
+MIN_PROBABILITY = 0.01
+MAX_PROBABILITY = 0.99
+
 # ── File-path-based mutation classification ──────────────────────────────
 
 # Patterns mapping changed file paths to mutation types.
@@ -378,8 +389,10 @@ def bootstrap_rate(hits: int, total: int,
         return RateEstimate(rate=rate, ci_lower=0.0, ci_upper=1.0,
                             n_observations=total, low_confidence=True)
 
-    # Bootstrap: resample and compute rate
-    rng = random.Random(42)  # Reproducible
+    # Bootstrap: resample and compute rate.
+    # Seeded for reproducibility in batch calibration runs — the same input
+    # data always produces the same CIs, which makes diffs meaningful.
+    rng = random.Random(42)
     # Represent as binary outcomes
     outcomes = [1] * hits + [0] * (total - hits)
     boot_rates = []
@@ -449,7 +462,7 @@ def compute_rates(records: list[RunRecord]) -> dict[str, dict[str, CptEstimate]]
             p_sig_no_mut = bootstrap_rate(no_mut_hits, no_mut_total)
 
             # Likelihood ratio
-            bg = max(p_sig_no_mut.rate, 0.001)  # floor to avoid div-by-zero
+            bg = max(p_sig_no_mut.rate, MIN_BACKGROUND_RATE)
             lr = p_sig_mut.rate / bg if p_sig_mut.rate > 0 else 0.0
 
             source = "empirical"
@@ -557,9 +570,9 @@ def generate_cpt_yaml(
                 p_hit = est.p_signal_given_mutation.rate
                 p_bg = est.p_signal_given_no_mutation.rate
 
-                # Clamp to valid probabilities
-                p_hit = max(0.01, min(0.99, p_hit))
-                p_bg = max(0.01, min(0.99, p_bg))
+                # Clamp to valid probability bounds
+                p_hit = max(MIN_PROBABILITY, min(MAX_PROBABILITY, p_hit))
+                p_bg = max(MIN_PROBABILITY, min(MAX_PROBABILITY, p_bg))
 
                 # Skip pairs with LR < 1.5 (barely useful)
                 lr = p_hit / p_bg
