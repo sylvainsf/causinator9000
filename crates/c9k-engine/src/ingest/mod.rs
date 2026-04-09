@@ -30,60 +30,150 @@ macro_rules! patterns {
 
 fn error_patterns() -> Vec<ClassifierPattern> {
     patterns![
-        (r"(?i)AADSTS\d+|federated identity|Login failed.*az.*exit code|auth-type", "AzureAuthFailure"),
-        (r"(?i)ErrImagePull|ImagePullBackOff|image.*pull.*fail", "ImagePullError"),
+        (
+            r"(?i)AADSTS\d+|federated identity|Login failed.*az.*exit code|auth-type",
+            "AzureAuthFailure"
+        ),
+        (
+            r"(?i)ErrImagePull|ImagePullBackOff|image.*pull.*fail",
+            "ImagePullError"
+        ),
         (r"(?i)docker.*push.*fail|oras.*push.*fail", "ImagePushError"),
         (r"(?i)command not found|exit code 127", "CommandNotFound"),
-        (r"(?i)requires a different Python|not in .>=\d", "PythonVersionMismatch"),
-        (r"(?i)invalid array length|tokeninternal\.go|cannot use .* as type", "GoToolchainError"),
-        (r"(?i)go\.mod was committed|go\.sum is out of sync|go mod tidy", "GoModCheckFailure"),
-        (r"(?i)error forwarding port|wincat\.exe.*exit code", "PortForwardError"),
-        (r"(?i)Fail to read Virtual Memory|sys_metric_stat\.go", "VirtualMemoryError"),
-        (r"(?i)connection refused.*dial tcp 127\.0\.0\.1|UNAVAILABLE:.*connection error.*connection refused", "GrpcConnectionRefused"),
-        (r"(?i)failed to apply.*Helm chart.*deadline exceeded|failed to run Helm install.*deadline exceeded|Install Radius.*context deadline", "HelmInstallTimeout"),
-        (r"(?i)timed out|TimeoutException|deadline exceeded|HTTP request timed out", "Timeout"),
-        (r"(?i)actions must be pinned to a full.length commit SHA|not allowed.*must be pinned", "ActionPinningViolation"),
-        (r"(?i)No task list was present|requireChecklist", "ChecklistMissing"),
-        (r"(?i)helm.*fail|chart.*validation.*fail|no such file.*Chart", "HelmChartError"),
-        (r"(?i)bicep.*fail|bicep build.*exit status", "BicepBuildError"),
+        (
+            r"(?i)requires a different Python|not in .>=\d",
+            "PythonVersionMismatch"
+        ),
+        (
+            r"(?i)invalid array length|tokeninternal\.go|cannot use .* as type",
+            "GoToolchainError"
+        ),
+        (
+            r"(?i)go\.mod was committed|go\.sum is out of sync|go mod tidy",
+            "GoModCheckFailure"
+        ),
+        (
+            r"(?i)error forwarding port|wincat\.exe.*exit code",
+            "PortForwardError"
+        ),
+        (
+            r"(?i)Fail to read Virtual Memory|sys_metric_stat\.go",
+            "VirtualMemoryError"
+        ),
+        (
+            r"(?i)connection refused.*dial tcp 127\.0\.0\.1|UNAVAILABLE:.*connection error.*connection refused",
+            "GrpcConnectionRefused"
+        ),
+        (
+            r"(?i)failed to apply.*Helm chart.*deadline exceeded|failed to run Helm install.*deadline exceeded|Install Radius.*context deadline",
+            "HelmInstallTimeout"
+        ),
+        (
+            r"(?i)timed out|TimeoutException|deadline exceeded|HTTP request timed out",
+            "Timeout"
+        ),
+        (
+            r"(?i)actions must be pinned to a full.length commit SHA|not allowed.*must be pinned",
+            "ActionPinningViolation"
+        ),
+        (
+            r"(?i)No task list was present|requireChecklist",
+            "ChecklistMissing"
+        ),
+        (
+            r"(?i)helm.*fail|chart.*validation.*fail|no such file.*Chart",
+            "HelmChartError"
+        ),
+        (
+            r"(?i)bicep.*fail|bicep build.*exit status",
+            "BicepBuildError"
+        ),
         (r"(?i)Remote workflow failed", "RemoteWorkflowFailure"),
-        (r"(?i)Dependabot encountered an error|tool_feature_not_supported", "DependabotUpdateFailure"),
-        (r"(?i)No files were found with the provided path.*No artifacts|Create Artifact Container failed|artifact name.*is not valid", "ArtifactUploadFailure"),
-        (r"(?i)Delete artifacts.*fail|Cleanup artifacts.*fail", "ArtifactCleanupFailure"),
-        (r"(?i)Scorecard|scorecard|supply.chain.security", "ScorecardFailure"),
+        (
+            r"(?i)Dependabot encountered an error|tool_feature_not_supported",
+            "DependabotUpdateFailure"
+        ),
+        (
+            r"(?i)No files were found with the provided path.*No artifacts|Create Artifact Container failed|artifact name.*is not valid",
+            "ArtifactUploadFailure"
+        ),
+        (
+            r"(?i)Delete artifacts.*fail|Cleanup artifacts.*fail",
+            "ArtifactCleanupFailure"
+        ),
+        (
+            r"(?i)Scorecard|scorecard|supply.chain.security",
+            "ScorecardFailure"
+        ),
         (r"(?i)automerge|auto.merge", "AutomergeFailure"),
         (r"(?i)lint|golangci|clippy|eslint", "LintFailure"),
-        (r"(?i)Run make test|Run Unit Tests|unit tests", "UnitTestFailure"),
-        (r"(?i)Generating tests for.*devcontainer|devcontainers", "DevContainerTestFailure"),
-        (r"(?i)resource type.*not found|resource provider.*not registered", "RadiusStartupFailure"),
+        (
+            r"(?i)Run make test|Run Unit Tests|unit tests",
+            "UnitTestFailure"
+        ),
+        (
+            r"(?i)Generating tests for.*devcontainer|devcontainers",
+            "DevContainerTestFailure"
+        ),
+        (
+            r"(?i)resource type.*not found|resource provider.*not registered",
+            "RadiusStartupFailure"
+        ),
         (r"(?i)Process completed with exit code", "TestFailure"),
     ]
 }
 
 fn step_name_patterns() -> Vec<ClassifierPattern> {
     patterns![
-        (r"(?i)disallowed changes in go\.mod|go\.mod.*check|validate go\.mod", "GoModCheckFailure"),
+        (
+            r"(?i)disallowed changes in go\.mod|go\.mod.*check|validate go\.mod",
+            "GoModCheckFailure"
+        ),
         (r"(?i)Check Python|Python.*Examples", "TestFailure"),
-        (r"(?i)Spin local environment|Setup.*environment|docker-compose", "GrpcConnectionRefused"),
-        (r"(?i)Build.*dev.container|devcontainer", "DevContainerTestFailure"),
+        (
+            r"(?i)Spin local environment|Setup.*environment|docker-compose",
+            "GrpcConnectionRefused"
+        ),
+        (
+            r"(?i)Build.*dev.container|devcontainer",
+            "DevContainerTestFailure"
+        ),
         (r"(?i)Run make test$|Run Unit Test", "UnitTestFailure"),
         (r"(?i)Run.*integration|test-integration", "TestFailure"),
         (r"(?i)Run E2E|e2e test", "TestFailure"),
         (r"(?i)Run lint|golangci|clippy|eslint", "LintFailure"),
-        (r"(?i)Preparing.*cluster|Setup.*AKS|Deploy.*infra", "Timeout"),
+        (
+            r"(?i)Preparing.*cluster|Setup.*AKS|Deploy.*infra",
+            "Timeout"
+        ),
         (r"(?i)Install Radius|Install radius", "HelmInstallTimeout"),
         (r"(?i)Set up job", "ActionPinningViolation"),
-        (r"(?i)Delete artifacts|Cleanup artifacts", "ArtifactCleanupFailure"),
+        (
+            r"(?i)Delete artifacts|Cleanup artifacts",
+            "ArtifactCleanupFailure"
+        ),
     ]
 }
 
 const INFRA_SIGNALS: &[&str] = &[
-    "AzureAuthFailure", "ImagePullError", "Timeout", "ImagePushError",
-    "RemoteWorkflowFailure", "DependabotUpdateFailure", "ArtifactUploadFailure",
-    "CommandNotFound", "PythonVersionMismatch", "GoToolchainError",
-    "PortForwardError", "VirtualMemoryError", "GrpcConnectionRefused",
-    "ScorecardFailure", "AutomergeFailure",
-    "HelmInstallTimeout", "ActionPinningViolation", "ArtifactCleanupFailure",
+    "AzureAuthFailure",
+    "ImagePullError",
+    "Timeout",
+    "ImagePushError",
+    "RemoteWorkflowFailure",
+    "DependabotUpdateFailure",
+    "ArtifactUploadFailure",
+    "CommandNotFound",
+    "PythonVersionMismatch",
+    "GoToolchainError",
+    "PortForwardError",
+    "VirtualMemoryError",
+    "GrpcConnectionRefused",
+    "ScorecardFailure",
+    "AutomergeFailure",
+    "HelmInstallTimeout",
+    "ActionPinningViolation",
+    "ArtifactCleanupFailure",
     "RadiusStartupFailure",
 ];
 
@@ -124,7 +214,9 @@ fn signal_to_latent(signal: &str, job_name: &str) -> &'static str {
     match signal {
         "AzureAuthFailure" => "latent://azure-oidc",
         "ImagePullError" | "ImagePushError" => "latent://ghcr.io",
-        "Timeout" | "RemoteWorkflowFailure" | "HelmInstallTimeout" | "RadiusStartupFailure" => "latent://github-actions-infra",
+        "Timeout" | "RemoteWorkflowFailure" | "HelmInstallTimeout" | "RadiusStartupFailure" => {
+            "latent://github-actions-infra"
+        }
         "ScorecardFailure" => "latent://github-scorecard",
         "AutomergeFailure" => "latent://github-automerge",
         "ActionPinningViolation" | "ArtifactCleanupFailure" => "latent://github-actions-infra",
@@ -136,7 +228,14 @@ fn signal_to_latent(signal: &str, job_name: &str) -> &'static str {
     }
 }
 
-fn detect_mutation_type(message: &str, author: &str, event: &str, workflow_name: &str, head_branch: &str) -> &'static str {
+fn detect_mutation_type(
+    message: &str,
+    author: &str,
+    event: &str,
+    workflow_name: &str,
+    head_branch: &str,
+    files: &[String],
+) -> &'static str {
     let msg = message.to_lowercase();
     let auth = author.to_lowercase();
     let wf = workflow_name.to_lowercase();
@@ -144,16 +243,84 @@ fn detect_mutation_type(message: &str, author: &str, event: &str, workflow_name:
 
     // Dependabot: detect by author, event type, workflow name, or branch
     let is_dependabot = auth.contains("dependabot")
-        || event == "dynamic" && (wf.contains("npm_and_yarn") || wf.contains("dependabot") || wf.contains("pip") || wf.contains("cargo") || wf.contains("gomod"))
+        || event == "dynamic"
+            && (wf.contains("npm_and_yarn")
+                || wf.contains("dependabot")
+                || wf.contains("pip")
+                || wf.contains("cargo")
+                || wf.contains("gomod"))
         || branch.starts_with("dependabot/");
 
     if is_dependabot {
-        if wf.contains("github-actions") || msg.contains("github-actions") { return "DepActionsBump"; }
-        if msg.contains("from") && msg.contains("to") { return "DepMajorBump"; }
+        if wf.contains("github-actions") || msg.contains("github-actions") {
+            return "DepActionsBump";
+        }
+        if msg.contains("from") && msg.contains("to") {
+            return "DepMajorBump";
+        }
         return "DependencyUpdate";
     }
-    if msg.contains("release") || event == "release" { return "Release"; }
-    if msg.contains("revert") { return "Revert"; }
+    if msg.contains("release") || event == "release" {
+        return "Release";
+    }
+    if msg.contains("revert") {
+        return "Revert";
+    }
+
+    // File-based classification: what did the commit actually touch?
+    if !files.is_empty() {
+        let has_workflow = files
+            .iter()
+            .any(|f| f.starts_with(".github/workflows/") || f.starts_with(".github/actions/"));
+        let _has_ci_config = files.iter().any(|f| {
+            f.contains("Makefile")
+                || f.contains("Dockerfile")
+                || f.contains("docker-compose")
+                || f.ends_with(".yml")
+                    && (f.contains("ci") || f.contains("lint") || f.contains("test"))
+        });
+        let has_deps = files.iter().any(|f| {
+            f.ends_with("go.mod")
+                || f.ends_with("go.sum")
+                || f.ends_with("package.json")
+                || f.ends_with("package-lock.json")
+                || f.ends_with("pnpm-lock.yaml")
+                || f.ends_with("Cargo.toml")
+                || f.ends_with("Cargo.lock")
+                || f.ends_with("requirements.txt")
+                || f.ends_with("pyproject.toml")
+        });
+        let has_source = files.iter().any(|f| {
+            f.ends_with(".go")
+                || f.ends_with(".rs")
+                || f.ends_with(".ts")
+                || f.ends_with(".js")
+                || f.ends_with(".py")
+                || f.ends_with(".java")
+                || f.ends_with(".cs")
+        });
+        let has_only_docs = files.iter().all(|f| {
+            f.ends_with(".md")
+                || f.ends_with(".txt")
+                || f.ends_with(".rst")
+                || f.starts_with("docs/")
+                || f.starts_with("doc/")
+        });
+
+        if has_only_docs {
+            return "DocsOnly";
+        }
+        if has_workflow && !has_source {
+            return "WorkflowChange";
+        }
+        if has_workflow && has_source {
+            return "CodeAndWorkflowChange";
+        }
+        if has_deps && !has_source {
+            return "DependencyFileChange";
+        }
+    }
+
     "CodeChange"
 }
 
@@ -191,12 +358,19 @@ struct GhJob {
 #[derive(Deserialize)]
 struct GhCommit {
     commit: GhCommitInner,
+    #[serde(default)]
+    files: Vec<GhCommitFile>,
 }
 
 #[derive(Deserialize)]
 struct GhCommitInner {
     message: String,
     author: GhAuthor,
+}
+
+#[derive(Deserialize)]
+struct GhCommitFile {
+    filename: String,
 }
 
 #[derive(Deserialize)]
@@ -225,17 +399,15 @@ fn get_runs(repo: &str, hours: u32) -> Result<Vec<GhRun>> {
 
     // Paginate through the REST API, fetching only failures.
     for page in 1..=50 {
-        let url = format!(
-            "repos/{repo}/actions/runs?status=failure&per_page=100&page={page}"
-        );
+        let url = format!("repos/{repo}/actions/runs?status=failure&per_page=100&page={page}");
         let output = gh_command(&[
-            "api", &url,
+            "api",
+            &url,
             "--jq",
             r#"[.workflow_runs[] | {databaseId: .id, headSha: .head_sha, workflowName: .name, conclusion, createdAt: .created_at, updatedAt: .updated_at, headBranch: .head_branch, event}]"#,
         ])?;
 
-        let page_runs: Vec<GhRun> = serde_json::from_str(output.trim())
-            .unwrap_or_default();
+        let page_runs: Vec<GhRun> = serde_json::from_str(output.trim()).unwrap_or_default();
 
         if page_runs.is_empty() {
             break;
@@ -278,11 +450,19 @@ fn get_failed_jobs(repo: &str, run_id: u64) -> Result<Vec<GhJob>> {
     Ok(jobs)
 }
 
-fn get_commit_info(repo: &str, sha: &str) -> Result<(String, String)> {
+/// Commit info: (message, author, changed_files)
+fn get_commit_info(repo: &str, sha: &str) -> Result<(String, String, Vec<String>)> {
     let output = gh_command(&["api", &format!("repos/{repo}/commits/{sha}")])?;
     let commit: GhCommit = serde_json::from_str(&output)?;
-    let msg = commit.commit.message.lines().next().unwrap_or("").to_string();
-    Ok((msg, commit.commit.author.name))
+    let msg = commit
+        .commit
+        .message
+        .lines()
+        .next()
+        .unwrap_or("")
+        .to_string();
+    let files: Vec<String> = commit.files.iter().map(|f| f.filename.clone()).collect();
+    Ok((msg, commit.commit.author.name, files))
 }
 
 // ── Main ingestion ──────────────────────────────────────────────────────
@@ -293,18 +473,16 @@ pub struct IngestResult {
     pub report: String,
     /// SHA (8-char) → head branch name.
     pub commit_branches: std::collections::HashMap<String, String>,
-    /// SHA (8-char) → (commit message first line, author name).
-    pub commit_info: std::collections::HashMap<String, (String, String)>,
+    /// SHA (8-char) → (commit message first line, author name, changed files).
+    pub commit_info: std::collections::HashMap<String, (String, String, Vec<String>)>,
 }
 
 /// Ingest GitHub Actions failures into the solver.
 pub fn ingest_github(solver: &SolverHandle, repo: &str, hours: u32) -> Result<IngestResult> {
     // Auto-expand the temporal window if the ingestion window exceeds it
     let hours_mins = (hours as i64) * 60;
-    if let Ok(current_window) = solver.get_temporal_window() {
-        if hours_mins > current_window {
-            let _ = solver.set_temporal_window(hours_mins);
-        }
+    if solver.get_temporal_window().is_ok_and(|w| hours_mins > w) {
+        let _ = solver.set_temporal_window(hours_mins);
     }
 
     let runs = get_runs(repo, hours)?;
@@ -316,17 +494,36 @@ pub fn ingest_github(solver: &SolverHandle, repo: &str, hours: u32) -> Result<In
         });
     }
 
-    let mut report = format!("Fetching from {repo} (last {hours}h)...\n{} failures to process\n", runs.len());
+    let mut report = format!(
+        "Fetching from {repo} (last {hours}h)...\n{} failures to process\n",
+        runs.len()
+    );
 
     // Latent nodes
     let latent_ids = [
         ("latent://azure-oidc", "Azure OIDC", "IdentityProvider"),
         ("latent://ghcr.io", "GHCR", "ContainerRegistry"),
-        ("latent://github-actions-infra", "GitHub Actions Infra", "CIPlatform"),
+        (
+            "latent://github-actions-infra",
+            "GitHub Actions Infra",
+            "CIPlatform",
+        ),
         ("latent://flaky-tests", "Flaky Tests", "FlakyTest"),
-        ("latent://runner-env/linux", "Runner (Linux)", "RunnerEnvironment"),
-        ("latent://runner-env/windows", "Runner (Windows)", "RunnerEnvironment"),
-        ("latent://runner-env/macos", "Runner (macOS)", "RunnerEnvironment"),
+        (
+            "latent://runner-env/linux",
+            "Runner (Linux)",
+            "RunnerEnvironment",
+        ),
+        (
+            "latent://runner-env/windows",
+            "Runner (Windows)",
+            "RunnerEnvironment",
+        ),
+        (
+            "latent://runner-env/macos",
+            "Runner (macOS)",
+            "RunnerEnvironment",
+        ),
         ("latent://github-scorecard", "Scorecard", "CIPlatform"),
         ("latent://github-automerge", "Automerge", "CIPlatform"),
     ];
@@ -346,11 +543,14 @@ pub fn ingest_github(solver: &SolverHandle, repo: &str, hours: u32) -> Result<In
     let mut signals = Vec::new();
     let mut seen_commits: HashSet<String> = HashSet::new();
     let mut seen_jobs: HashSet<(String, String, String)> = HashSet::new();
-    let mut commit_cache: std::collections::HashMap<String, (String, String)> = std::collections::HashMap::new();
+    let mut commit_cache: std::collections::HashMap<String, (String, String, Vec<String>)> =
+        std::collections::HashMap::new();
     // Track (job_slug, signal_type) → set of commits for cross-commit flaky detection
-    let mut job_commit_map: std::collections::HashMap<(String, String), HashSet<String>> = std::collections::HashMap::new();
+    let mut job_commit_map: std::collections::HashMap<(String, String), HashSet<String>> =
+        std::collections::HashMap::new();
     // Track SHA → branch for PR grouping in reports
-    let mut commit_branches: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+    let mut commit_branches: std::collections::HashMap<String, String> =
+        std::collections::HashMap::new();
 
     for run in &runs {
         let sha8 = &run.head_sha[..8.min(run.head_sha.len())];
@@ -358,19 +558,32 @@ pub fn ingest_github(solver: &SolverHandle, repo: &str, hours: u32) -> Result<In
 
         // Get commit info (cached)
         if !commit_cache.contains_key(sha8) {
-            let info = get_commit_info(repo, &run.head_sha).unwrap_or_else(|_| ("unknown".into(), "unknown".into()));
+            let info = get_commit_info(repo, &run.head_sha)
+                .unwrap_or_else(|_| ("unknown".into(), "unknown".into(), vec![]));
             commit_cache.insert(sha8.to_string(), info);
         }
         // Track branch (first seen wins, since a SHA usually appears on one branch)
-        commit_branches.entry(sha8.to_string())
+        commit_branches
+            .entry(sha8.to_string())
             .or_insert_with(|| run.head_branch.clone());
-        let (msg, author) = commit_cache.get(sha8).unwrap();
-        let mut_type = detect_mutation_type(msg, author, &run.event, &run.workflow_name, &run.head_branch);
+        let (msg, author, files) = commit_cache.get(sha8).unwrap();
+        let mut_type = detect_mutation_type(
+            msg,
+            author,
+            &run.event,
+            &run.workflow_name,
+            &run.head_branch,
+            files,
+        );
 
         // Get failed jobs
         let jobs = get_failed_jobs(repo, run.id).unwrap_or_default();
         let jobs = if jobs.is_empty() {
-            vec![GhJob { name: wf.clone(), _id: 0, failed_steps: vec![] }]
+            vec![GhJob {
+                name: wf.clone(),
+                _id: 0,
+                failed_steps: vec![],
+            }]
         } else {
             jobs
         };
@@ -380,9 +593,14 @@ pub fn ingest_github(solver: &SolverHandle, repo: &str, hours: u32) -> Result<In
             let is_infra = is_infra_signal(signal_type);
 
             // Dedup
-            let job_slug = job.name.to_lowercase().replace(|c: char| !c.is_alphanumeric(), "-");
+            let job_slug = job
+                .name
+                .to_lowercase()
+                .replace(|c: char| !c.is_alphanumeric(), "-");
             let dedup_key = (sha8.to_string(), job_slug.clone(), signal_type.to_string());
-            if seen_jobs.contains(&dedup_key) { continue; }
+            if seen_jobs.contains(&dedup_key) {
+                continue;
+            }
             seen_jobs.insert(dedup_key);
 
             // Track for cross-commit flaky detection
@@ -469,7 +687,11 @@ pub fn ingest_github(solver: &SolverHandle, repo: &str, hours: u32) -> Result<In
                 });
 
                 // Flaky test competing cause — for test-like failures
-                if signal_type == "TestFailure" || signal_type == "UnitTestFailure" || signal_type == "HelmInstallTimeout" || signal_type == "RadiusStartupFailure" {
+                if signal_type == "TestFailure"
+                    || signal_type == "UnitTestFailure"
+                    || signal_type == "HelmInstallTimeout"
+                    || signal_type == "RadiusStartupFailure"
+                {
                     edges.push(serde_json::json!({
                         "id": format!("edge-flaky-{}", &jid[jid.len().saturating_sub(30)..]),
                         "source_id": "latent://flaky-tests", "target_id": &jid,
@@ -515,21 +737,29 @@ pub fn ingest_github(solver: &SolverHandle, repo: &str, hours: u32) -> Result<In
         "nodes": nodes, "edges": edges,
     }))?;
     let (_, _, new_nodes, new_edges) = solver.merge_graph(payload)?;
-    report.push_str(&format!("Topology: {new_nodes} new nodes, {new_edges} new edges\n"));
+    report.push_str(&format!(
+        "Topology: {new_nodes} new nodes, {new_edges} new edges\n"
+    ));
 
     // Ingest mutations
     let mut mut_count = 0;
     for m in mutations {
-        if solver.ingest_mutation(m).is_ok() { mut_count += 1; }
+        if solver.ingest_mutation(m).is_ok() {
+            mut_count += 1;
+        }
     }
 
     // Ingest signals
     let mut sig_count = 0;
     for s in signals {
-        if solver.ingest_signal(s).is_ok() { sig_count += 1; }
+        if solver.ingest_signal(s).is_ok() {
+            sig_count += 1;
+        }
     }
 
-    report.push_str(&format!("Ingested: {mut_count} mutations, {sig_count} signals\n"));
+    report.push_str(&format!(
+        "Ingested: {mut_count} mutations, {sig_count} signals\n"
+    ));
     Ok(IngestResult {
         report,
         commit_branches,

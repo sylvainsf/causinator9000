@@ -1,0 +1,78 @@
+# Causinator 9000 — Public repos for CPT calibration
+#
+# Active open-source repos with GitHub Actions CI.
+# Used by scripts/calibrate_cpts.py to learn empirical CPT values.
+# One repo per line, format: owner/name
+#
+# Selection criteria:
+#   - Public repos with active CI (GitHub Actions)
+#   - Mix of Go, TypeScript, Python, Rust ecosystems
+#   - Range of sizes (small/medium/large by weekly run count)
+#   - Diverse CI patterns (unit tests, integration, lint, deploy)
+
+# ── Go ───────────────────────────────────────────────────────────────────
+radius-project/radius
+prometheus/prometheus
+kubernetes/kubernetes
+hashicorp/terraform
+hashicorp/vault
+hashicorp/consul
+hashicorp/nomad
+grpc/grpc-go
+etcd-io/etcd
+containerd/containerd
+open-telemetry/opentelemetry-collector
+cilium/cilium
+traefik/traefik
+minio/minio
+pulumi/pulumi
+nats-io/nats-server
+influxdata/telegraf
+go-gitea/gitea
+cockroachdb/cockroach
+vitessio/vitess
+
+# ── TypeScript / JavaScript ──────────────────────────────────────────────
+microsoft/TypeScript
+microsoft/vscode
+vercel/next.js
+angular/angular
+facebook/react
+sveltejs/svelte
+denoland/deno
+nestjs/nest
+prisma/prisma
+supabase/supabase
+grafana/grafana
+backstage/backstage
+storybook-js/storybook
+redwoodjs/redwood
+remix-run/remix
+
+# ── Python ───────────────────────────────────────────────────────────────
+pallets/flask
+django/django
+fastapi/fastapi
+psf/requests
+encode/httpx
+pydantic/pydantic
+scikit-learn/scikit-learn
+pandas-dev/pandas
+python-poetry/poetry
+celery/celery
+ansible/ansible
+pytorch/pytorch
+huggingface/transformers
+
+# ── Rust ─────────────────────────────────────────────────────────────────
+rust-lang/rust
+denoland/deno
+tokio-rs/tokio
+tauri-apps/tauri
+starship/starship
+BurntSushi/ripgrep
+
+# ── Mixed / Infrastructure ───────────────────────────────────────────────
+actions/runner
+github/codeql-action
+docker/compose

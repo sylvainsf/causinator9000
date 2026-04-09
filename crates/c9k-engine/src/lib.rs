@@ -28,9 +28,17 @@ pub mod embedded_heuristics {
 
     /// All standard heuristic layers in load order.
     pub const ALL: &[&str] = &[
-        CONTAINERS, COMPUTE, NETWORKING, ROUTING, DATABASES,
-        IDENTITY, MESSAGING, PHYSICAL_INFRA, APPLICATIONS,
-        CI_PIPELINES, KUBERNETES,
+        CONTAINERS,
+        COMPUTE,
+        NETWORKING,
+        ROUTING,
+        DATABASES,
+        IDENTITY,
+        MESSAGING,
+        PHYSICAL_INFRA,
+        APPLICATIONS,
+        CI_PIPELINES,
+        KUBERNETES,
     ];
 }
 
