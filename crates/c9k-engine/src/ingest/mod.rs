@@ -181,6 +181,27 @@ fn is_infra_signal(signal: &str) -> bool {
     INFRA_SIGNALS.contains(&signal)
 }
 
+/// Returns true if the workflow or job name is a PR policy/validation check
+/// that should be excluded from CI failure analysis. These are deterministic
+/// author-caused issues (missing labels, checklists, CLA) where root-cause
+/// diagnosis adds no value.
+fn is_policy_workflow(name: &str) -> bool {
+    let n = name.to_lowercase();
+    n.contains("checklist")
+        || n.contains("required label")
+        || n.contains("pr label")
+        || n.contains("title check")
+        || n.contains("cla")
+        || n.contains("dco")
+        || n.contains("copilot code review")
+        || n.contains("copilot review")
+        || n.contains("scorecard")
+        || n.contains("automerge")
+        || n.contains("auto-merge")
+        || n.contains("stale")
+        || n.contains("lock thread")
+}
+
 fn classify(failed_steps: &[String], workflow_name: &str) -> &'static str {
     let text = format!("{} {}", failed_steps.join(" "), workflow_name);
     let err_pats = error_patterns();
@@ -475,6 +496,8 @@ pub struct IngestResult {
     pub commit_branches: std::collections::HashMap<String, String>,
     /// SHA (8-char) → (commit message first line, author name, changed files).
     pub commit_info: std::collections::HashMap<String, (String, String, Vec<String>)>,
+    /// Number of policy/validation workflows skipped.
+    pub skipped_policy: usize,
 }
 
 /// Ingest GitHub Actions failures into the solver.
@@ -491,13 +514,16 @@ pub fn ingest_github(solver: &SolverHandle, repo: &str, hours: u32) -> Result<In
             report: format!("No failures found for {repo} in the last {hours}h."),
             commit_branches: std::collections::HashMap::new(),
             commit_info: std::collections::HashMap::new(),
+            skipped_policy: 0,
         });
     }
 
     let mut report = format!(
-        "Fetching from {repo} (last {hours}h)...\n{} failures to process\n",
+        "Fetching from {repo} (last {hours}h)...\n{} failure runs to process\n",
         runs.len()
     );
+
+    let mut skipped_policy = 0usize;
 
     // Latent nodes
     let latent_ids = [
@@ -556,6 +582,12 @@ pub fn ingest_github(solver: &SolverHandle, repo: &str, hours: u32) -> Result<In
         let sha8 = &run.head_sha[..8.min(run.head_sha.len())];
         let wf = &run.workflow_name;
 
+        // Skip policy/validation workflows — these are author errors, not diagnosable
+        if is_policy_workflow(wf) {
+            skipped_policy += 1;
+            continue;
+        }
+
         // Get commit info (cached)
         if !commit_cache.contains_key(sha8) {
             let info = get_commit_info(repo, &run.head_sha)
@@ -589,6 +621,11 @@ pub fn ingest_github(solver: &SolverHandle, repo: &str, hours: u32) -> Result<In
         };
 
         for job in &jobs {
+            // Skip policy/validation jobs within otherwise valid workflows
+            if is_policy_workflow(&job.name) {
+                continue;
+            }
+
             let signal_type = classify(&job.failed_steps, wf);
             let is_infra = is_infra_signal(signal_type);
 
@@ -760,9 +797,15 @@ pub fn ingest_github(solver: &SolverHandle, repo: &str, hours: u32) -> Result<In
     report.push_str(&format!(
         "Ingested: {mut_count} mutations, {sig_count} signals\n"
     ));
+    if skipped_policy > 0 {
+        report.push_str(&format!(
+            "Skipped: {skipped_policy} policy/validation workflows (checklists, labels, CLA, etc.)\n"
+        ));
+    }
     Ok(IngestResult {
         report,
         commit_branches,
         commit_info: commit_cache,
+        skipped_policy,
     })
 }
