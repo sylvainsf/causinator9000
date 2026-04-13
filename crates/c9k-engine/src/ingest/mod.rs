@@ -200,6 +200,14 @@ fn is_policy_workflow(name: &str) -> bool {
         || n.contains("auto-merge")
         || n.contains("stale")
         || n.contains("lock thread")
+        || n.contains("spellcheck")
+        || n.contains("spell check")
+        || n.contains("prettier")
+        || n.contains("format-check")
+        || n.contains("format check")
+        || n.contains("markdown-lint")
+        || n.contains("test-summary")
+        || n.contains("test summary")
 }
 
 fn classify(failed_steps: &[String], workflow_name: &str) -> &'static str {
