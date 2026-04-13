@@ -371,7 +371,7 @@ struct GhRun {
 struct GhJob {
     name: String,
     #[serde(default)]
-    _id: u64,
+    id: u64,
     #[serde(default)]
     failed_steps: Vec<String>,
 }
@@ -486,6 +486,55 @@ fn get_commit_info(repo: &str, sha: &str) -> Result<(String, String, Vec<String>
     Ok((msg, commit.commit.author.name, files))
 }
 
+/// Download the last N lines of a job's log for error classification.
+/// Returns the log tail as a string, or empty string on failure.
+fn get_job_log_tail(repo: &str, job_id: u64, tail_lines: usize) -> String {
+    let output = gh_command(&["api", &format!("repos/{repo}/actions/jobs/{job_id}/logs")]);
+    match output {
+        Ok(log) => {
+            let lines: Vec<&str> = log.lines().collect();
+            let start = lines.len().saturating_sub(tail_lines);
+            lines[start..].join("\n")
+        }
+        Err(_) => String::new(),
+    }
+}
+
+/// Classify a failure using log content first, then step names as fallback.
+fn classify_with_logs(repo: &str, job: &GhJob, workflow_name: &str) -> &'static str {
+    // First try: download log and classify from actual error content
+    if job.id > 0 {
+        let log_tail = get_job_log_tail(repo, job.id, 80);
+        if !log_tail.is_empty() {
+            let err_pats = error_patterns();
+            for p in &err_pats {
+                if p.regex.is_match(&log_tail) {
+                    return p.signal;
+                }
+            }
+        }
+    }
+
+    // Fallback: classify from step names + workflow name (original fast path)
+    classify(&job.failed_steps, workflow_name)
+}
+
+/// Signals that are inherently non-deterministic and can be attributed to flakiness.
+const FLAKY_ELIGIBLE_SIGNALS: &[&str] = &[
+    "Timeout",
+    "GrpcConnectionRefused",
+    "HelmInstallTimeout",
+    "PortForwardError",
+    "VirtualMemoryError",
+    "ImagePullError",
+    "ImagePushError",
+    "AzureAuthFailure",
+];
+
+fn is_flaky_eligible(signal: &str) -> bool {
+    FLAKY_ELIGIBLE_SIGNALS.contains(&signal)
+}
+
 // ── Main ingestion ──────────────────────────────────────────────────────
 
 /// Result from GitHub Actions ingestion, including metadata for report formatting.
@@ -571,9 +620,6 @@ pub fn ingest_github(solver: &SolverHandle, repo: &str, hours: u32) -> Result<In
     let mut seen_jobs: HashSet<(String, String, String)> = HashSet::new();
     let mut commit_cache: std::collections::HashMap<String, (String, String, Vec<String>)> =
         std::collections::HashMap::new();
-    // Track (job_slug, signal_type) → set of commits for cross-commit flaky detection
-    let mut job_commit_map: std::collections::HashMap<(String, String), HashSet<String>> =
-        std::collections::HashMap::new();
     // Track SHA → branch for PR grouping in reports
     let mut commit_branches: std::collections::HashMap<String, String> =
         std::collections::HashMap::new();
@@ -613,7 +659,7 @@ pub fn ingest_github(solver: &SolverHandle, repo: &str, hours: u32) -> Result<In
         let jobs = if jobs.is_empty() {
             vec![GhJob {
                 name: wf.clone(),
-                _id: 0,
+                id: 0,
                 failed_steps: vec![],
             }]
         } else {
@@ -626,7 +672,7 @@ pub fn ingest_github(solver: &SolverHandle, repo: &str, hours: u32) -> Result<In
                 continue;
             }
 
-            let signal_type = classify(&job.failed_steps, wf);
+            let signal_type = classify_with_logs(repo, job, wf);
             let is_infra = is_infra_signal(signal_type);
 
             // Dedup
@@ -639,12 +685,6 @@ pub fn ingest_github(solver: &SolverHandle, repo: &str, hours: u32) -> Result<In
                 continue;
             }
             seen_jobs.insert(dedup_key);
-
-            // Track for cross-commit flaky detection
-            job_commit_map
-                .entry((job_slug.clone(), signal_type.to_string()))
-                .or_default()
-                .insert(sha8.to_string());
 
             // Job node
             let jid = format!("job://{repo}/{}/{job_slug}", run.id);
@@ -723,12 +763,8 @@ pub fn ingest_github(solver: &SolverHandle, repo: &str, hours: u32) -> Result<In
                     properties: serde_json::json!({}),
                 });
 
-                // Flaky test competing cause — for test-like failures
-                if signal_type == "TestFailure"
-                    || signal_type == "UnitTestFailure"
-                    || signal_type == "HelmInstallTimeout"
-                    || signal_type == "RadiusStartupFailure"
-                {
+                // Flaky competing cause — only for inherently non-deterministic signals
+                if is_flaky_eligible(signal_type) {
                     edges.push(serde_json::json!({
                         "id": format!("edge-flaky-{}", &jid[jid.len().saturating_sub(30)..]),
                         "source_id": "latent://flaky-tests", "target_id": &jid,
@@ -745,26 +781,6 @@ pub fn ingest_github(solver: &SolverHandle, repo: &str, hours: u32) -> Result<In
                         properties: serde_json::json!({}),
                     });
                 }
-            }
-        }
-    }
-
-    // Cross-commit flaky detection: if the same job+signal appears on 3+
-    // different commits, add extra FlakyTestRun mutations to boost the
-    // flaky-test prior for those jobs.
-    for ((job_slug, _signal_type), commits) in &job_commit_map {
-        if commits.len() >= 3 {
-            // This pattern is strongly indicative of flakiness: same job
-            // failing the same way on multiple independent commits.
-            for _ in 0..commits.len() {
-                mutations.push(Mutation {
-                    id: uuid::Uuid::new_v4().to_string(),
-                    node_id: "latent://flaky-tests".to_string(),
-                    mutation_type: "FlakyTestRun".to_string(),
-                    source: format!("gh-actions/{repo}/cross-commit/{job_slug}"),
-                    timestamp: Utc::now(),
-                    properties: serde_json::json!({}),
-                });
             }
         }
     }
