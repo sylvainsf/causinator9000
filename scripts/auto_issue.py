@@ -96,6 +96,12 @@ class Action:
 
     kind: str  # "create" | "update" | "close-flaky" | "close-resolved" | "reopen" | "close-cross-tool" | "skip"
     root_cause_id: str
+    root_cause_class: str = ""
+    confidence_pct: int = 0
+    member_count: int = 0
+    cause_human: str = ""
+    first_seen: str = ""
+    last_seen: str = ""
     issue_number: int | None = None
     issue_url: str | None = None
     title: str | None = None
@@ -103,8 +109,18 @@ class Action:
 
 
 @dataclass
+class FilterStats:
+    """Counts of alert groups excluded by each filter."""
+
+    below_min_confidence: int = 0
+    below_min_members: int = 0
+    class_not_in_allow_list: int = 0
+
+
+@dataclass
 class Plan:
     actions: list[Action] = field(default_factory=list)
+    filter_stats: FilterStats = field(default_factory=FilterStats)
 
     def add(self, a: Action) -> None:
         self.actions.append(a)
@@ -327,6 +343,48 @@ def build_issue_body(
     return title, "\n".join(parts)
 
 
+def _cause_human(group: dict, repo: str) -> str:
+    """Build a short human-readable cause string from a group."""
+    rc_id = group.get("root_cause_id", "")
+    commit = group.get("commit") or {}
+    if commit:
+        sha = (commit.get("sha") or rc_id.rsplit("/", 1)[-1])[:8] if rc_id.startswith("commit://") else ""
+        author = commit.get("author") or "unknown"
+        subject = (commit.get("message") or "").splitlines()[0][:60] if commit.get("message") else ""
+        parts = []
+        if sha:
+            parts.append(f"[{sha}](https://github.com/{repo}/commit/{sha})")
+        parts.append(f"by @{author}")
+        if subject:
+            parts.append(f'"{subject}"')
+        return " ".join(parts)
+    rc_class = group.get("root_cause_class") or ""
+    if rc_class == "BrokenTestRun":
+        return f"`{_short_id(rc_id)}`"
+    if rc_class == "FlakyTestRun":
+        return f"`{_short_id(rc_id)}`"
+    return f"`{_short_id(rc_id)}`"
+
+
+def _group_time_range(group: dict) -> tuple[str, str]:
+    """Return (first_seen, last_seen) ISO timestamps from members."""
+    timestamps: list[str] = []
+    for m in group.get("members", []):
+        ts = m.get("latest_signal")
+        if ts:
+            timestamps.append(ts)
+    group_ts = group.get("latest_signal")
+    if group_ts:
+        timestamps.append(group_ts)
+    if not timestamps:
+        return ("", "")
+    timestamps.sort()
+    # Trim to minute precision for readability
+    first = timestamps[0][:16] + "Z" if len(timestamps[0]) >= 16 else timestamps[0]
+    last = timestamps[-1][:16] + "Z" if len(timestamps[-1]) >= 16 else timestamps[-1]
+    return (first, last)
+
+
 def _short_id(rc_id: str) -> str:
     """Render a stable, short identifier for use in issue titles."""
     if rc_id.startswith("commit://"):
@@ -453,18 +511,22 @@ def filter_groups(
     min_confidence: float,
     min_members: int,
     classes: set[str],
-) -> list[dict]:
+) -> tuple[list[dict], FilterStats]:
     out: list[dict] = []
+    stats = FilterStats()
     for g in groups:
         if g.get("confidence", 0) < min_confidence:
+            stats.below_min_confidence += 1
             continue
         if g.get("member_count", 0) < min_members:
+            stats.below_min_members += 1
             continue
         cls = g.get("root_cause_class") or ""
         if cls not in classes:
+            stats.class_not_in_allow_list += 1
             continue
         out.append(g)
-    return out
+    return out, stats
 
 
 def process_group(
@@ -477,7 +539,21 @@ def process_group(
     rc_id = group["root_cause_id"]
     rc_class = group.get("root_cause_class") or ""
     member_count = group["member_count"]
+    confidence_pct = int(round(group.get("confidence", 0) * 100))
+    cause_human = _cause_human(group, repo)
+    first_seen, last_seen = _group_time_range(group)
     run_urls = [m.get("url") for m in group["members"] if m.get("url")]
+
+    # Common fields shared by every Action from this group.
+    common = dict(
+        root_cause_id=rc_id,
+        root_cause_class=rc_class,
+        confidence_pct=confidence_pct,
+        member_count=member_count,
+        cause_human=cause_human,
+        first_seen=first_seen,
+        last_seen=last_seen,
+    )
 
     cross_tool_dupes = find_cross_tool_duplicates(repo, label, run_urls) if run_urls else []
     title, body = build_issue_body(repo, group, cross_tool_dupes, last_run_label)
@@ -488,8 +564,8 @@ def process_group(
     if rc_class in FLAKY_CLASSES:
         if not args.auto_close_flaky:
             return Action(
+                **common,
                 kind="skip",
-                root_cause_id=rc_id,
                 note=f"flaky group skipped (auto-close-flaky off): {member_count} runs",
             )
         comment = (
@@ -502,8 +578,8 @@ def process_group(
             if existing.get("state") == "OPEN":
                 close_issue(repo, existing["number"], "not_planned", comment, args.dry_run)
             return Action(
+                **common,
                 kind="close-flaky",
-                root_cause_id=rc_id,
                 issue_number=existing["number"],
                 issue_url=existing.get("url"),
                 title=title,
@@ -511,8 +587,8 @@ def process_group(
             )
         # No existing issue — don't even create one for flaky.
         return Action(
+            **common,
             kind="skip",
-            root_cause_id=rc_id,
             title=title,
             note=f"flaky group, no issue created (member_count={member_count})",
         )
@@ -538,8 +614,8 @@ def process_group(
                     args.dry_run,
                 )
         return Action(
+            **common,
             kind="create",
-            root_cause_id=rc_id,
             issue_number=(new or {}).get("number"),
             issue_url=(new or {}).get("url"),
             title=title,
@@ -561,8 +637,8 @@ def process_group(
         )
         update_issue(repo, number, body, args.dry_run)
         return Action(
+            **common,
             kind="reopen",
-            root_cause_id=rc_id,
             issue_number=number,
             issue_url=issue_url,
             title=title,
@@ -580,8 +656,8 @@ def process_group(
         args.dry_run,
     )
     return Action(
+        **common,
         kind="update",
-        root_cause_id=rc_id,
         issue_number=number,
         issue_url=issue_url,
         title=title,
@@ -639,7 +715,7 @@ def auto_close_resolved_issues(
 # ── Summary rendering ────────────────────────────────────────────────────
 
 
-def render_summary(plan: Plan, repo: str, dry_run: bool) -> str:
+def render_summary(plan: Plan, repo: str, dry_run: bool, args: argparse.Namespace | None = None) -> str:
     lines: list[str] = []
     header = "## Causinator 9000 — Auto-Issue Outcomes"
     if dry_run:
@@ -648,29 +724,87 @@ def render_summary(plan: Plan, repo: str, dry_run: bool) -> str:
     lines.append("")
     if not plan.actions:
         lines.append("_No alert groups matched the auto-issue thresholds._")
+        if _has_filter_stats(plan.filter_stats):
+            lines.append("")
+            _render_filter_stats(lines, plan.filter_stats, args)
         return "\n".join(lines)
-    counts: dict[str, int] = {}
+
+    # ── Section 1: Per-action count broken down by class ──
+    action_kinds = ("create", "update", "reopen", "close-flaky", "close-resolved",
+                    "close-cross-tool", "skip")
+    classes_seen: dict[str, dict[str, int]] = {}
     for a in plan.actions:
-        counts[a.kind] = counts.get(a.kind, 0) + 1
-    lines.append("| Action | Count |")
-    lines.append("|---|---|")
-    for kind in (
-        "create", "update", "reopen", "close-flaky", "close-resolved",
-        "close-cross-tool", "skip",
-    ):
-        if counts.get(kind):
-            lines.append(f"| {kind} | {counts[kind]} |")
+        cls = a.root_cause_class or "Unknown"
+        if cls not in classes_seen:
+            classes_seen[cls] = {}
+        classes_seen[cls][a.kind] = classes_seen[cls].get(a.kind, 0) + 1
+
+    present_kinds = [k for k in action_kinds if any(c.get(k, 0) for c in classes_seen.values())]
+    if present_kinds:
+        lines.append("### Actions by class")
+        lines.append("")
+        lines.append("| Class | " + " | ".join(present_kinds) + " |")
+        lines.append("|---" + "|---" * len(present_kinds) + "|")
+        for cls in sorted(classes_seen):
+            row = " | ".join(str(classes_seen[cls].get(k, 0)) for k in present_kinds)
+            lines.append(f"| {cls} | {row} |")
+        lines.append("")
+
+    # ── Section 2: Detailed per-row planned actions ──
+    lines.append("### Planned actions")
     lines.append("")
-    lines.append("| Action | Issue | Root cause | Note |")
-    lines.append("|---|---|---|---|")
+    lines.append("| Action | Class | Confidence | Title (proposed) | Cause | Members | First seen | Last seen | Issue |")
+    lines.append("|---|---|---|---|---|---|---|---|---|")
     for a in plan.actions:
         issue_link = (
             f"[#{a.issue_number}]({a.issue_url})"
             if a.issue_number and a.issue_url
             else (str(a.issue_number) if a.issue_number else "_(planned)_")
         )
-        lines.append(f"| {a.kind} | {issue_link} | `{a.root_cause_id}` | {a.note} |")
+        title_cell = a.title or ""
+        # Escape pipes in title to avoid breaking the table
+        title_cell = title_cell.replace("|", "\\|")
+        cause_cell = a.cause_human.replace("|", "\\|") if a.cause_human else ""
+        cls = a.root_cause_class or ""
+        conf = f"{a.confidence_pct}%" if a.confidence_pct else ""
+        members = str(a.member_count) if a.member_count else ""
+        lines.append(
+            f"| {a.kind} | {cls} | {conf} | {title_cell} | {cause_cell} "
+            f"| {members} | {a.first_seen} | {a.last_seen} | {issue_link} |"
+        )
+
+    # ── Section 3: Filtered / skipped counts ──
+    if _has_filter_stats(plan.filter_stats):
+        lines.append("")
+        _render_filter_stats(lines, plan.filter_stats, args)
+
     return "\n".join(lines)
+
+
+def _has_filter_stats(stats: FilterStats) -> bool:
+    return (stats.below_min_confidence + stats.below_min_members + stats.class_not_in_allow_list) > 0
+
+
+def _render_filter_stats(
+    lines: list[str],
+    stats: FilterStats,
+    args: argparse.Namespace | None,
+) -> None:
+    lines.append("### Filtered out")
+    lines.append("")
+    lines.append("```")
+    conf_threshold = ""
+    members_threshold = ""
+    if args is not None:
+        conf_threshold = f" ({int(args.min_confidence)})"
+        members_threshold = f" ({args.min_members})"
+    if stats.below_min_confidence:
+        lines.append(f"  below min-confidence{conf_threshold}: {stats.below_min_confidence}")
+    if stats.below_min_members:
+        lines.append(f"  below min-members{members_threshold}:   {stats.below_min_members}")
+    if stats.class_not_in_allow_list:
+        lines.append(f"  class not in allow-list:   {stats.class_not_in_allow_list}")
+    lines.append("```")
 
 
 # ── CLI ─────────────────────────────────────────────────────────────────
@@ -734,14 +868,14 @@ def main() -> int:
     ensure_label(repo, label, args.dry_run)
 
     groups = report.get("alert_groups", [])
-    eligible = filter_groups(
+    eligible, filter_stats = filter_groups(
         groups,
         min_conf,
         args.min_members,
         classes | FLAKY_CLASSES,  # always evaluate flaky for close-flaky behaviour
     )
 
-    plan = Plan()
+    plan = Plan(filter_stats=filter_stats)
     seen_ids: set[str] = set()
     for g in eligible:
         seen_ids.add(g["root_cause_id"])
@@ -759,7 +893,7 @@ def main() -> int:
         auto_close_resolved_issues(repo, label, seen_ids, args, last_run_label)
     )
 
-    summary = render_summary(plan, repo, args.dry_run)
+    summary = render_summary(plan, repo, args.dry_run, args)
     print(summary)
     if args.output_summary:
         with open(args.output_summary, "w") as f:
