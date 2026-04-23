@@ -45,6 +45,13 @@ fn error_patterns() -> Vec<ClassifierPattern> {
             r"(?i)requires a different Python|not in .>=\d",
             "PythonVersionMismatch"
         ),
+        // Compilation errors (placed BEFORE GoToolchainError so the more
+        // specific patterns win). These are typically caused by code or
+        // dependency changes, not by the toolchain itself.
+        (
+            r"(?i)does not implement .*\(missing method|undefined: |imported and not used|cannot find package|no required module provides package|cannot use .*\(.*\) as .*value|expected .*, found .*|mismatched types|the trait .* is not implemented|unresolved import|use of undeclared|cannot find type|borrow of moved value|expected one of|error\[E\d{4}\]",
+            "CompilationError"
+        ),
         (
             r"(?i)invalid array length|tokeninternal\.go|cannot use .* as type",
             "GoToolchainError"
@@ -311,10 +318,41 @@ fn detect_mutation_type(
         if wf.contains("github-actions") || msg.contains("github-actions") {
             return "DepActionsBump";
         }
+        // Grouped bump: dependabot batches several updates together. Branch
+        // name pattern is e.g. `dependabot/go_modules/go-dependencies-<hash>`
+        // and commit messages mention "the X group across" / "the X group with".
+        let is_grouped = msg.contains(" group across")
+            || msg.contains(" group with ")
+            || msg.contains("-dependencies-")
+            || branch.contains("-dependencies-");
+        if is_grouped {
+            return "DepGroupUpdate";
+        }
         if msg.contains("from") && msg.contains("to") {
             return "DepMajorBump";
         }
         return "DependencyUpdate";
+    }
+    // Manual go.mod / Cargo.toml / package.json changes by humans still
+    // count as dependency updates, classify them as DepGroupUpdate so the
+    // engine can attribute downstream test/compile failures correctly.
+    if !files.is_empty() {
+        let touches_deps = files.iter().any(|f| {
+            f.ends_with("go.mod")
+                || f.ends_with("go.sum")
+                || f.ends_with("Cargo.toml")
+                || f.ends_with("Cargo.lock")
+                || f.ends_with("package.json")
+                || f.ends_with("package-lock.json")
+                || f.ends_with("yarn.lock")
+                || f.ends_with("pnpm-lock.yaml")
+                || f.ends_with("requirements.txt")
+                || f.ends_with("pyproject.toml")
+                || f.ends_with("poetry.lock")
+        });
+        if touches_deps && (msg.contains("bump") || msg.contains("upgrade") || msg.contains("update")) {
+            return "DepGroupUpdate";
+        }
     }
     if msg.contains("release") || event == "release" {
         return "Release";

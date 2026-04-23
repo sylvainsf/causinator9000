@@ -60,11 +60,11 @@ inputs:
   auto-issue-classes:
     description: |
       Comma-separated root-cause classes to file as issues. Defaults to
-      "CodeChange,BrokenTestRun,DepMajorBump". Add "FlakyTestRun" if you
+      "CodeChange,BrokenTestRun,DepMajorBump,DepGroupUpdate". Add "FlakyTestRun" if you
       also want flaky issues filed (they are still never assigned to
       Copilot; combine with `auto-close-flaky` for the recommended workflow).
     required: false
-    default: 'CodeChange,BrokenTestRun,DepMajorBump'
+    default: 'CodeChange,BrokenTestRun,DepMajorBump,DepGroupUpdate'
   auto-issue-label:
     description: 'Label applied to all c9k auto-issues (default: c9k-auto)'
     required: false

@@ -42,7 +42,7 @@ Filters (which alert groups warrant an issue):
     --min-confidence N        Confidence floor 0-100 (default 90)
     --min-members N           Minimum failing jobs in a group (default 2)
     --classes LIST            Comma-separated root-cause classes to file
-                              (default "CodeChange,BrokenTestRun,DepMajorBump")
+                              (default "CodeChange,BrokenTestRun,DepMajorBump,DepGroupUpdate")
 
 Behaviour switches:
     --label LABEL                       Label applied to all auto-issues
@@ -81,7 +81,7 @@ MANAGED_BLOCK_START = "<!-- c9k-managed:start -->"
 MANAGED_BLOCK_END = "<!-- c9k-managed:end -->"
 
 # Root cause classes we treat as "Copilot can fix this".
-COPILOT_CLASSES = {"CodeChange", "BrokenTestRun", "DepMajorBump"}
+COPILOT_CLASSES = {"CodeChange", "BrokenTestRun", "DepMajorBump", "DepGroupUpdate"}
 
 # Root cause classes that should be auto-closed (flakiness etc.).
 FLAKY_CLASSES = {"FlakyTestRun"}
@@ -234,6 +234,8 @@ def build_issue_body(
         title = f"[c9k:{short_id}] Broken workflow: {short_id} ({member_count} consecutive failures)"
     elif rc_class == "DepMajorBump":
         title = f"[c9k:{short_id}] Dependency major bump regression ({member_count} failed jobs)"
+    elif rc_class == "DepGroupUpdate":
+        title = f"[c9k:{short_id}] Grouped dependency bump regression ({member_count} failed jobs)"
     else:
         title = f"[c9k:{short_id}] CI regression in commit {short_id} ({member_count} failed jobs)"
 
@@ -682,9 +684,9 @@ def main() -> int:
                    help="Confidence floor 0-100 (default 90)")
     p.add_argument("--min-members", type=int, default=2,
                    help="Minimum failing jobs in a group (default 2)")
-    p.add_argument("--classes", default="CodeChange,BrokenTestRun,DepMajorBump",
+    p.add_argument("--classes", default="CodeChange,BrokenTestRun,DepMajorBump,DepGroupUpdate",
                    help="Comma-separated root-cause classes to file (default "
-                        "'CodeChange,BrokenTestRun,DepMajorBump')")
+                        "'CodeChange,BrokenTestRun,DepMajorBump,DepGroupUpdate')")
     p.add_argument("--label", default="c9k-auto", help="Label for c9k auto-issues")
     p.add_argument("--assign-copilot", action="store_true",
                    help="Assign Copilot on commit/broken issues")
