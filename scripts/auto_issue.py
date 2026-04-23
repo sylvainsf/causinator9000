@@ -455,23 +455,20 @@ def create_issue(
         "--body", body,
         "--label", label,
     ]
-    if assign_copilot:
-        args += ["--assignee", "Copilot"]
     out = gh(*args, check=False)
     # gh issue create prints the URL on success.
     url = out.strip().splitlines()[-1] if out.strip() else None
     if not url or "issues/" not in url:
-        # Retry without assignee — Copilot may not be enabled on this repo.
-        if assign_copilot:
-            args = [a for a in args if a not in ("--assignee", "Copilot")]
-            out = gh(*args, check=False)
-            url = out.strip().splitlines()[-1] if out.strip() else None
-    if not url:
         return None
     try:
         number = int(url.rsplit("/", 1)[-1])
     except ValueError:
         return None
+    # Assign Copilot after creation. The --assignee flag on `gh issue create`
+    # is unreliable for service/bot accounts, so we use a separate edit call.
+    if assign_copilot:
+        gh("issue", "edit", str(number), "--repo", repo,
+           "--add-assignee", "Copilot", check=False)
     return {"number": number, "url": url}
 
 
