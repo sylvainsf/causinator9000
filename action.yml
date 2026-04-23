@@ -40,6 +40,62 @@ inputs:
     required: false
     default: 'latest'
 
+  # ── Auto-issue mode (opt-in, additive) ───────────────────────────────
+  # When enabled, c9k files (and dedup-updates) one GitHub issue per
+  # detected root cause, instead of (or in addition to) a single rolling
+  # digest. Designed to be safe-by-default: never runs on PR triggers,
+  # never assigns Copilot to flaky-test groups, and offers a dry-run mode.
+  auto-issue:
+    description: 'Enable per-root-cause auto-issue mode (true/false, default: false)'
+    required: false
+    default: 'false'
+  auto-issue-min-confidence:
+    description: 'Confidence floor (0-100) for opening an auto-issue (default: 90)'
+    required: false
+    default: '90'
+  auto-issue-min-members:
+    description: 'Minimum failing jobs in a group to open an auto-issue (default: 2)'
+    required: false
+    default: '2'
+  auto-issue-classes:
+    description: |
+      Comma-separated root-cause classes to file as issues. Defaults to
+      "CodeChange,BrokenTestRun,DepMajorBump". Add "FlakyTestRun" if you
+      also want flaky issues filed (they are still never assigned to
+      Copilot; combine with `auto-close-flaky` for the recommended workflow).
+    required: false
+    default: 'CodeChange,BrokenTestRun,DepMajorBump'
+  auto-issue-label:
+    description: 'Label applied to all c9k auto-issues (default: c9k-auto)'
+    required: false
+    default: 'c9k-auto'
+  assign-copilot:
+    description: 'Assign Copilot to commit/broken root-cause issues (true/false, default: false)'
+    required: false
+    default: 'false'
+  auto-close-flaky:
+    description: 'Comment-and-close flaky-test groups (Copilot is never assigned to these). Default: true'
+    required: false
+    default: 'true'
+  auto-close-resolved:
+    description: 'Auto-close c9k issues when their root cause is no longer detected (default: false)'
+    required: false
+    default: 'false'
+  close-cross-tool-duplicates:
+    description: |
+      Close OPEN issues filed by other automation when they reference the
+      same failing runs as a c9k root cause. Off by default because other
+      tools may own those issues.
+    required: false
+    default: 'false'
+  auto-issue-dry-run:
+    description: |
+      Print the auto-issue plan to the job summary without making any
+      changes. Use this on first deployment to assess issue volume before
+      enabling for real.
+    required: false
+    default: 'false'
+
 outputs:
   report:
     description: 'The generated markdown report'
@@ -74,6 +130,21 @@ runs:
         tar xzf "/tmp/c9k/$ASSET" -C /tmp/c9k
         chmod +x /tmp/c9k/c9k-engine
 
+        # Fetch the auto-issue helper script. Pinned to the same version as
+        # the engine binary so behaviour stays consistent. Falls back to main
+        # only if the release tag doesn't carry the script (older releases
+        # before this feature shipped).
+        SCRIPT_URL_VERSIONED="https://raw.githubusercontent.com/$REPO/$VERSION/scripts/auto_issue.py"
+        SCRIPT_URL_FALLBACK="https://raw.githubusercontent.com/$REPO/main/scripts/auto_issue.py"
+        if [ "$VERSION" = "latest" ]; then
+          curl -fsSL "$SCRIPT_URL_FALLBACK" -o /tmp/c9k/auto_issue.py || true
+        else
+          curl -fsSL "$SCRIPT_URL_VERSIONED" -o /tmp/c9k/auto_issue.py \
+            || curl -fsSL "$SCRIPT_URL_FALLBACK" -o /tmp/c9k/auto_issue.py \
+            || true
+        fi
+        chmod +x /tmp/c9k/auto_issue.py 2>/dev/null || true
+
     - name: Run c9k report
       id: run
       shell: bash
@@ -88,6 +159,18 @@ runs:
           --min-confidence "${{ inputs.min-confidence }}" \
           --embedded-heuristics \
           > /tmp/c9k-report.md 2>/tmp/c9k-stderr.log
+
+        # Always emit JSON too (cheap; same engine, second invocation reuses
+        # gh's HTTP cache). The auto-issue step consumes this. We tolerate
+        # failures here so the markdown report path is never blocked by a
+        # JSON-mode regression.
+        /tmp/c9k/c9k-engine report \
+          --repo "${{ inputs.repo }}" \
+          --hours "${{ inputs.hours }}" \
+          --min-confidence "${{ inputs.min-confidence }}" \
+          --embedded-heuristics \
+          --format json \
+          > /tmp/c9k-report.json 2>>/tmp/c9k-stderr.log || echo '{"alert_groups":[]}' > /tmp/c9k-report.json
 
         # Output to job summary
         cat /tmp/c9k-report.md >> "$GITHUB_STEP_SUMMARY"
@@ -111,6 +194,48 @@ runs:
           --repo "${{ inputs.repo }}" \
           --body-file /tmp/c9k-report.md 2>/dev/null || true
 
+    - name: Auto-issue per root cause
+      # Auto-issue mode is intentionally NEVER triggered by pull_request events.
+      # Filing or mutating issues from PR-triggered runs would let any
+      # contributor's PR change repo-wide issue state. Restrict to schedule,
+      # workflow_dispatch, push to default branch, or workflow_run triggers.
+      if: >-
+        inputs.auto-issue == 'true' &&
+        github.event_name != 'pull_request' &&
+        github.event_name != 'pull_request_target'
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+      run: |
+        set -e
+        if [ ! -f /tmp/c9k/auto_issue.py ]; then
+          echo "::warning::auto-issue script not found at /tmp/c9k/auto_issue.py — skipping."
+          exit 0
+        fi
+        if [ ! -s /tmp/c9k-report.json ]; then
+          echo "::warning::JSON report missing or empty — skipping auto-issue step."
+          exit 0
+        fi
+
+        FLAGS=()
+        if [ "${{ inputs.assign-copilot }}" = "true" ];                  then FLAGS+=(--assign-copilot); fi
+        if [ "${{ inputs.auto-close-flaky }}" = "true" ];                then FLAGS+=(--auto-close-flaky); fi
+        if [ "${{ inputs.auto-close-resolved }}" = "true" ];             then FLAGS+=(--auto-close-resolved); fi
+        if [ "${{ inputs.close-cross-tool-duplicates }}" = "true" ];     then FLAGS+=(--close-cross-tool-duplicates); fi
+        if [ "${{ inputs.auto-issue-dry-run }}" = "true" ];              then FLAGS+=(--dry-run); fi
+
+        python3 /tmp/c9k/auto_issue.py \
+          --report /tmp/c9k-report.json \
+          --repo "${{ inputs.repo }}" \
+          --label "${{ inputs.auto-issue-label }}" \
+          --min-confidence "${{ inputs.auto-issue-min-confidence }}" \
+          --min-members "${{ inputs.auto-issue-min-members }}" \
+          --classes "${{ inputs.auto-issue-classes }}" \
+          --last-run-label "Updated by ${{ github.workflow }} run #${{ github.run_number }} at $(date -u +%Y-%m-%dT%H:%MZ)" \
+          --output-summary /tmp/c9k-auto-issue-summary.md \
+          "${FLAGS[@]}" \
+          | tee -a "$GITHUB_STEP_SUMMARY"
+
     - name: Create or update digest issue
       if: inputs.create-issue == 'true'
       shell: bash
@@ -124,16 +249,30 @@ runs:
           --description "Causinator 9000 CI failure digest" \
           --color "D93F0B" 2>/dev/null || true
 
+        # Compose the digest body: the report, optionally followed by the
+        # auto-issue outcomes summary so the digest reflects what the
+        # auto-issue mode did during this run.
+        DIGEST_BODY=/tmp/c9k-digest-body.md
+        cp /tmp/c9k-report.md "$DIGEST_BODY"
+        if [ -s /tmp/c9k-auto-issue-summary.md ]; then
+          {
+            echo
+            echo "---"
+            echo
+            cat /tmp/c9k-auto-issue-summary.md
+          } >> "$DIGEST_BODY"
+        fi
+
         EXISTING=$(gh issue list --repo "$REPO" \
           --label "$LABEL" --state open \
           --json number --limit 1 --jq '.[0].number' 2>/dev/null || echo "")
 
         if [ -n "$EXISTING" ]; then
           gh issue comment "$EXISTING" --repo "$REPO" \
-            --body-file /tmp/c9k-report.md 2>/dev/null || true
+            --body-file "$DIGEST_BODY" 2>/dev/null || true
         else
           gh issue create --repo "$REPO" \
             --title "Causinator 9000 CI Failure Digest — $(date -u +%Y-%m-%d)" \
-            --body-file /tmp/c9k-report.md \
+            --body-file "$DIGEST_BODY" \
             --label "$LABEL" 2>/dev/null || true
         fi

@@ -5,6 +5,7 @@
 //! Uses `gh` CLI for GitHub API access (inherits host auth).
 //! Fast mode: classifies from job/step names only, no log downloads.
 
+use rayon::prelude::*;
 use std::collections::HashSet;
 use std::process::Command;
 
@@ -200,6 +201,40 @@ fn is_policy_workflow(name: &str) -> bool {
         || n.contains("auto-merge")
         || n.contains("stale")
         || n.contains("lock thread")
+        || n.contains("prettier")
+        || n.contains("format-check")
+        || n.contains("spellcheck")
+        || n.contains("sync issue")
+        || n.contains("code is up-to-date")
+}
+
+/// Classify a workflow run's trigger into a reporting bucket.
+/// Returns one of: "main", "release", "schedule", "pr".
+fn trigger_type(event: &str, head_branch: &str, default_branch: &str) -> &'static str {
+    match event {
+        "schedule" | "workflow_dispatch" => "schedule",
+        "release" => "release",
+        "push" => {
+            let b = head_branch.to_lowercase();
+            let def = default_branch.to_lowercase();
+            if b == def {
+                "main"
+            } else if b.starts_with("release") || b.starts_with("v") {
+                "release"
+            } else {
+                "main"
+            }
+        }
+        // pull_request, pull_request_target, dynamic, etc.
+        _ => "pr",
+    }
+}
+
+/// Fetch the default branch name for a repo via `gh api`.
+fn get_default_branch(repo: &str) -> String {
+    gh_command(&["api", &format!("repos/{repo}"), "--jq", ".default_branch"])
+        .map(|s| s.trim().to_string())
+        .unwrap_or_else(|_| "main".to_string())
 }
 
 fn classify(failed_steps: &[String], workflow_name: &str) -> &'static str {
@@ -367,7 +402,7 @@ struct GhRun {
     event: String,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Clone)]
 struct GhJob {
     name: String,
     #[serde(default)]
@@ -535,7 +570,111 @@ fn is_flaky_eligible(signal: &str) -> bool {
     FLAKY_ELIGIBLE_SIGNALS.contains(&signal)
 }
 
+/// Fetch the last `limit` runs (all conclusions) for a workflow name on a branch.
+/// Returns conclusions newest-first (e.g. ["failure", "success", "failure", ...]).
+fn get_workflow_run_history(
+    repo: &str,
+    workflow_name: &str,
+    branch: &str,
+    limit: usize,
+) -> Vec<String> {
+    // First, find the workflow ID by name
+    let wf_jq = format!(
+        r#".workflows[] | select(.name == "{}") | .id"#,
+        workflow_name.replace('"', r#"\""#)
+    );
+    let wf_id = gh_command(&[
+        "api",
+        &format!("repos/{repo}/actions/workflows"),
+        "--jq",
+        &wf_jq,
+    ])
+    .ok()
+    .and_then(|s| s.trim().parse::<u64>().ok());
+
+    let wf_id = match wf_id {
+        Some(id) => id,
+        None => return Vec::new(),
+    };
+
+    // Query runs for this specific workflow on the given branch
+    let url = format!(
+        "repos/{repo}/actions/workflows/{wf_id}/runs?branch={branch}&per_page={limit}&exclude_pull_requests=true"
+    );
+    gh_command(&["api", &url, "--jq", "[.workflow_runs[].conclusion]"])
+        .ok()
+        .and_then(|s| serde_json::from_str::<Vec<Option<String>>>(s.trim()).ok())
+        .map(|v| {
+            v.into_iter()
+                .filter_map(|c| c)
+                .filter(|c| !c.is_empty())
+                .take(limit)
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+const BROKEN_STREAK_THRESHOLD: usize = 3;
+
+/// Detect workflows that were broken at any point in their run history.
+/// Returns a set of (workflow_name, branch) pairs that had >= threshold
+/// consecutive failures anywhere in their history (not just the most recent).
+fn detect_broken_streaks(
+    repo: &str,
+    workflow_branch_pairs: &HashSet<(String, String)>,
+) -> HashSet<(String, String)> {
+    workflow_branch_pairs
+        .par_iter()
+        .filter_map(|(wf, branch)| {
+            let history = get_workflow_run_history(repo, wf, branch, 30);
+            if history.is_empty() {
+                return None;
+            }
+            // Scan for any consecutive failure streak >= threshold anywhere in history.
+            // History is newest-first.
+            let mut streak = 0usize;
+            let mut max_streak = 0usize;
+            for conclusion in &history {
+                if conclusion == "failure" {
+                    streak += 1;
+                    max_streak = max_streak.max(streak);
+                } else {
+                    streak = 0;
+                }
+            }
+            if max_streak >= BROKEN_STREAK_THRESHOLD {
+                Some((wf.clone(), branch.clone()))
+            } else {
+                None
+            }
+        })
+        .collect()
+}
+
 // ── Main ingestion ──────────────────────────────────────────────────────
+
+/// Per-trigger-type failure counts.
+#[derive(Debug, Default, Clone)]
+pub struct TriggerCounts {
+    pub main: usize,
+    pub release: usize,
+    pub pr: usize,
+    pub schedule: usize,
+}
+
+impl TriggerCounts {
+    fn total(&self) -> usize {
+        self.main + self.release + self.pr + self.schedule
+    }
+    fn inc(&mut self, trigger: &str) {
+        match trigger {
+            "main" => self.main += 1,
+            "release" => self.release += 1,
+            "schedule" => self.schedule += 1,
+            _ => self.pr += 1,
+        }
+    }
+}
 
 /// Result from GitHub Actions ingestion, including metadata for report formatting.
 pub struct IngestResult {
@@ -547,6 +686,10 @@ pub struct IngestResult {
     pub commit_info: std::collections::HashMap<String, (String, String, Vec<String>)>,
     /// Number of policy/validation workflows skipped.
     pub skipped_policy: usize,
+    /// Failure counts split by trigger type.
+    pub trigger_counts: TriggerCounts,
+    /// Per-trigger-type job failure details: trigger → vec of (job_id, workflow_name, signal_type).
+    pub trigger_jobs: std::collections::HashMap<String, Vec<(String, String, String)>>,
 }
 
 /// Ingest GitHub Actions failures into the solver.
@@ -557,6 +700,8 @@ pub fn ingest_github(solver: &SolverHandle, repo: &str, hours: u32) -> Result<In
         let _ = solver.set_temporal_window(hours_mins);
     }
 
+    let default_branch = get_default_branch(repo);
+
     let runs = get_runs(repo, hours)?;
     if runs.is_empty() {
         return Ok(IngestResult {
@@ -564,6 +709,8 @@ pub fn ingest_github(solver: &SolverHandle, repo: &str, hours: u32) -> Result<In
             commit_branches: std::collections::HashMap::new(),
             commit_info: std::collections::HashMap::new(),
             skipped_policy: 0,
+            trigger_counts: TriggerCounts::default(),
+            trigger_jobs: std::collections::HashMap::new(),
         });
     }
 
@@ -573,6 +720,38 @@ pub fn ingest_github(solver: &SolverHandle, repo: &str, hours: u32) -> Result<In
     );
 
     let mut skipped_policy = 0usize;
+
+    // Detect broken workflows: find workflows with multiple failures,
+    // then check their full run history for consecutive failure streaks.
+    let mut candidate_pairs: std::collections::HashMap<(String, String), usize> =
+        std::collections::HashMap::new();
+    for run in &runs {
+        if is_policy_workflow(&run.workflow_name) {
+            continue;
+        }
+        *candidate_pairs
+            .entry((run.workflow_name.clone(), run.head_branch.clone()))
+            .or_default() += 1;
+    }
+    let candidates: HashSet<(String, String)> = candidate_pairs
+        .iter()
+        .filter(|(_, count)| **count >= 2)
+        .map(|(k, _)| k.clone())
+        .collect();
+    let broken_workflows = if candidates.is_empty() {
+        HashSet::new()
+    } else {
+        detect_broken_streaks(repo, &candidates)
+    };
+    if !broken_workflows.is_empty() {
+        report.push_str(&format!(
+            "Detected {} broken workflow(s) (consecutive failure streaks):\n",
+            broken_workflows.len()
+        ));
+        for (wf, branch) in &broken_workflows {
+            report.push_str(&format!("  - \"{wf}\" on {branch}\n"));
+        }
+    }
 
     // Latent nodes
     let latent_ids = [
@@ -614,6 +793,24 @@ pub fn ingest_github(solver: &SolverHandle, repo: &str, hours: u32) -> Result<In
         }));
     }
 
+    // Create broken:// nodes for workflows detected as persistently failing
+    let mut broken_node_ids: std::collections::HashMap<(String, String), String> =
+        std::collections::HashMap::new();
+    for (wf, branch) in &broken_workflows {
+        let slug = wf
+            .to_lowercase()
+            .replace(|c: char| !c.is_alphanumeric(), "-");
+        let nid = format!("broken://{repo}/{slug}/{branch}");
+        nodes.push(serde_json::json!({
+            "id": &nid,
+            "label": format!("BROKEN: {wf} ({branch})"),
+            "class": "BrokenTest",
+            "region": "github", "rack_id": null,
+            "properties": {"source": "gh-actions", "workflow": wf, "branch": branch, "broken": true},
+        }));
+        broken_node_ids.insert((wf.clone(), branch.clone()), nid);
+    }
+
     let mut mutations = Vec::new();
     let mut signals = Vec::new();
     let mut seen_commits: HashSet<String> = HashSet::new();
@@ -623,6 +820,48 @@ pub fn ingest_github(solver: &SolverHandle, repo: &str, hours: u32) -> Result<In
     // Track SHA → branch for PR grouping in reports
     let mut commit_branches: std::collections::HashMap<String, String> =
         std::collections::HashMap::new();
+    // Per-trigger-type tracking
+    let mut trigger_counts = TriggerCounts::default();
+    let mut trigger_jobs: std::collections::HashMap<String, Vec<(String, String, String)>> =
+        std::collections::HashMap::new();
+
+    // ── Parallel prefetch: commit info (per unique SHA) and failed jobs (per run) ──
+    // These are independent gh API calls; running them sequentially dominates ingest time
+    // for large repos. Skip work for runs filtered out by policy.
+    let runs_to_fetch: Vec<&GhRun> = runs
+        .iter()
+        .filter(|r| !is_policy_workflow(&r.workflow_name))
+        .collect();
+
+    let unique_shas: Vec<String> = {
+        let mut seen = HashSet::new();
+        runs_to_fetch
+            .iter()
+            .filter_map(|r| {
+                if seen.insert(r.head_sha.clone()) {
+                    Some(r.head_sha.clone())
+                } else {
+                    None
+                }
+            })
+            .collect()
+    };
+    let prefetched_commits: std::collections::HashMap<String, (String, String, Vec<String>)> =
+        unique_shas
+            .par_iter()
+            .map(|sha| {
+                let info = get_commit_info(repo, sha)
+                    .unwrap_or_else(|_| ("unknown".into(), "unknown".into(), vec![]));
+                let sha8 = sha[..8.min(sha.len())].to_string();
+                (sha8, info)
+            })
+            .collect();
+    commit_cache.extend(prefetched_commits);
+
+    let prefetched_jobs: std::collections::HashMap<u64, Vec<GhJob>> = runs_to_fetch
+        .par_iter()
+        .map(|r| (r.id, get_failed_jobs(repo, r.id).unwrap_or_default()))
+        .collect();
 
     for run in &runs {
         let sha8 = &run.head_sha[..8.min(run.head_sha.len())];
@@ -634,7 +873,9 @@ pub fn ingest_github(solver: &SolverHandle, repo: &str, hours: u32) -> Result<In
             continue;
         }
 
-        // Get commit info (cached)
+        let trigger = trigger_type(&run.event, &run.head_branch, &default_branch);
+
+        // Get commit info (prefetched in parallel above; fall back if missing)
         if !commit_cache.contains_key(sha8) {
             let info = get_commit_info(repo, &run.head_sha)
                 .unwrap_or_else(|_| ("unknown".into(), "unknown".into(), vec![]));
@@ -654,8 +895,11 @@ pub fn ingest_github(solver: &SolverHandle, repo: &str, hours: u32) -> Result<In
             files,
         );
 
-        // Get failed jobs
-        let jobs = get_failed_jobs(repo, run.id).unwrap_or_default();
+        // Get failed jobs (prefetched in parallel above; fall back if missing)
+        let jobs = prefetched_jobs
+            .get(&run.id)
+            .cloned()
+            .unwrap_or_else(|| get_failed_jobs(repo, run.id).unwrap_or_default());
         let jobs = if jobs.is_empty() {
             vec![GhJob {
                 name: wf.clone(),
@@ -691,8 +935,14 @@ pub fn ingest_github(solver: &SolverHandle, repo: &str, hours: u32) -> Result<In
             nodes.push(serde_json::json!({
                 "id": &jid, "label": format!("{wf}: {}", job.name), "class": "CIJob",
                 "region": "github", "rack_id": null,
-                "properties": {"source": "gh-actions", "run_id": run.id, "commit": sha8},
+                "properties": {"source": "gh-actions", "run_id": run.id, "commit": sha8, "trigger": trigger, "branch": &run.head_branch, "event": &run.event},
             }));
+
+            // Track per-trigger counts
+            trigger_counts.inc(trigger);
+            trigger_jobs.entry(trigger.to_string()).or_default().push(
+                (jid.clone(), wf.to_string(), signal_type.to_string()),
+            );
 
             if is_infra {
                 let latent = signal_to_latent(signal_type, &job.name);
@@ -763,8 +1013,28 @@ pub fn ingest_github(solver: &SolverHandle, repo: &str, hours: u32) -> Result<In
                     properties: serde_json::json!({}),
                 });
 
-                // Flaky competing cause — only for inherently non-deterministic signals
-                if is_flaky_eligible(signal_type) {
+                // Broken vs flaky competing cause.
+                // If the workflow is in a sustained failure streak, attribute to
+                // BrokenTestRun. Otherwise, only signals that are inherently
+                // non-deterministic get attributed to flakiness.
+                let wf_key = (wf.to_string(), run.head_branch.clone());
+                if let Some(broken_id) = broken_node_ids.get(&wf_key) {
+                    edges.push(serde_json::json!({
+                        "id": format!("edge-broken-{}", &jid[jid.len().saturating_sub(30)..]),
+                        "source_id": broken_id, "target_id": &jid,
+                        "edge_type": "dependency", "properties": {},
+                    }));
+                    mutations.push(Mutation {
+                        id: uuid::Uuid::new_v4().to_string(),
+                        node_id: broken_id.clone(),
+                        mutation_type: "BrokenTestRun".to_string(),
+                        source: format!("gh-actions/{repo}"),
+                        timestamp: chrono::DateTime::parse_from_rfc3339(&run.created_at)
+                            .map(|t| t.with_timezone(&Utc))
+                            .unwrap_or_else(|_| Utc::now()),
+                        properties: serde_json::json!({}),
+                    });
+                } else if is_flaky_eligible(signal_type) {
                     edges.push(serde_json::json!({
                         "id": format!("edge-flaky-{}", &jid[jid.len().saturating_sub(30)..]),
                         "source_id": "latent://flaky-tests", "target_id": &jid,
@@ -818,10 +1088,23 @@ pub fn ingest_github(solver: &SolverHandle, repo: &str, hours: u32) -> Result<In
             "Skipped: {skipped_policy} policy/validation workflows (checklists, labels, CLA, etc.)\n"
         ));
     }
+
+    // Trigger-type breakdown
+    report.push_str(&format!(
+        "\nFailures by trigger (total {}):\n  main/default branch: {}\n  release/tag: {}\n  pull request: {}\n  schedule/dispatch: {}\n",
+        trigger_counts.total(),
+        trigger_counts.main,
+        trigger_counts.release,
+        trigger_counts.pr,
+        trigger_counts.schedule,
+    ));
+
     Ok(IngestResult {
         report,
         commit_branches,
         commit_info: commit_cache,
         skipped_policy,
+        trigger_counts,
+        trigger_jobs,
     })
 }

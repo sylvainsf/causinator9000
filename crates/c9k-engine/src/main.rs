@@ -120,6 +120,158 @@ struct BranchGroup {
     mutation_types: Vec<String>,
 }
 
+/// Extract the root cause class (the parenthetical suffix) from a root_cause string.
+/// e.g. "commit://owner/repo/abc (CodeChange)" → Some("CodeChange").
+fn extract_root_cause_class(rc: &str) -> Option<String> {
+    let start = rc.rfind(" (")?;
+    let end = rc.rfind(')')?;
+    if end > start + 2 {
+        Some(rc[start + 2..end].to_string())
+    } else {
+        None
+    }
+}
+
+/// Strip the parenthetical class suffix from a root cause to produce a stable ID.
+/// e.g. "commit://owner/repo/abc (CodeChange)" → "commit://owner/repo/abc".
+fn root_cause_id(rc: &str) -> String {
+    if let Some(idx) = rc.rfind(" (") {
+        rc[..idx].to_string()
+    } else {
+        rc.to_string()
+    }
+}
+
+/// Parse a job node ID like `job://owner/repo/<run_id>/<job_slug>` into
+/// (run_id, job_slug, run_url). Returns None if the ID is not a job node.
+fn parse_job_node(node_id: &str) -> Option<(String, String, String)> {
+    let rest = node_id.strip_prefix("job://")?;
+    let parts: Vec<&str> = rest.splitn(4, '/').collect();
+    if parts.len() < 3 {
+        return None;
+    }
+    let owner = parts[0];
+    let repo = parts[1];
+    let run_id = parts[2].to_string();
+    let job = parts.get(3).map(|s| s.to_string()).unwrap_or_default();
+    let url = format!("https://github.com/{owner}/{repo}/actions/runs/{run_id}");
+    Some((run_id, job, url))
+}
+
+/// Build the structured JSON payload emitted by `report --format json`.
+///
+/// Stable keys (treat as a public contract for the auto-issue helper and any
+/// other downstream consumers):
+///   - `root_cause_id`: stable across runs; suitable as a dedup key.
+///   - `root_cause_class`: e.g. `CodeChange`, `BrokenTestRun`, `FlakyTestRun`.
+///   - `members[].run_id`, `members[].url`: link back to the failing run.
+#[allow(clippy::too_many_arguments)]
+fn build_json_report(
+    repo: &str,
+    hours: u32,
+    min_confidence: f64,
+    nodes: usize,
+    edges: usize,
+    mutations: usize,
+    signals: usize,
+    ingest_result: &ingest::IngestResult,
+    groups: &[solver::AlertGroup],
+    diagnosis_count: usize,
+) -> serde_json::Value {
+    let commit_branches = &ingest_result.commit_branches;
+    let commit_info = &ingest_result.commit_info;
+
+    // Resolve PR numbers for non-default branches in one batch.
+    let unique_branches: std::collections::BTreeSet<String> = groups
+        .iter()
+        .filter_map(|g| extract_sha(&g.root_cause))
+        .filter_map(|sha| commit_branches.get(&sha).cloned())
+        .collect();
+    let branch_refs: Vec<&str> = unique_branches.iter().map(|s| s.as_str()).collect();
+    let pr_map = resolve_prs(repo, &branch_refs);
+
+    let groups_json: Vec<serde_json::Value> = groups
+        .iter()
+        .map(|g| {
+            let class = extract_root_cause_class(&g.root_cause);
+            let id = root_cause_id(&g.root_cause);
+            let sha = extract_sha(&g.root_cause);
+            let branch = sha.as_ref().and_then(|s| commit_branches.get(s).cloned());
+            let pr = branch.as_ref().and_then(|b| pr_map.get(b)).map(|(n, url)| {
+                serde_json::json!({ "number": n, "url": url })
+            });
+            let commit_info_json = sha.as_ref().and_then(|s| commit_info.get(s)).map(
+                |(msg, author, files)| {
+                    serde_json::json!({
+                        "sha": sha,
+                        "message": msg,
+                        "author": author,
+                        "files": files,
+                    })
+                },
+            );
+            let members: Vec<serde_json::Value> = g
+                .members
+                .iter()
+                .map(|m| {
+                    let parsed = parse_job_node(&m.node_id);
+                    let (run_id, job, url) = match parsed {
+                        Some((r, j, u)) => (Some(r), Some(j), Some(u)),
+                        None => (None, None, None),
+                    };
+                    serde_json::json!({
+                        "node_id": m.node_id,
+                        "run_id": run_id,
+                        "job": job,
+                        "url": url,
+                        "confidence": m.confidence,
+                        "signal_types": m.signal_types,
+                        "signal_count": m.signal_count,
+                        "latest_signal": m.latest_signal,
+                    })
+                })
+                .collect();
+
+            serde_json::json!({
+                "root_cause": g.root_cause,
+                "root_cause_id": id,
+                "root_cause_class": class,
+                "confidence": g.confidence,
+                "member_count": g.members.len(),
+                "signal_types": g.signal_types,
+                "branch": branch,
+                "pr": pr,
+                "commit": commit_info_json,
+                "members": members,
+                "latest_signal": g.latest_signal,
+            })
+        })
+        .collect();
+
+    serde_json::json!({
+        "schema_version": 1,
+        "repo": repo,
+        "hours": hours,
+        "min_confidence": min_confidence,
+        "generated_at": chrono::Utc::now().to_rfc3339(),
+        "stats": {
+            "nodes": nodes,
+            "edges": edges,
+            "mutations": mutations,
+            "signals": signals,
+            "diagnosis_count": diagnosis_count,
+            "policy_skipped": ingest_result.skipped_policy,
+            "trigger_counts": {
+                "main": ingest_result.trigger_counts.main,
+                "release": ingest_result.trigger_counts.release,
+                "pr": ingest_result.trigger_counts.pr,
+                "schedule": ingest_result.trigger_counts.schedule,
+            },
+        },
+        "alert_groups": groups_json,
+    })
+}
+
 /// Load heuristics into the solver.
 ///
 /// Priority:
@@ -218,6 +370,16 @@ async fn main() -> Result<()> {
             .unwrap_or(50.0)
             / 100.0;
 
+        // Output format: "markdown" (default) or "json".
+        // JSON mode is structured for programmatic consumers (e.g. the auto-issue
+        // GitHub Action helper). Markdown remains the default for human reports.
+        let format = args
+            .iter()
+            .position(|a| a == "--format")
+            .and_then(|i| args.get(i + 1))
+            .cloned()
+            .unwrap_or_else(|| "markdown".to_string());
+
         let mut solver = solver::BayesianSolver::new()?;
         load_heuristics(&mut solver)?;
         let handle = solver.handle();
@@ -232,6 +394,27 @@ async fn main() -> Result<()> {
 
         // Health stats
         let (nodes, edges, mutations, signals) = handle.stats()?;
+
+        // ── JSON output mode ─────────────────────────────────────────────
+        // Structured payload for programmatic consumers (auto-issue helper, CI,
+        // dashboards). Matches the markdown report's data but avoids HTML/MD
+        // parsing on the consumer side.
+        if format == "json" {
+            let payload = build_json_report(
+                &repo,
+                hours,
+                min_confidence,
+                nodes,
+                edges,
+                mutations,
+                signals,
+                &ingest_result,
+                &groups,
+                diagnoses.len(),
+            );
+            println!("{}", serde_json::to_string_pretty(&payload)?);
+            return Ok(());
+        }
 
         // Format report
         if diagnoses.is_empty() {

@@ -141,6 +141,202 @@ The report is available as an output for further processing:
       - run: echo "${{ steps.c9k.outputs.report }}"
 ```
 
+### Auto-issue mode (per-root-cause issues, with Copilot assignment)
+
+Best for: teams that want every detected regression to land as its own
+trackable, assignable issue, with duplicates handled automatically.
+
+What it does, in order, on each scheduled run:
+
+1. Runs the normal report (markdown still goes to the job summary).
+2. For each high-confidence alert group above the configured thresholds:
+   - **Creates** a new issue for the root cause (one issue per group), or
+   - **Updates** the existing c9k-managed issue if one already exists for
+     the same root cause (the engine produces stable IDs so dedup is exact),
+     or
+   - **Reopens** a previously closed c9k issue if the same root cause
+     reappears.
+3. Optionally **assigns Copilot** to commit-level and broken-workflow
+   issues. Flaky-test groups never get Copilot.
+4. Optionally **finds and links** open issues filed by other automation
+   (e.g. per-workflow failure-issue bots) that reference the same
+   failing runs, and optionally closes them as duplicates.
+5. Optionally **closes flaky-test groups** with an explanatory comment.
+   Flakiness is a separate concern with its own (future) tooling; we
+   don't want Copilot working on individual flaky failures one-by-one.
+6. Optionally **auto-closes** issues whose root cause is no longer
+   detected.
+7. Appends the outcomes to the digest issue (when `create-issue` is also
+   on), so the digest reflects what was filed/closed/reopened.
+
+> **PR safety:** auto-issue mode never runs on `pull_request` or
+> `pull_request_target` events, by design. Don't try to override that;
+> filing repo-wide issues from PR runs would let any contributor's
+> branch mutate global issue state.
+
+#### Recommended first deployment (dry run)
+
+Always run with `auto-issue-dry-run: 'true'` first. It prints exactly
+what the action *would* do without creating, updating, closing, or
+reopening anything. Use it to size the issue volume and tune the
+thresholds before flipping it to live mode.
+
+```yaml
+name: C9K Auto-Issue (DRY RUN)
+on:
+  schedule:
+    - cron: '0 9 * * *'
+  workflow_dispatch:
+
+permissions:
+  issues: write       # required even in dry-run for the search API path
+  contents: read
+  actions: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: sylvainsf/causinator9000@v1
+        with:
+          hours: '24'
+          auto-issue: 'true'
+          auto-issue-dry-run: 'true'
+```
+
+The job summary will contain a table like:
+
+```
+## Causinator 9000 — Auto-Issue Outcomes (DRY RUN — no changes made)
+
+| Action | Count |
+|---|---|
+| create | 3 |
+| update | 1 |
+| close-flaky | 5 |
+
+| Action | Issue | Root cause | Note |
+|---|---|---|---|
+| create | _(planned)_ | commit://owner/repo/9b5f3778 | new issue, members=11, copilot=true |
+...
+```
+
+#### Live mode (recommended config)
+
+```yaml
+name: C9K Auto-Issue
+on:
+  schedule:
+    - cron: '0 9 * * *'
+
+permissions:
+  issues: write
+  contents: read
+  actions: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: sylvainsf/causinator9000@v1
+        with:
+          hours: '24'
+          auto-issue: 'true'
+          assign-copilot: 'true'
+          auto-close-flaky: 'true'
+          auto-close-resolved: 'true'
+          # Combine with the digest mode for a single rolling overview
+          # that also lists what was filed during this run:
+          create-issue: 'true'
+          issue-label: 'c9k-digest'
+```
+
+#### Cross-tool deduplication
+
+If your repo already has automation that opens an issue for every
+workflow failure (radius does, for example), c9k can find those issues
+and link them in the c9k root-cause issue, or close them as duplicates.
+This is **off by default** because we can't tell whether the other
+automation owns those issues. Enable explicitly:
+
+```yaml
+        with:
+          auto-issue: 'true'
+          close-cross-tool-duplicates: 'true'
+```
+
+When on, for each c9k root-cause group the action:
+
+1. Searches open issues in the repo for any that reference any of the
+   failing run URLs in the group.
+2. Excludes anything already labelled `c9k-auto` (those are handled by
+   the c9k dedup path).
+3. Links the matches in the c9k issue body under "Related issues
+   (other automation)".
+4. Closes them with a comment that points back to the c9k root-cause
+   issue: `Closed as a duplicate of <c9k issue URL> (Causinator 9000
+   grouped this with a shared root cause).`
+
+If you want the linking but not the closing, leave
+`close-cross-tool-duplicates: 'false'` (the default) — links are added
+to the c9k issue body unconditionally.
+
+#### Success criteria for resolution
+
+Every auto-issue body includes an explicit checklist that Copilot (and
+human reviewers) must satisfy before closing:
+
+> Resolution of this issue requires that the proposed fix demonstrably
+> addresses every failing run listed above, not just one or two of them.
+>
+> - [ ] Read the linked failing runs and confirm they share the
+>       diagnosed root cause.
+> - [ ] Identify the change in `<sha>` that broke the affected jobs.
+> - [ ] Confirm the fix would resolve **all N** failing runs above.
+> - [ ] Re-run (or simulate) each affected job and verify it passes.
+> - [ ] Add or update a regression test that would have caught this
+>       regression.
+> - [ ] Update this issue with the fix PR link and the list of jobs
+>       verified green.
+
+This is the lever that ensures Copilot enumerates every failing run
+before proposing a fix, rather than fixing the first one and calling it
+done.
+
+#### How dedup works (so you can predict it)
+
+- Every c9k auto-issue body contains a stable HTML comment marker:
+  `<!-- c9k-root-cause: commit://owner/repo/9b5f3778 -->`.
+- On every run, before creating an issue for a root cause, the action
+  searches existing issues with the auto-issue label for that exact
+  marker. A match means update (or reopen) instead of create.
+- The root-cause ID is produced by the engine from causal evidence;
+  it does not depend on commit message wording, signal text, or run
+  IDs, so it survives across runs even when individual failing runs
+  rotate.
+- For cross-tool dedup, the engine's failing-run URLs are searched
+  against open issue bodies via the GitHub Search API (limited to the
+  first 25 URLs per group to bound API usage on large groups).
+
+#### Why flaky-test groups are special
+
+Flakiness is a population-level signal: one flaky test causes many
+failures across many unrelated commits. Filing one issue per flaky
+*occurrence* would spam the repo, and assigning Copilot to "fix" a
+single flaky run rarely produces a useful change. So:
+
+- Flaky-test groups are **excluded** from `auto-issue-classes` by
+  default. No issue is created.
+- If a flaky-test issue does exist (e.g. a previous config let it
+  through, or you added `FlakyTestRun` to the classes), it is
+  **commented and closed** when `auto-close-flaky: 'true'`.
+- Copilot is **never** assigned to a flaky-test issue, regardless of
+  any other setting.
+
+A future c9k feature will surface flakiness trends and recommended
+quarantine actions in aggregate. For now, treat flakiness as a
+non-actionable signal at the per-issue level.
+
 ## Inputs
 
 | Input | Default | Description |
@@ -149,10 +345,20 @@ The report is available as an output for further processing:
 | `hours` | `168` | Lookback window in hours (168 = 1 week) |
 | `min-confidence` | `50` | Minimum confidence threshold (0-100) |
 | `post-comment` | `false` | Post diagnosis as a PR comment |
-| `create-issue` | `false` | Create/update a digest issue |
-| `issue-label` | `c9k-digest` | Label for digest issues |
+| `create-issue` | `false` | Create/update a single rolling digest issue |
+| `issue-label` | `c9k-digest` | Label for the digest issue |
 | `github-token` | `${{ github.token }}` | Token for API access |
 | `version` | `latest` | Engine version to download |
+| `auto-issue` | `false` | Enable per-root-cause auto-issue mode |
+| `auto-issue-min-confidence` | `90` | Confidence floor (0-100) for opening an auto-issue |
+| `auto-issue-min-members` | `2` | Minimum failing jobs in a group to open an auto-issue |
+| `auto-issue-classes` | `CodeChange,BrokenTestRun,DepMajorBump` | Root-cause classes to file |
+| `auto-issue-label` | `c9k-auto` | Label applied to all c9k auto-issues |
+| `assign-copilot` | `false` | Assign Copilot on commit/broken root-cause issues |
+| `auto-close-flaky` | `true` | Comment-and-close flaky-test groups |
+| `auto-close-resolved` | `false` | Close c9k issues when their root cause is no longer detected |
+| `close-cross-tool-duplicates` | `false` | Close other-tool issues that match a c9k root cause |
+| `auto-issue-dry-run` | `false` | Plan only; print what would happen without changes |
 
 ## Outputs
 
@@ -200,3 +406,33 @@ unusual step names or error formats, they may fall through to the generic
 **Permission errors**: Ensure the `github-token` has `actions:read` on
 the target repo. For `create-issue`, add `issues:write`. For
 `post-comment`, add `pull-requests:write`.
+
+**Auto-issue mode skipped on PR**: This is intentional. Auto-issue mode
+ignores `pull_request` and `pull_request_target` events to prevent
+contributors from mutating repo-wide issue state from a branch. Use a
+schedule, `workflow_dispatch`, or `workflow_run` trigger instead.
+
+**Copilot not assigned**: The action attempts the assignment and falls
+back to creating the issue without an assignee if the API call fails.
+Causes: Copilot coding agent is not enabled for the org/repo, or the
+token does not have permission to assign Copilot. Enable the agent or
+grant the permission and re-run; the next pass will refresh the issue.
+
+**Too many issues filed on first run**: Run with
+`auto-issue-dry-run: 'true'` to see the full plan, then raise
+`auto-issue-min-confidence` (e.g. to 95) and/or `auto-issue-min-members`
+(e.g. to 3) until the volume is manageable. The defaults (90% / 2) are
+conservative but a noisy repo can still produce many groups.
+
+**Cross-tool issues are not being closed**: `close-cross-tool-duplicates`
+is off by default. Even when on, the action only closes issues that
+reference one of the failing run URLs in a c9k group. Issues created by
+other automation that don't reference the run URLs (e.g. they only
+reference the workflow name) won't be matched.
+
+**An auto-issue keeps reappearing after I close it manually**: That's
+the reopen-stale behaviour. The c9k engine still detects the same root
+cause, so the next run reopens the issue. Either wait for the underlying
+failures to stop, or set `auto-close-resolved: 'true'` so c9k owns the
+close decision (it will only close issues whose group is no longer
+detected).
