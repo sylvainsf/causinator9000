@@ -229,10 +229,16 @@ on:
   schedule:
     - cron: '0 9 * * *'
 
+# Prevent duplicate issues from concurrent runs.
+concurrency:
+  group: c9k-auto-issue
+  cancel-in-progress: false
+
 permissions:
   issues: write
   contents: read
   actions: read
+  pull-requests: read
 
 jobs:
   diagnose:

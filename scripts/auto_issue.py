@@ -115,6 +115,7 @@ class FilterStats:
     below_min_confidence: int = 0
     below_min_members: int = 0
     class_not_in_allow_list: int = 0
+    pr_closed: int = 0
 
 
 @dataclass
@@ -472,6 +473,20 @@ def create_issue(
     return {"number": number, "url": url}
 
 
+def _is_pr_closed(repo: str, pr_number: int) -> bool:
+    """Return True if the given PR is closed or merged."""
+    try:
+        pr = gh_json(
+            "pr", "view", str(pr_number),
+            "--repo", repo,
+            "--json", "state",
+        )
+        state = (pr or {}).get("state", "").upper()
+        return state in ("CLOSED", "MERGED")
+    except RuntimeError:
+        return False
+
+
 def update_issue(repo: str, number: int, body: str, dry_run: bool) -> None:
     if dry_run:
         return
@@ -552,6 +567,19 @@ def process_group(
         last_seen=last_seen,
     )
 
+    # Skip groups whose PR is already closed or merged. Dependabot
+    # frequently supersedes grouped-update PRs, and failures on the old
+    # branch are no longer actionable.
+    pr = group.get("pr") or {}
+    pr_number = pr.get("number")
+    if pr_number and _is_pr_closed(repo, pr_number):
+        return Action(
+            **common,
+            kind="skip",
+            title=f"PR #{pr_number} already closed/merged",
+            note=f"skipped: PR #{pr_number} is closed/merged, failures no longer actionable",
+        )
+
     cross_tool_dupes = find_cross_tool_duplicates(repo, label, run_urls) if run_urls else []
     title, body = build_issue_body(repo, group, cross_tool_dupes, last_run_label)
 
@@ -613,7 +641,7 @@ def process_group(
         return Action(
             **common,
             kind="create",
-            issue_number=(new or {}).get("number"),
+            issue_number=new_number,
             issue_url=(new or {}).get("url"),
             title=title,
             note=f"new issue, members={member_count}, copilot={args.assign_copilot and rc_class in COPILOT_CLASSES}",
@@ -779,7 +807,8 @@ def render_summary(plan: Plan, repo: str, dry_run: bool, args: argparse.Namespac
 
 
 def _has_filter_stats(stats: FilterStats) -> bool:
-    return (stats.below_min_confidence + stats.below_min_members + stats.class_not_in_allow_list) > 0
+    return (stats.below_min_confidence + stats.below_min_members
+            + stats.class_not_in_allow_list + stats.pr_closed) > 0
 
 
 def _render_filter_stats(
@@ -801,6 +830,8 @@ def _render_filter_stats(
         lines.append(f"  below min-members{members_threshold}:   {stats.below_min_members}")
     if stats.class_not_in_allow_list:
         lines.append(f"  class not in allow-list:   {stats.class_not_in_allow_list}")
+    if stats.pr_closed:
+        lines.append(f"  PR already closed/merged:  {stats.pr_closed}")
     lines.append("```")
 
 

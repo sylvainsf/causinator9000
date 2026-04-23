@@ -199,6 +199,12 @@ runs:
       # Filing or mutating issues from PR-triggered runs would let any
       # contributor's PR change repo-wide issue state. Restrict to schedule,
       # workflow_dispatch, push to default branch, or workflow_run triggers.
+      #
+      # IMPORTANT: The calling workflow MUST set a concurrency group to prevent
+      # duplicate issue creation from parallel runs:
+      #   concurrency:
+      #     group: c9k-auto-issue-${{ github.repository }}
+      #     cancel-in-progress: false
       if: >-
         inputs.auto-issue == 'true' &&
         github.event_name != 'pull_request' &&
