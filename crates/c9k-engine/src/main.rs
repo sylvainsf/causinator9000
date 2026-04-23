@@ -197,19 +197,21 @@ fn build_json_report(
             let id = root_cause_id(&g.root_cause);
             let sha = extract_sha(&g.root_cause);
             let branch = sha.as_ref().and_then(|s| commit_branches.get(s).cloned());
-            let pr = branch.as_ref().and_then(|b| pr_map.get(b)).map(|(n, url)| {
-                serde_json::json!({ "number": n, "url": url })
-            });
-            let commit_info_json = sha.as_ref().and_then(|s| commit_info.get(s)).map(
-                |(msg, author, files)| {
-                    serde_json::json!({
-                        "sha": sha,
-                        "message": msg,
-                        "author": author,
-                        "files": files,
-                    })
-                },
-            );
+            let pr = branch
+                .as_ref()
+                .and_then(|b| pr_map.get(b))
+                .map(|(n, url)| serde_json::json!({ "number": n, "url": url }));
+            let commit_info_json =
+                sha.as_ref()
+                    .and_then(|s| commit_info.get(s))
+                    .map(|(msg, author, files)| {
+                        serde_json::json!({
+                            "sha": sha,
+                            "message": msg,
+                            "author": author,
+                            "files": files,
+                        })
+                    });
             let members: Vec<serde_json::Value> = g
                 .members
                 .iter()

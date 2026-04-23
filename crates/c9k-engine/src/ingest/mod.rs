@@ -350,7 +350,9 @@ fn detect_mutation_type(
                 || f.ends_with("pyproject.toml")
                 || f.ends_with("poetry.lock")
         });
-        if touches_deps && (msg.contains("bump") || msg.contains("upgrade") || msg.contains("update")) {
+        if touches_deps
+            && (msg.contains("bump") || msg.contains("upgrade") || msg.contains("update"))
+        {
             return "DepGroupUpdate";
         }
     }
@@ -644,7 +646,7 @@ fn get_workflow_run_history(
         .and_then(|s| serde_json::from_str::<Vec<Option<String>>>(s.trim()).ok())
         .map(|v| {
             v.into_iter()
-                .filter_map(|c| c)
+                .flatten()
                 .filter(|c| !c.is_empty())
                 .take(limit)
                 .collect()
@@ -978,9 +980,11 @@ pub fn ingest_github(solver: &SolverHandle, repo: &str, hours: u32) -> Result<In
 
             // Track per-trigger counts
             trigger_counts.inc(trigger);
-            trigger_jobs.entry(trigger.to_string()).or_default().push(
-                (jid.clone(), wf.to_string(), signal_type.to_string()),
-            );
+            trigger_jobs.entry(trigger.to_string()).or_default().push((
+                jid.clone(),
+                wf.to_string(),
+                signal_type.to_string(),
+            ));
 
             if is_infra {
                 let latent = signal_to_latent(signal_type, &job.name);
