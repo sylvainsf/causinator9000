@@ -759,21 +759,13 @@ pub struct IngestResult {
 }
 
 /// Options controlling [`ingest_github`] behaviour.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct IngestOptions {
     /// When `true`, runs from contributor PR branches (non-Dependabot
     /// `pull_request`/`pull_request_target`) are ingested. Default `false`
     /// — they are dropped at ingestion to keep nightly reports focused on
     /// repo-wide health rather than individual contributors' iteration.
     pub include_user_prs: bool,
-}
-
-impl Default for IngestOptions {
-    fn default() -> Self {
-        Self {
-            include_user_prs: false,
-        }
-    }
 }
 
 /// Ingest GitHub Actions failures into the solver, with default options.
@@ -1247,7 +1239,11 @@ mod tests {
     #[test]
     fn user_pr_run_filters_contributor_branches_only() {
         // Contributor PR branches: filtered out.
-        assert!(is_user_pr_run("pull_request", "users/alice/feature-x", "main"));
+        assert!(is_user_pr_run(
+            "pull_request",
+            "users/alice/feature-x",
+            "main"
+        ));
         assert!(is_user_pr_run("pull_request_target", "fix/bug-123", "main"));
 
         // Dependabot PR branches: kept (no human iterating; failure is real signal).
@@ -1265,7 +1261,11 @@ mod tests {
         // Non-PR triggers: never filtered (not "pr" trigger type to begin with).
         assert!(!is_user_pr_run("push", "main", "main"));
         assert!(!is_user_pr_run("schedule", "main", "main"));
-        assert!(!is_user_pr_run("workflow_dispatch", "users/alice/x", "main"));
+        assert!(!is_user_pr_run(
+            "workflow_dispatch",
+            "users/alice/x",
+            "main"
+        ));
         assert!(!is_user_pr_run("release", "v0.1.0", "main"));
     }
 }
