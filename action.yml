@@ -39,6 +39,15 @@ inputs:
     description: 'C9K engine version to download (default: latest)'
     required: false
     default: 'latest'
+  include-user-prs:
+    description: |
+      Include CI failures from contributor pull-request branches in the
+      report. Default false: only main, scheduled, release, and Dependabot
+      PR failures are analyzed. Contributor PR branches are full of
+      intentional `wip` failures and would dominate any repo-wide report.
+      Set to "true" to include them (e.g. for per-PR diagnostics).
+    required: false
+    default: 'false'
 
   # ── Auto-issue mode (opt-in, additive) ───────────────────────────────
   # When enabled, c9k files (and dedup-updates) one GitHub issue per
@@ -86,6 +95,18 @@ inputs:
       Close OPEN issues filed by other automation when they reference the
       same failing runs as a c9k root cause. Off by default because other
       tools may own those issues.
+    required: false
+    default: 'false'
+  auto-issue-no-branch-policy:
+    description: |
+      Disable the branch policy gate. By default, c9k auto-issues are
+      ONLY created for failures whose branch is one of:
+        - the repository's default branch (where scheduled runs land),
+        - a release branch (`release/*`, `release-*`, `v<digit>...`),
+        - a Dependabot PR branch (`dependabot/*`).
+      Contributor PR branches and ad-hoc feature branches never produce
+      issues. Set this to 'true' only for debugging — issuing repo-wide
+      tickets from contributor branches is almost always wrong.
     required: false
     default: 'false'
   auto-issue-dry-run:
@@ -153,11 +174,17 @@ runs:
         GITHUB_TOKEN: ${{ inputs.github-token }}
       run: |
         set -e
+        EXTRA_FLAGS=()
+        if [ "${{ inputs.include-user-prs }}" = "true" ]; then
+          EXTRA_FLAGS+=(--include-user-prs)
+        fi
+
         /tmp/c9k/c9k-engine report \
           --repo "${{ inputs.repo }}" \
           --hours "${{ inputs.hours }}" \
           --min-confidence "${{ inputs.min-confidence }}" \
           --embedded-heuristics \
+          "${EXTRA_FLAGS[@]}" \
           > /tmp/c9k-report.md 2>/tmp/c9k-stderr.log
 
         # Always emit JSON too (cheap; same engine, second invocation reuses
@@ -170,6 +197,7 @@ runs:
           --min-confidence "${{ inputs.min-confidence }}" \
           --embedded-heuristics \
           --format json \
+          "${EXTRA_FLAGS[@]}" \
           > /tmp/c9k-report.json 2>>/tmp/c9k-stderr.log || echo '{"alert_groups":[]}' > /tmp/c9k-report.json
 
         # Output to job summary
@@ -228,6 +256,7 @@ runs:
         if [ "${{ inputs.auto-close-flaky }}" = "true" ];                then FLAGS+=(--auto-close-flaky); fi
         if [ "${{ inputs.auto-close-resolved }}" = "true" ];             then FLAGS+=(--auto-close-resolved); fi
         if [ "${{ inputs.close-cross-tool-duplicates }}" = "true" ];     then FLAGS+=(--close-cross-tool-duplicates); fi
+        if [ "${{ inputs.auto-issue-no-branch-policy }}" = "true" ];     then FLAGS+=(--no-branch-policy); fi
         if [ "${{ inputs.auto-issue-dry-run }}" = "true" ];              then FLAGS+=(--dry-run); fi
 
         python3 /tmp/c9k/auto_issue.py \
@@ -243,7 +272,14 @@ runs:
           | tee -a "$GITHUB_STEP_SUMMARY"
 
     - name: Create or update digest issue
-      if: inputs.create-issue == 'true'
+      # Digest-issue mode is intentionally NEVER triggered by pull_request events.
+      # Filing or commenting on issues from PR-triggered runs would let any
+      # contributor's PR mutate repo-wide issue state. Restrict to schedule,
+      # workflow_dispatch, push to default branch, or workflow_run triggers.
+      if: >-
+        inputs.create-issue == 'true' &&
+        github.event_name != 'pull_request' &&
+        github.event_name != 'pull_request_target'
       shell: bash
       env:
         GH_TOKEN: ${{ inputs.github-token }}

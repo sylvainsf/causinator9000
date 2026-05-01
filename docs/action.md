@@ -351,7 +351,7 @@ non-actionable signal at the per-issue level.
 | `hours` | `168` | Lookback window in hours (168 = 1 week) |
 | `min-confidence` | `50` | Minimum confidence threshold (0-100) |
 | `post-comment` | `false` | Post diagnosis as a PR comment |
-| `create-issue` | `false` | Create/update a single rolling digest issue |
+| `create-issue` | `false` | Create/update a single rolling digest issue (skipped on `pull_request` triggers) |
 | `issue-label` | `c9k-digest` | Label for the digest issue |
 | `github-token` | `${{ github.token }}` | Token for API access |
 | `version` | `latest` | Engine version to download |
@@ -364,6 +364,7 @@ non-actionable signal at the per-issue level.
 | `auto-close-flaky` | `true` | Comment-and-close flaky-test groups |
 | `auto-close-resolved` | `false` | Close c9k issues when their root cause is no longer detected |
 | `close-cross-tool-duplicates` | `false` | Close other-tool issues that match a c9k root cause |
+| `auto-issue-no-branch-policy` | `false` | Disable the branch policy gate (issues are limited to default branch, release branches, and Dependabot PRs by default) |
 | `auto-issue-dry-run` | `false` | Plan only; print what would happen without changes |
 
 ## Outputs

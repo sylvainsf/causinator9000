@@ -237,6 +237,24 @@ fn trigger_type(event: &str, head_branch: &str, default_branch: &str) -> &'stati
     }
 }
 
+/// True when a workflow run originates from a contributor's pull-request
+/// branch (i.e. PR-trigger AND not a Dependabot branch).
+///
+/// User PR branches reflect work-in-progress on contributors' branches and
+/// are routinely full of intentional failures (`wip`, `fix delete`, debug
+/// pushes). Including them in repo-wide nightly reports makes the output
+/// dominated by a handful of contributors' iteration noise.
+///
+/// Dependabot PRs are kept because nobody is iterating on them — a failure
+/// on a Dependabot branch is a real signal about how a dependency bump
+/// affects the project.
+fn is_user_pr_run(event: &str, head_branch: &str, default_branch: &str) -> bool {
+    if trigger_type(event, head_branch, default_branch) != "pr" {
+        return false;
+    }
+    !head_branch.to_lowercase().starts_with("dependabot/")
+}
+
 /// Fetch the default branch name for a repo via `gh api`.
 fn get_default_branch(repo: &str) -> String {
     gh_command(&["api", &format!("repos/{repo}"), "--jq", ".default_branch"])
@@ -726,14 +744,50 @@ pub struct IngestResult {
     pub commit_info: std::collections::HashMap<String, (String, String, Vec<String>)>,
     /// Number of policy/validation workflows skipped.
     pub skipped_policy: usize,
+    /// Number of user-PR (non-Dependabot) runs skipped at ingestion. See
+    /// [`is_user_pr_run`] for the rationale.
+    pub skipped_user_prs: usize,
     /// Failure counts split by trigger type.
     pub trigger_counts: TriggerCounts,
     /// Per-trigger-type job failure details: trigger → vec of (job_id, workflow_name, signal_type).
     pub trigger_jobs: std::collections::HashMap<String, Vec<(String, String, String)>>,
+    /// The repository's default branch name, e.g. "main". Used by
+    /// downstream consumers (auto-issue policy, report formatting) to
+    /// distinguish trunk failures from branch failures without re-querying
+    /// the GitHub API.
+    pub default_branch: String,
+}
+
+/// Options controlling [`ingest_github`] behaviour.
+#[derive(Debug, Clone)]
+pub struct IngestOptions {
+    /// When `true`, runs from contributor PR branches (non-Dependabot
+    /// `pull_request`/`pull_request_target`) are ingested. Default `false`
+    /// — they are dropped at ingestion to keep nightly reports focused on
+    /// repo-wide health rather than individual contributors' iteration.
+    pub include_user_prs: bool,
+}
+
+impl Default for IngestOptions {
+    fn default() -> Self {
+        Self {
+            include_user_prs: false,
+        }
+    }
+}
+
+/// Ingest GitHub Actions failures into the solver, with default options.
+pub fn ingest_github(solver: &SolverHandle, repo: &str, hours: u32) -> Result<IngestResult> {
+    ingest_github_with_options(solver, repo, hours, &IngestOptions::default())
 }
 
 /// Ingest GitHub Actions failures into the solver.
-pub fn ingest_github(solver: &SolverHandle, repo: &str, hours: u32) -> Result<IngestResult> {
+pub fn ingest_github_with_options(
+    solver: &SolverHandle,
+    repo: &str,
+    hours: u32,
+    options: &IngestOptions,
+) -> Result<IngestResult> {
     // Auto-expand the temporal window if the ingestion window exceeds it
     let hours_mins = (hours as i64) * 60;
     if solver.get_temporal_window().is_ok_and(|w| hours_mins > w) {
@@ -742,15 +796,43 @@ pub fn ingest_github(solver: &SolverHandle, repo: &str, hours: u32) -> Result<In
 
     let default_branch = get_default_branch(repo);
 
-    let runs = get_runs(repo, hours)?;
+    let all_runs = get_runs(repo, hours)?;
+
+    // Drop user-PR (non-Dependabot) runs at ingestion unless the caller
+    // explicitly asked to include them. See [`is_user_pr_run`] for the
+    // rationale: contributor PR branches are full of intentional `wip`
+    // failures and would dominate any repo-wide report.
+    let (runs, skipped_user_prs): (Vec<GhRun>, usize) = if options.include_user_prs {
+        (all_runs, 0)
+    } else {
+        let mut kept = Vec::with_capacity(all_runs.len());
+        let mut skipped = 0usize;
+        for r in all_runs {
+            if is_user_pr_run(&r.event, &r.head_branch, &default_branch) {
+                skipped += 1;
+            } else {
+                kept.push(r);
+            }
+        }
+        (kept, skipped)
+    };
+
     if runs.is_empty() {
+        let mut report = format!("No failures found for {repo} in the last {hours}h.");
+        if skipped_user_prs > 0 {
+            report.push_str(&format!(
+                "\n(Skipped {skipped_user_prs} user-PR run(s); pass include_user_prs=true to include them.)"
+            ));
+        }
         return Ok(IngestResult {
-            report: format!("No failures found for {repo} in the last {hours}h."),
+            report,
             commit_branches: std::collections::HashMap::new(),
             commit_info: std::collections::HashMap::new(),
             skipped_policy: 0,
+            skipped_user_prs,
             trigger_counts: TriggerCounts::default(),
             trigger_jobs: std::collections::HashMap::new(),
+            default_branch,
         });
     }
 
@@ -758,6 +840,11 @@ pub fn ingest_github(solver: &SolverHandle, repo: &str, hours: u32) -> Result<In
         "Fetching from {repo} (last {hours}h)...\n{} failure runs to process\n",
         runs.len()
     );
+    if skipped_user_prs > 0 {
+        report.push_str(&format!(
+            "Skipped {skipped_user_prs} user-PR run(s) at ingestion (Dependabot PRs kept). Pass include_user_prs=true to include them.\n"
+        ));
+    }
 
     let mut skipped_policy = 0usize;
 
@@ -1146,7 +1233,39 @@ pub fn ingest_github(solver: &SolverHandle, repo: &str, hours: u32) -> Result<In
         commit_branches,
         commit_info: commit_cache,
         skipped_policy,
+        skipped_user_prs,
         trigger_counts,
         trigger_jobs,
+        default_branch,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn user_pr_run_filters_contributor_branches_only() {
+        // Contributor PR branches: filtered out.
+        assert!(is_user_pr_run("pull_request", "users/alice/feature-x", "main"));
+        assert!(is_user_pr_run("pull_request_target", "fix/bug-123", "main"));
+
+        // Dependabot PR branches: kept (no human iterating; failure is real signal).
+        assert!(!is_user_pr_run(
+            "pull_request",
+            "dependabot/go_modules/foo-1.2.3",
+            "main"
+        ));
+        assert!(!is_user_pr_run(
+            "pull_request",
+            "DEPENDABOT/npm_and_yarn/bar",
+            "main"
+        ));
+
+        // Non-PR triggers: never filtered (not "pr" trigger type to begin with).
+        assert!(!is_user_pr_run("push", "main", "main"));
+        assert!(!is_user_pr_run("schedule", "main", "main"));
+        assert!(!is_user_pr_run("workflow_dispatch", "users/alice/x", "main"));
+        assert!(!is_user_pr_run("release", "v0.1.0", "main"));
+    }
 }

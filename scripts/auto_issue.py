@@ -115,6 +115,7 @@ class FilterStats:
     below_min_confidence: int = 0
     below_min_members: int = 0
     class_not_in_allow_list: int = 0
+    branch_not_in_policy: int = 0
     pr_closed: int = 0
 
 
@@ -523,6 +524,8 @@ def filter_groups(
     min_confidence: float,
     min_members: int,
     classes: set[str],
+    default_branch: str,
+    enforce_branch_policy: bool,
 ) -> tuple[list[dict], FilterStats]:
     out: list[dict] = []
     stats = FilterStats()
@@ -537,8 +540,78 @@ def filter_groups(
         if cls not in classes:
             stats.class_not_in_allow_list += 1
             continue
+        # Branch-policy gate: only file issues for failures on Dependabot
+        # PR branches, the default branch (where scheduled and main-trigger
+        # runs land), or release branches. Contributor PR branches reach
+        # this point only when ingestion was forced to include user PRs;
+        # we still refuse to create repo-wide issues from their failures.
+        # Flaky groups are exempt because they are not tied to a branch
+        # and are handled by --auto-close-flaky downstream.
+        if (
+            enforce_branch_policy
+            and cls not in FLAKY_CLASSES
+            and not _group_passes_branch_policy(g, default_branch)
+        ):
+            stats.branch_not_in_policy += 1
+            continue
         out.append(g)
     return out, stats
+
+
+def _group_branches(group: dict) -> list[str]:
+    """Return all branch names attributable to a group's failures.
+
+    Sources, in order:
+      - `group['branch']` (set by the engine from the commit's head branch
+        for `commit://` root causes).
+      - The trailing path segment of `broken://owner/repo/<slug>/<branch>`
+        for `BrokenTestRun` groups (whose `branch` field is not populated
+        because they have no associated commit).
+    """
+    out: list[str] = []
+    branch = group.get("branch")
+    if branch:
+        out.append(branch)
+    rc = group.get("root_cause_id") or ""
+    if rc.startswith("broken://"):
+        parts = rc[len("broken://"):].split("/")
+        # Expect at least owner/repo/slug/branch.
+        if len(parts) >= 4:
+            out.append(parts[-1])
+    return [b for b in out if b]
+
+
+def _branch_allowed_for_issue(branch: str, default_branch: str) -> bool:
+    """True if `branch` is one we are willing to file an issue for.
+
+    Allowed:
+      - The repository's default branch (covers scheduled/dispatch and
+        push-to-default failures alike).
+      - Any Dependabot PR branch (`dependabot/*`).
+      - Release branches: `release/*`, `release-*`, or `v<digit>...`
+        (matches typical `v0.50.x`, `v1.2.0`, `release-0.50` patterns).
+    Everything else (contributor PR branches, fork branches, ad-hoc
+    feature branches) is rejected.
+    """
+    b = branch.lower()
+    if default_branch and b == default_branch.lower():
+        return True
+    if b.startswith("dependabot/"):
+        return True
+    if b.startswith("release/") or b.startswith("release-"):
+        return True
+    if len(b) >= 2 and b[0] == "v" and b[1].isdigit():
+        return True
+    return False
+
+
+def _group_passes_branch_policy(group: dict, default_branch: str) -> bool:
+    branches = _group_branches(group)
+    if not branches:
+        # No branch info available (e.g. latent root causes). Defer to the
+        # class filter to decide; the branch policy does not block here.
+        return True
+    return all(_branch_allowed_for_issue(b, default_branch) for b in branches)
 
 
 def process_group(
@@ -641,7 +714,7 @@ def process_group(
         return Action(
             **common,
             kind="create",
-            issue_number=new_number,
+            issue_number=(new or {}).get("number"),
             issue_url=(new or {}).get("url"),
             title=title,
             note=f"new issue, members={member_count}, copilot={args.assign_copilot and rc_class in COPILOT_CLASSES}",
@@ -808,7 +881,8 @@ def render_summary(plan: Plan, repo: str, dry_run: bool, args: argparse.Namespac
 
 def _has_filter_stats(stats: FilterStats) -> bool:
     return (stats.below_min_confidence + stats.below_min_members
-            + stats.class_not_in_allow_list + stats.pr_closed) > 0
+            + stats.class_not_in_allow_list + stats.branch_not_in_policy
+            + stats.pr_closed) > 0
 
 
 def _render_filter_stats(
@@ -830,6 +904,8 @@ def _render_filter_stats(
         lines.append(f"  below min-members{members_threshold}:   {stats.below_min_members}")
     if stats.class_not_in_allow_list:
         lines.append(f"  class not in allow-list:   {stats.class_not_in_allow_list}")
+    if stats.branch_not_in_policy:
+        lines.append(f"  branch not in issue policy: {stats.branch_not_in_policy}")
     if stats.pr_closed:
         lines.append(f"  PR already closed/merged:  {stats.pr_closed}")
     lines.append("```")
@@ -862,6 +938,13 @@ def main() -> int:
                    help="Reopen previously closed c9k issues if the group reappears (default on)")
     p.add_argument("--no-reopen-stale", dest="reopen_stale", action="store_false",
                    help="Disable reopening of stale closed issues")
+    p.add_argument("--no-branch-policy", dest="enforce_branch_policy",
+                   action="store_false", default=True,
+                   help="Disable the branch-policy gate. By default, issues "
+                        "are only created for failures on the default branch, "
+                        "release branches, or Dependabot PR branches. Use this "
+                        "flag to allow filing issues for any branch (not "
+                        "recommended outside of debugging).")
     p.add_argument("--dry-run", action="store_true",
                    help="Plan only; do not call gh mutating commands")
     p.add_argument("--output-summary", help="Write markdown summary to PATH")
@@ -896,11 +979,14 @@ def main() -> int:
     ensure_label(repo, label, args.dry_run)
 
     groups = report.get("alert_groups", [])
+    default_branch = report.get("default_branch") or "main"
     eligible, filter_stats = filter_groups(
         groups,
         min_conf,
         args.min_members,
         classes | FLAKY_CLASSES,  # always evaluate flaky for close-flaky behaviour
+        default_branch,
+        args.enforce_branch_policy,
     )
 
     plan = Plan(filter_stats=filter_stats)

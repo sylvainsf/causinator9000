@@ -36,6 +36,10 @@ pub struct IngestGithubParams {
     pub repo: String,
     #[schemars(description = "Hours to look back (default: 48)")]
     pub hours: Option<u32>,
+    #[schemars(
+        description = "Include failures from contributor PR branches. Default false: only main, scheduled, release, and Dependabot PR runs are ingested. Set true to include user PR branches (which are typically full of intentional `wip` failures)."
+    )]
+    pub include_user_prs: Option<bool>,
 }
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
@@ -76,7 +80,10 @@ impl C9kMcpServer {
     #[tool(description = "Ingest GitHub Actions CI failures for a repo. Uses the gh CLI for auth.")]
     fn c9k_ingest_github(&self, Parameters(p): Parameters<IngestGithubParams>) -> String {
         let hours = p.hours.unwrap_or(48);
-        match ingest::ingest_github(&self.solver, &p.repo, hours) {
+        let options = ingest::IngestOptions {
+            include_user_prs: p.include_user_prs.unwrap_or(false),
+        };
+        match ingest::ingest_github_with_options(&self.solver, &p.repo, hours, &options) {
             Ok(result) => {
                 let mut text = format!(
                     "## GitHub Actions Ingestion: {}\n\n{}\n",
