@@ -140,6 +140,11 @@ make env-init               # create .env from template
 # Build
 make build-release
 
+# Install local git hooks (recommended)
+# Pre-push runs `cargo fmt --check` + `cargo clippy -Dwarnings`
+# so you find out about CI-breaking drift before pushing.
+make install-hooks
+
 # Run all tests (110 tests: 39 Rust + 71 Python)
 make test
 ```
@@ -169,6 +174,8 @@ crates/c9k-tests/
 make test              # All tests: Rust (39) + Python (71) = 110
 make test-rust         # Rust engine tests only
 make test-python       # Python source adapter tests only
+make check             # Run the same checks the pre-push hook runs
+                       # (cargo fmt --check + cargo clippy -Dwarnings)
 cargo fmt --all        # Fix formatting before submitting
 ```
 

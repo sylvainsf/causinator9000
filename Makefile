@@ -36,7 +36,17 @@ comma := ,
 
 # ── Build ────────────────────────────────────────────────────────────────
 
-.PHONY: build build-release test clean
+.PHONY: build build-release test clean install-hooks check
+
+install-hooks:  ## Install repo git hooks (.githooks/) into this clone
+	git config core.hooksPath .githooks
+	@echo "✓ git hooks installed (core.hooksPath = .githooks)"
+	@echo "  Pre-push will now run cargo fmt --check + clippy -Dwarnings."
+	@echo "  Bypass once with: git push --no-verify"
+
+check:  ## Run the same checks the pre-push hook runs
+	cargo fmt --all -- --check
+	RUSTFLAGS="-Dwarnings" cargo clippy --workspace --all-targets
 
 build:  ## Build debug binaries
 	cargo build

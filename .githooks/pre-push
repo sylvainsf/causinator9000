@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+# Causinator 9000 — pre-push hook.
+#
+# Runs the same checks CI runs on push to main:
+#   - cargo fmt --all -- --check       (CI: `fmt`)
+#   - cargo clippy --workspace --all-targets with -Dwarnings  (CI: `smoke`)
+#
+# Skipping these lets main go red. To intentionally bypass once (not
+# recommended), use `git push --no-verify`.
+#
+# Install with: make install-hooks
+
+set -e
+
+# Skip if pushing nothing (e.g. deleting a remote branch).
+if [ -z "${1:-}" ]; then
+  : # called by git with remote name; continue
+fi
+
+# Only enforce when pushing to origin (the canonical remote). Other
+# remotes (forks, mirrors) skip the hook so contributors can push WIP.
+remote_name="${1:-origin}"
+if [ "$remote_name" != "origin" ]; then
+  exit 0
+fi
+
+# Don't run if there are no Rust changes between HEAD and the remote
+# tracking branch — this hook exists to catch fmt/clippy drift, and pure
+# docs/python pushes shouldn't pay the compile cost.
+range="origin/HEAD..HEAD"
+if ! git rev-parse --verify --quiet origin/HEAD >/dev/null; then
+  range="HEAD"
+fi
+if ! git diff --name-only "$range" 2>/dev/null | grep -qE '\.rs$|^Cargo\.(toml|lock)$|^crates/'; then
+  exit 0
+fi
+
+echo "── pre-push: cargo fmt --check ──────────────────────────────────"
+if ! cargo fmt --all -- --check; then
+  echo
+  echo "✖ rustfmt found unformatted code. Fix with:  cargo fmt --all"
+  echo "  (or bypass once with: git push --no-verify)"
+  exit 1
+fi
+
+echo "── pre-push: cargo clippy -Dwarnings ────────────────────────────"
+if ! RUSTFLAGS="-Dwarnings" cargo clippy --workspace --all-targets --quiet 2>&1; then
+  echo
+  echo "✖ clippy reported warnings/errors (treated as errors by CI)."
+  echo "  Fix the issues above, or bypass once with: git push --no-verify"
+  exit 1
+fi
+
+echo "── pre-push: OK ─────────────────────────────────────────────────"
