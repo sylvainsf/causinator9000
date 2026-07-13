@@ -2,9 +2,22 @@
 
 *A reactive causal inference engine for cloud infrastructure.*
 
-Given a dependency graph, deployment **mutations** (changes to infrastructure), and degradation **signals** (observed symptoms), the Causinator 9000 computes the probability that each recent change caused the observed symptoms and traces the causal path through the dependency DAG (directed acyclic graph).
+**When production breaks, the hard question is never "what's on fire?" It's "which change lit the match?"** A cert rotated, a deploy shipped, a policy landed, a disk went read-only, and thirty dashboards turn red at once. Traditional monitoring correlates symptoms ("500s are up") but can't tell you the cause, so on-call burns the first hour ruling out suspects by hand.
 
-Built in Rust. Sub-200µs inference at p95 on a 225,000-node graph. Zero external dependencies beyond PostgreSQL.
+Causinator 9000 answers the causal question directly. Feed it your dependency graph, recent **mutations** (changes to infrastructure), and degradation **signals** (observed symptoms), and it computes the probability that each change caused each symptom, traces the causal path upstream through your dependency graph, and ranks the competing suspects by confidence.
+
+It works across the domains where changes and failures actually live:
+
+- **Azure infrastructure**: a KeyVault secret rotation propagating to the pods that consumed it
+- **Kubernetes**: an `ImageUpdate` traced to `CrashLoopBackOff` at 96% confidence
+- **CI/CD**: a red nightly build attributed to the offending commit rather than a flaky-test latent cause
+- **Cross-boundary incidents**: eight `HTTP_500` alerts correctly split into two independent root causes for two different teams
+
+The solver never guesses. No change in the window means confidence 0. No causal match means a weak signal. It is built to say *"I don't know"* rather than manufacture a false positive.
+
+Built in Rust. Sub-200µs inference at p95 on a 225,000-node graph (roughly five full Azure production regions: on the order of 750 server racks, 2,500 applications, and the tens of thousands of pods, VMs, and network devices beneath them). Two moving parts: **PostgreSQL** as the event store and an **embedded Drasi** change feed. No sidecars, no message queue, no external services.
+
+**Dig deeper:** [how inference works](docs/inference.md) · [the CI GitHub Action](docs/action.md) · [data sources](docs/data-sources.md) · [writing CPTs](docs/cpts.md)
 
 ## Table of Contents
 
@@ -25,18 +38,16 @@ Built in Rust. Sub-200µs inference at p95 on a 225,000-node graph. Zero externa
 
 ## How It Works
 
-The Causinator 9000 maintains a **Causal Digital Twin** — a directed acyclic graph (DAG) where nodes are infrastructure resources (containers, gateways, key vaults, AKS clusters, etc.) and edges point from cause → effect (upstream → downstream dependency).
+The Causinator 9000 maintains a **Causal Digital Twin**: a directed acyclic graph (DAG) where nodes are infrastructure resources (containers, gateways, key vaults, AKS clusters, and so on) and edges point from cause to effect (upstream to downstream dependency).
 
 When a degradation **signal** arrives (error spike, heartbeat loss, memory pressure), the solver:
 
-1. Walks the target node's **ancestor chain** upstream through the DAG
+1. Walks the target node's **ancestor chain** upstream through the graph
 2. Finds all **mutations** (deployments, config changes, cert rotations) within the temporal window on those ancestors
-3. Scores each candidate mutation using **likelihood-ratio (LR) Bayesian inference** against the node's **CPT** (Conditional Probability Table — a lookup table encoding how likely each mutation type is to produce each signal type)
-4. Applies **temporal decay** — recent mutations get a higher causal prior; each resource class has its own decay rate
-5. Applies **hop attenuation** — upstream mutations are discounted by 8% per dependency hop
+3. Scores each candidate mutation using **likelihood-ratio (LR) Bayesian inference** against the node's **CPT** (Conditional Probability Table, a lookup table encoding how likely each mutation type is to produce each signal type)
+4. Applies **temporal decay**: recent mutations get a higher causal prior; each resource class has its own decay rate
+5. Applies **hop attenuation**: upstream mutations are discounted by 8% per dependency hop
 6. Returns a ranked list of **competing causes** with confidence scores and causal paths
-
-The solver never guesses. No mutations in the window → confidence = 0. No CPT match → weak signal. The system is designed to say "I don't know" rather than produce false positives.
 
 ## Architecture
 
@@ -60,7 +71,58 @@ LLM Transpiler      ──┘     (WAL)                      │
 
 - **Single process.** The engine embeds [drasi-lib](https://github.com/drasi-project/drasi-core) in-process for zero-hop CDC event delivery. No sidecar, no message queue, no IPC.
 - **PostgreSQL as the only integration point.** Data producers write SQL. Drasi watches the WAL. No custom protocols.
-- **Subgraph-local inference.** Diagnosis activates ~10–20 ancestor nodes, not the full graph. Complexity is O(ancestors × active_mutations), not O(graph).
+- **Subgraph-local inference.** Diagnosis activates ~10 to 20 ancestor nodes, not the full graph. Complexity is O(ancestors × active_mutations), not O(graph).
+
+### Why Drasi
+
+[Drasi](https://drasi.io) is an open-source change-driven data platform (a Linux Foundation project). Instead of polling a database on a timer, Drasi watches a source's native change feed (the PostgreSQL write-ahead log in our case), runs **continuous queries** written in Cypher against the incoming change stream, and pushes only the *deltas* to downstream **reactions**. Causinator embeds it as a library (`drasi-lib`), so there is no separate cluster to operate: the source, the continuous queries, and the reaction all run inside the `c9k-engine` process.
+
+Today the engine wires up a single [PostgreSQL source](https://drasi.io/concepts/sources/) with two continuous queries (a mutation tracker and a signal tracker) whose results feed straight into the Bayesian solver. The important part is that the source is **pluggable**: Drasi presents every backend as the same unified stream of *Source Change Events*, so the solver never has to know where a mutation or signal originated.
+
+That matters because the Drasi project keeps adding sources. As of this writing the available implementations include:
+
+| Source | Typical use for Causinator |
+|--------|----------------------------|
+| **PostgreSQL** | Current default: mutations and signals via WAL replication |
+| **MySQL** / **SQL Server** | Ingest change events straight from an existing relational store of record |
+| **Kubernetes** | Watch the cluster API for pod, deployment, and event changes as first-class mutations/signals |
+| **Azure Event Hubs** | Stream cloud telemetry and platform events without a polling adapter |
+| **Azure Cosmos DB (Gremlin)** | Consume an existing property-graph topology natively, no relational translation |
+| **Microsoft Dataverse** | Business/ops records as change events |
+| **HTTP** / **gRPC** | Push arbitrary change events from any producer over a simple endpoint |
+| **Platform (Redis Streams)** / **Mock** | Fan-in from other Drasi components; deterministic testing |
+
+Because each of these speaks the same Source Change Event contract, adding one is largely a matter of pointing a new source at its backend and writing a continuous query that shapes rows into the `mutations`/`signals` model the solver already understands. A Kubernetes source, for example, could replace the current `make ingest-k8s` polling adapter with a live change feed, and an HTTP or gRPC source lets a producer push events directly rather than writing SQL first. The set of supported backends is still growing upstream, so the engine's reach grows with it without any change to the inference core.
+
+## CPTs: Turning Institutional Knowledge Into Math
+
+Every team has a senior engineer who, three minutes into an incident, says something like *"if the pods started crash-looping right after a deploy, it's the deploy: I've seen it a hundred times."* That instinct is real knowledge, but it lives in one person's head, it doesn't scale to 3am, and it walks out the door when they change jobs.
+
+A **CPT** (Conditional Probability Table) is how Causinator writes that instinct down. Each CPT captures one cause-and-effect belief as two numbers:
+
+1. How often you see the symptom **when** the suspected change happened.
+2. How often you see the same symptom **when** it did not.
+
+Take the deploy example. A container that just got a new image (`ImageUpdate`) and then started crash-looping (`CrashLoopBackOff`):
+
+```yaml
+- mutation: ImageUpdate        # the change
+  signal: CrashLoopBackOff     # the symptom
+  table:
+    - [0.75, 0.03]   # 75% of bad deploys crash-loop; only 3% crash-loop on their own
+```
+
+Those two numbers encode exactly what the senior engineer knows: a fresh deploy is a *very* suspicious thing to see next to a crash loop (25 times more likely to be the cause than a coincidence), so when both appear together the engine reports high confidence. The person no longer has to be awake for their experience to be applied.
+
+The power is that this works for knowledge nobody would think to write in a runbook, across every corner of your stack:
+
+- **Security's knowledge.** *"When a secret gets rotated, anything still holding the old one starts getting 403s."* That is a `SecretRotation → AccessDenied_403` CPT of `[0.85, 0.02]`, and it comes with its own timing: identity changes decay slowly (a 4-hour half-life) because cached tokens keep working until they expire, so the engine still suspects a rotation that happened hours ago.
+- **The network team's knowledge.** *"A cert rotation on the authority breaks TLS three hops downstream before anyone touches those services."* The engine traces that path automatically and still attributes the TLS errors back to the certificate change.
+- **The CI maintainer's knowledge.** *"Half our nightly failures aren't the code, they're flaky tests."* That becomes a competing latent cause, so a red build is weighed against both the suspect commit and the test's known flakiness instead of always blaming the last change.
+
+Because CPTs are just YAML, this knowledge is **reviewable, versioned, and shareable.** You start from the 30 resource classes that ship built in, then encode your own hard-won lessons in `config/heuristics/private.yaml`: every incident post-mortem can end with a one-line CPT so the same surprise never costs you the first hour twice. New numbers hot-reload without a restart.
+
+→ [How to write and calibrate CPTs](docs/cpts.md)
 
 ## The Inference Algorithm
 
