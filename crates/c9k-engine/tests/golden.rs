@@ -1,6 +1,6 @@
 // Copyright (c) 2026 Sylvain Niles. MIT License.
 
-//! Golden Test Suite — Rust port of scripts/golden_tests.py
+//! Golden Test Suite: Rust port of scripts/golden_tests.py
 //!
 //! Pre-scripted scenarios that validate solver correctness by:
 //! 1. Building a known mini topology in-memory

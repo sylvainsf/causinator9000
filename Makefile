@@ -1,4 +1,4 @@
-# Causinator 9000 — Makefile
+# Causinator 9000: Makefile
 #
 # Prerequisites:
 #   - Rust 1.75+ (rustup.rs)
@@ -17,7 +17,7 @@
 SHELL := /bin/bash
 .DEFAULT_GOAL := help
 
-# Load .env if it exists (gitignored — local config)
+# Load .env if it exists (gitignored, local config)
 -include .env
 export
 
@@ -93,7 +93,7 @@ run-release:  ## Start the engine (release build, background)
 	@mkdir -p data
 	nohup ./target/release/c9k-engine > data/engine.log 2>&1 &
 	@sleep 2
-	@curl -sf $(ENGINE_URL)/api/health | python3 -c "import sys,json; h=json.load(sys.stdin); print(f'Engine started: {h[\"nodes\"]:,} nodes')" || echo "Engine failed to start — check data/engine.log"
+	@curl -sf $(ENGINE_URL)/api/health | python3 -c "import sys,json; h=json.load(sys.stdin); print(f'Engine started: {h[\"nodes\"]:,} nodes')" || echo "Engine failed to start, check data/engine.log"
 
 stop:  ## Stop the engine
 	pkill -f c9k-engine 2>/dev/null || true
@@ -127,7 +127,7 @@ ingest-gh:  ## Ingest GitHub Actions failures as causal graph (REPO= GH_HOURS=)
 		--hours $(GH_HOURS) \
 		--subscription $(AZURE_SUB)
 
-ingest-gh-dry:  ## Dry run — show what would be ingested without sending to engine
+ingest-gh-dry:  ## Dry run: show what would be ingested without sending to engine
 	python3 sources/gh_actions_source.py \
 		--repo $(REPO) \
 		--hours $(GH_HOURS) \
@@ -138,19 +138,19 @@ ingest-all: ingest-arg ingest-azure-health ingest-azure-policy ingest-gh  ## Ful
 ingest-azure-health:  ## Ingest Azure Resource Health signals + Resource Changes mutations
 	python3 sources/azure_health_source.py --hours $(AZURE_CHANGES_HOURS)
 
-ingest-azure-health-dry:  ## Dry run — show Azure health signals and resource changes
+ingest-azure-health-dry:  ## Dry run: show Azure health signals and resource changes
 	python3 sources/azure_health_source.py --hours $(AZURE_CHANGES_HOURS) --dry-run
 
 ingest-azure-policy:  ## Ingest Azure deny-policy violations as latent causal nodes
 	python3 sources/azure_policy_source.py
 
-ingest-azure-policy-dry:  ## Dry run — show deny policy violations
+ingest-azure-policy-dry:  ## Dry run: show deny policy violations
 	python3 sources/azure_policy_source.py --dry-run
 
 ingest-k8s:  ## Ingest Kubernetes cluster state (pods, events, signals)
 	python3 sources/k8s_source.py
 
-ingest-k8s-dry:  ## Dry run — show K8s cluster state
+ingest-k8s-dry:  ## Dry run: show K8s cluster state
 	python3 sources/k8s_source.py --dry-run
 
 clear:  ## Clear all mutations and signals (keeps graph)
@@ -235,10 +235,10 @@ config:  ## Show current configuration
 	@echo "GH Hours:     $(GH_HOURS)"
 	@echo "Azure Hours:  $(AZURE_CHANGES_HOURS)"
 	@echo "Webhook Port: $(GH_WEBHOOK_PORT)"
-	@echo ".env file:    $(if $(wildcard .env),✓ loaded,✗ not found — run 'make env-init')"
+	@echo ".env file:    $(if $(wildcard .env),✓ loaded,✗ not found, run 'make env-init')"
 
 env-init:  ## Create .env from .env.example (if not exists)
-	@if [ -f .env ]; then echo ".env already exists"; else cp .env.example .env && echo "Created .env — edit it with your values"; fi
+	@if [ -f .env ]; then echo ".env already exists"; else cp .env.example .env && echo "Created .env, edit it with your values"; fi
 
 # ── Help ─────────────────────────────────────────────────────────────────
 

@@ -1,22 +1,22 @@
-# Causinator 9000 Heuristic Layer — Kubernetes
+# Causinator 9000 Heuristic Layer: Kubernetes
 #
 # CPTs for Kubernetes resources: pods, deployments, namespaces.
 # These are the resources visible from inside an AKS cluster
 # (below the AKS-as-a-node level from ARG).
 #
 # Signal types from K8s events:
-#   CrashLoopBackOff     — container restarting repeatedly
-#   ImagePullError       — failed to pull container image
-#   OOMKilled            — container killed by OOM
-#   PodPending           — pod stuck in Pending (no node available)
-#   PodError             — generic pod error
-#   PodEviction          — pod evicted (resource pressure)
-#   SchedulingFailure    — scheduler can't place the pod
-#   HealthCheckFailed    — liveness/readiness probe failing
-#   VolumeMountFailure   — PV/PVC mount failed
-#   ConfigError          — container config error
-#   FailedCreate         — controller failed to create pod
-#   MetricsUnavailable   — metrics server unreachable
+#   CrashLoopBackOff: container restarting repeatedly
+#   ImagePullError: failed to pull container image
+#   OOMKilled: container killed by OOM
+#   PodPending: pod stuck in Pending (no node available)
+#   PodError: generic pod error
+#   PodEviction: pod evicted (resource pressure)
+#   SchedulingFailure: scheduler can't place the pod
+#   HealthCheckFailed: liveness/readiness probe failing
+#   VolumeMountFailure: PV/PVC mount failed
+#   ConfigError: container config error
+#   FailedCreate: controller failed to create pod
+#   MetricsUnavailable: metrics server unreachable
 
 - class: KubernetesNamespace
   default_prior:
@@ -65,7 +65,7 @@
       table:
         - [0.65, 0.02]
         - [0.35, 0.98]
-    # Pod eviction — usually resource pressure (memory/disk)
+    # Pod eviction, usually resource pressure (memory/disk)
     - mutation: PodCreated
       signal: PodEviction
       table:

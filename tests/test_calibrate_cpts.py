@@ -4,7 +4,7 @@ Tests for the CPT calibration pipeline.
 Tests are organized in tiers matching the existing test structure:
   1. Pure functions (no I/O): file mutation classification, rate estimation
   2. CPT generation and validation (uses sample data)
-  3. Integration (requires gh CLI — skipped in CI)
+  3. Integration (requires gh CLI, skipped in CI)
 """
 
 import json

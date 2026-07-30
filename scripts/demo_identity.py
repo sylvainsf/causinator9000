@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Causinator 9000 — Managed Identity Deletion Demo
+Causinator 9000: Managed Identity Deletion Demo
 
 Interactive 3-act demo with real Azure infrastructure:
 
@@ -91,7 +91,7 @@ def pause(msg="Press ENTER to continue..."):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Managed Identity deletion demo — real Azure infrastructure")
+        description="Managed Identity deletion demo, real Azure infrastructure")
     parser.add_argument("--context", "-c", required=True,
                         help="kubectl context for the AKS cluster")
     parser.add_argument("--namespace", "-n", default="c9k-demo",
@@ -146,7 +146,7 @@ def main():
     watchers = []  # background processes to clean up
 
     # ══════════════════════════════════════════════════════════════════
-    banner("Act 1 — Deploy: Create managed identity + pod")
+    banner("Act 1: Deploy: Create managed identity + pod")
     # ══════════════════════════════════════════════════════════════════
 
     print("  Step 1: Creating resource group and managed identity...")
@@ -249,7 +249,7 @@ def main():
     print(f"  → Pod 'demo-app' should be green (no alerts)")
 
     # ══════════════════════════════════════════════════════════════════
-    banner("Act 2 — Break it: Volunteer deletes the managed identity")
+    banner("Act 2: Break it: Volunteer deletes the managed identity")
     # ══════════════════════════════════════════════════════════════════
 
     print("━" * 60)
@@ -270,11 +270,11 @@ def main():
     pause("Press ENTER after the managed identity is deleted...")
 
     # ══════════════════════════════════════════════════════════════════
-    banner("Act 3 — Detect: Watch the dashboard update in real-time")
+    banner("Act 3: Detect: Watch the dashboard update in real-time")
     # ══════════════════════════════════════════════════════════════════
 
     print("  The K8s watcher and Azure poller are running.")
-    print("  Watch the dashboard — alerts should appear automatically.")
+    print("  Watch the dashboard, alerts should appear automatically.")
     print()
     print("  Step 1: Checking pod logs for auth errors...")
     time.sleep(5)

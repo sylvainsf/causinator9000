@@ -1,24 +1,24 @@
 #!/usr/bin/env python3
 """
-Causinator 9000 — GitHub Copilot Extension Server.
+Causinator 9000: GitHub Copilot Extension Server.
 
 Receives chat messages from GitHub Copilot (via webhook) and responds
 with CI failure diagnoses. The engine runs continuously and is kept
 warm via workflow_run webhooks.
 
 Endpoints:
-  POST /agent    — Copilot Extension chat handler
-  POST /webhook  — GitHub workflow_run webhook (keeps engine warm)
-  GET  /health   — Health check
+  POST /agent: Copilot Extension chat handler
+  POST /webhook: GitHub workflow_run webhook (keeps engine warm)
+  GET  /health: Health check
 
 Usage:
   python3 copilot-extension/server.py --port 8090
   docker run -p 8090:8090 ghcr.io/sylvainsf/causinator9000 copilot-extension
 
 Environment:
-  GITHUB_TOKEN          — GitHub token for API access
-  C9K_ENGINE_URL        — Engine URL (default: http://127.0.0.1:8080)
-  GITHUB_WEBHOOK_SECRET — Webhook secret for signature verification
+  GITHUB_TOKEN: GitHub token for API access
+  C9K_ENGINE_URL: Engine URL (default: http://127.0.0.1:8080)
+  GITHUB_WEBHOOK_SECRET: Webhook secret for signature verification
 """
 
 import hashlib
@@ -204,7 +204,7 @@ def _handle_verify(intent: dict) -> str:
     if result.returncode != 0:
         return f"Could not fetch run {run_id}: {result.stderr}"
 
-    lines = [f"## Run {run_id} — Failed Jobs\n"]
+    lines = [f"## Run {run_id}: Failed Jobs\n"]
     for line in result.stdout.strip().split("\n"):
         if not line.strip():
             continue

@@ -3,15 +3,15 @@
 A Backstage plugin that adds root-cause analysis to your developer portal.
 
 See failed CI runs grouped by shared root cause, with confidence scores,
-causal paths, and competing-cause analysis — directly on your service's
+causal paths, and competing-cause analysis, directly on your service's
 entity page.
 
 ## Packages
 
 | Package | Description |
 |---|---|
-| `plugins/c9k-backend` | Backend plugin — proxies the C9K engine REST API |
-| `plugins/c9k` | Frontend plugin — Diagnosis tab for entity pages |
+| `plugins/c9k-backend` | Backend plugin, proxies the C9K engine REST API |
+| `plugins/c9k` | Frontend plugin, Diagnosis tab for entity pages |
 
 ## Installation
 
@@ -77,11 +77,11 @@ confidence score.
 
 Each failed CI job gets an individual diagnosis showing:
 
-- **Root cause** — the commit, dependency update, or infrastructure issue
+- **Root cause**: the commit, dependency update, or infrastructure issue
   most likely responsible
-- **Confidence** — a 0–100% score based on Bayesian inference
-- **Causal path** — the chain of nodes from cause to failure
-- **Competing causes** — alternative explanations (e.g., flaky tests) with
+- **Confidence**: a 0 to 100% score based on Bayesian inference
+- **Causal path**: the chain of nodes from cause to failure
+- **Competing causes**: alternative explanations (e.g., flaky tests) with
   their own confidence scores
 
 ## Development

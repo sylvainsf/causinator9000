@@ -20,7 +20,7 @@ The solver is only as good as its Conditional Probability Tables. We ship CPTs f
 
 - CPTs for cloud services we don't yet cover: RDS, DynamoDB, Cloud SQL, Elasticache, Cloud Functions, Lambda, S3/Blob/GCS, CDN, WAF, API Management, Service Bus/EventHub/SNS/SQS
 - Refined probability values for existing CPTs based on real incident data
-- Platform-specific variants (e.g., AKS vs. EKS vs. GKE — same concept, different failure modes)
+- Platform-specific variants (e.g., AKS vs. EKS vs. GKE, same concept, different failure modes)
 - CPTs for common middleware: nginx, Envoy, Istio, Linkerd, Kafka, RabbitMQ, Consul, Vault
 
 **How to contribute a CPT:**
@@ -39,13 +39,13 @@ Add entries to the appropriate layer file under `config/heuristics/` (e.g., `con
         - [0.30, 0.95]
 ```
 
-You can also contribute CPTs as a new layer file — just add it to `config/heuristics.manifest.yaml`. For private or org-specific overrides, copy `config/heuristics/private.yaml.example` to `config/heuristics/private.yaml` and uncomment the entry in the manifest. Override layers only need to specify the fields being changed ("lean patching").
+You can also contribute CPTs as a new layer file: just add it to `config/heuristics.manifest.yaml`. For private or org-specific overrides, copy `config/heuristics/private.yaml.example` to `config/heuristics/private.yaml` and uncomment the entry in the manifest. Override layers only need to specify the fields being changed ("lean patching").
 
 **Guidelines:**
 - The likelihood ratio (`table[0][0] / table[0][1]`) is the most important number. Start around 10× for typical cause-effect links
 - Include a comment explaining your reasoning and any incident data backing the values
 - Each row must sum to 1.0 across the two columns
-- If you're unsure about exact values, submit what you have — a rough CPT is better than no CPT
+- If you're unsure about exact values, submit what you have, a rough CPT is better than no CPT
 - Add a test case to `scripts/demo.py` or `scripts/golden_tests.py` that exercises your new CPT
 
 ### 2. Cloud Provider Source Adapters
@@ -55,28 +55,28 @@ We have comprehensive Azure support via `sources/arg_source.py` (topology), `sou
 **AWS support (highest priority):**
 
 We don't have an AWS topology source yet. The equivalent of our ARG adapter would query:
-- **AWS Config** — resource inventory + relationships (like ARG's Resources table)
-- **AWS CloudTrail** — API-level mutations (like ARM ResourceChanges)
-- **AWS Health** — degradation signals (like Azure Resource Health)
-- **AWS Service Control Policies** — deny policies (like Azure Policy)
+- **AWS Config**: resource inventory + relationships (like ARG's Resources table)
+- **AWS CloudTrail**: API-level mutations (like ARM ResourceChanges)
+- **AWS Health**: degradation signals (like Azure Resource Health)
+- **AWS Service Control Policies**: deny policies (like Azure Policy)
 
 A `sources/aws_source.py` that uses `boto3` or `aws` CLI to extract EC2 instances, RDS databases, EKS clusters, Lambda functions, S3 buckets, VPCs, subnets, security groups, ALBs, and their dependency edges would immediately make the engine useful for AWS-native teams.
 
 **What we need:**
-- `sources/aws_config_source.py` — topology from AWS Config (nodes + edges)
-- `sources/aws_cloudtrail_source.py` — mutations from CloudTrail events
-- `sources/aws_health_source.py` — signals from AWS Health events
+- `sources/aws_config_source.py`: topology from AWS Config (nodes + edges)
+- `sources/aws_cloudtrail_source.py`: mutations from CloudTrail events
+- `sources/aws_health_source.py`: signals from AWS Health events
 - CPTs for AWS resource types: EC2, RDS, EKS, Lambda, S3, ALB, NLB, Route53, CloudFront, ElastiCache, SQS, SNS, DynamoDB
 
 **GCP support:**
-- `sources/gcp_asset_source.py` — topology from Cloud Asset Inventory
-- `sources/gcp_audit_source.py` — mutations from Cloud Audit Logs
+- `sources/gcp_asset_source.py`: topology from Cloud Asset Inventory
+- `sources/gcp_audit_source.py`: mutations from Cloud Audit Logs
 - CPTs for GCP resource types: GCE, GKE, Cloud SQL, Cloud Run, GCS, Cloud Functions
 
 **Other graph sources:**
-- **Kubernetes topology discovery** — already built (`sources/k8s_source.py`), but could be expanded with service mesh topology (Istio, Linkerd)
-- **Terraform graph import** — already built (`sources/terraform_source.py`), works for any provider
-- **Pulumi** — state file import similar to Terraform
+- **Kubernetes topology discovery**: already built (`sources/k8s_source.py`), but could be expanded with service mesh topology (Istio, Linkerd)
+- **Terraform graph import**: already built (`sources/terraform_source.py`), works for any provider
+- **Pulumi**: state file import similar to Terraform
 
 ### 3. Drasi Sources for Observability Platforms
 
@@ -84,15 +84,15 @@ The engine uses [drasi-lib](https://github.com/drasi-project/drasi-core) for rea
 
 **What we need:**
 
-- **Azure Monitor** — Action Group webhook receiver that normalizes alerts into signals rows
-- **Prometheus/Alertmanager** — webhook receiver for Alertmanager notifications
-- **Datadog** — webhook integration for Datadog monitors/alerts
-- **PagerDuty** — webhook receiver for PD incidents
-- **Grafana** — webhook integration for Grafana alerting
-- **AWS CloudWatch** — SNS → webhook bridge for CloudWatch alarms
-- **GCP Cloud Monitoring** — notification channel webhook receiver
-- **OpsGenie / Splunk On-Call** — webhook receivers
-- **Custom Drasi source plugins** — for platforms that offer streaming APIs (CloudWatch Logs, Azure Event Hubs) rather than webhooks
+- **Azure Monitor**: Action Group webhook receiver that normalizes alerts into signals rows
+- **Prometheus/Alertmanager**: webhook receiver for Alertmanager notifications
+- **Datadog**: webhook integration for Datadog monitors/alerts
+- **PagerDuty**: webhook receiver for PD incidents
+- **Grafana**: webhook integration for Grafana alerting
+- **AWS CloudWatch**: SNS → webhook bridge for CloudWatch alarms
+- **GCP Cloud Monitoring**: notification channel webhook receiver
+- **OpsGenie / Splunk On-Call**: webhook receivers
+- **Custom Drasi source plugins**: for platforms that offer streaming APIs (CloudWatch Logs, Azure Event Hubs) rather than webhooks
 
 Each receiver should:
 1. Accept the platform's native webhook format
@@ -101,19 +101,19 @@ Each receiver should:
 4. Be a small, self-contained Python script (see `scripts/monitor_receiver.py` for the pattern)
 
 Similarly, we need mutation sources for deployment platforms:
-- **ArgoCD** — sync events
-- **Flux** — reconciliation events
-- **GitHub Actions** — deployment events
-- **Azure DevOps** — release pipeline events
-- **Spinnaker** — pipeline execution events
+- **ArgoCD**: sync events
+- **Flux**: reconciliation events
+- **GitHub Actions**: deployment events
+- **Azure DevOps**: release pipeline events
+- **Spinnaker**: pipeline execution events
 
 ### 4. Solver Improvements
 
-- **Learned CPTs** — use historical incident data to calibrate probability tables instead of hand-crafting
-- **Adaptive temporal windows** — different resource classes should have different window sizes (cert rotation: 6 hours; config change: 15 minutes)
-- **RwLock migration** — replace `Mutex<SolverState>` with `RwLock` so concurrent reads (diagnoses) don't block each other
-- **Graph islanding** — partition large graphs into autonomous islands with bridge node propagation for 10m+ node scale
-- **Approximate inference** — for pathological star patterns with high treewidth, implement loopy belief propagation or mini-bucket elimination
+- **Learned CPTs**: use historical incident data to calibrate probability tables instead of hand-crafting
+- **Adaptive temporal windows**: different resource classes should have different window sizes (cert rotation: 6 hours; config change: 15 minutes)
+- **RwLock migration**: replace `Mutex<SolverState>` with `RwLock` so concurrent reads (diagnoses) don't block each other
+- **Graph islanding**: partition large graphs into autonomous islands with bridge node propagation for 10m+ node scale
+- **Approximate inference**: for pathological star patterns with high treewidth, implement loopy belief propagation or mini-bucket elimination
 
 ### 5. Web Dashboard
 
@@ -183,11 +183,11 @@ cargo fmt --all        # Fix formatting before submitting
 
 Each source adapter test file follows a 3-tier pattern:
 
-1. **Tier 1 — Classification** (pure functions, no I/O): Test error patterns, mutation types, signal attribution. These are fast, deterministic, and the most valuable for TDD.
+1. **Tier 1: Classification** (pure functions, no I/O): Test error patterns, mutation types, signal attribution. These are fast, deterministic, and the most valuable for TDD.
 
-2. **Tier 2 — Event processing** (mocked subprocess/HTTP): Test the full processing pipeline with sample API responses. Use `unittest.mock.patch` to mock CLI commands.
+2. **Tier 2: Event processing** (mocked subprocess/HTTP): Test the full processing pipeline with sample API responses. Use `unittest.mock.patch` to mock CLI commands.
 
-3. **Tier 3 — Integration** (requires running engine): End-to-end tests that POST to the engine API. Skipped by default; run with `C9K_INTEGRATION=1 make test-python`.
+3. **Tier 3: Integration** (requires running engine): End-to-end tests that POST to the engine API. Skipped by default; run with `C9K_INTEGRATION=1 make test-python`.
 
 ### Adding Tests for a New Source Adapter
 
@@ -195,22 +195,22 @@ When adding a new source (e.g., `sources/aws_config_source.py`):
 
 1. Copy `tests/test_azure_health_source.py` as `tests/test_aws_config_source.py`
 2. Import your classification functions
-3. Write Tier 1 tests first — these drive the design of your classification logic
+3. Write Tier 1 tests first, these drive the design of your classification logic
 4. Implement the classification functions to pass the tests
 5. Add Tier 2 tests with mocked `boto3`/`aws` CLI responses
 6. Add sample API responses in `tests/fixtures/` if needed
 
 ### CI Pipeline
 
-- **Push to main**: `fmt` + `clippy` (smoke — fast feedback, no heavy tests)
-- **Pull requests**: `fmt` + `clippy` + `cargo test` + `pytest` (full 110-test suite — merge gate)
+- **Push to main**: `fmt` + `clippy` (smoke, fast feedback, no heavy tests)
+- **Pull requests**: `fmt` + `clippy` + `cargo test` + `pytest` (full 110-test suite, merge gate)
 
 All PRs must pass the full test suite before merging.
 
 ## Code Style
 
 - **Rust:** follow standard `rustfmt` conventions. Run `cargo fmt` before submitting
-- **Python:** keep source adapters simple — stdlib + `requests` only. Tests use `pytest`
+- **Python:** keep source adapters simple, stdlib + `requests` only. Tests use `pytest`
 - **YAML (CPTs):** include comments explaining the reasoning behind probability values
 - **Makefile:** every user-facing command gets a `make` target with `## description`
 

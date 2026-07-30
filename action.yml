@@ -105,7 +105,7 @@ inputs:
         - a release branch (`release/*`, `release-*`, `v<digit>...`),
         - a Dependabot PR branch (`dependabot/*`).
       Contributor PR branches and ad-hoc feature branches never produce
-      issues. Set this to 'true' only for debugging — issuing repo-wide
+      issues. Set this to 'true' only for debugging, issuing repo-wide
       tickets from contributor branches is almost always wrong.
     required: false
     default: 'false'
@@ -243,11 +243,11 @@ runs:
       run: |
         set -e
         if [ ! -f /tmp/c9k/auto_issue.py ]; then
-          echo "::warning::auto-issue script not found at /tmp/c9k/auto_issue.py — skipping."
+          echo "::warning::auto-issue script not found at /tmp/c9k/auto_issue.py, skipping."
           exit 0
         fi
         if [ ! -s /tmp/c9k-report.json ]; then
-          echo "::warning::JSON report missing or empty — skipping auto-issue step."
+          echo "::warning::JSON report missing or empty, skipping auto-issue step."
           exit 0
         fi
 
@@ -314,7 +314,7 @@ runs:
             --body-file "$DIGEST_BODY" 2>/dev/null || true
         else
           gh issue create --repo "$REPO" \
-            --title "Causinator 9000 CI Failure Digest — $(date -u +%Y-%m-%d)" \
+            --title "Causinator 9000 CI Failure Digest: $(date -u +%Y-%m-%d)" \
             --body-file "$DIGEST_BODY" \
             --label "$LABEL" 2>/dev/null || true
         fi

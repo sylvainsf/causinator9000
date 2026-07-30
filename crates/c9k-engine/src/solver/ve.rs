@@ -109,10 +109,10 @@ impl Factor {
 /// Run Variable Elimination to compute P(query | evidence).
 ///
 /// # Arguments
-/// * `factors` — All CPT factors in the active subgraph
-/// * `query` — The variable we want the posterior for
-/// * `evidence` — Observed variable assignments (variable → value index)
-/// * `elimination_order` — Order in which to eliminate hidden variables
+/// * `factors`: All CPT factors in the active subgraph
+/// * `query`: The variable we want the posterior for
+/// * `evidence`: Observed variable assignments (variable → value index)
+/// * `elimination_order`: Order in which to eliminate hidden variables
 pub fn variable_elimination(
     factors: &[Factor],
     query: &str,

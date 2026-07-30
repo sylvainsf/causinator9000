@@ -13,7 +13,7 @@ ISSUE_LABEL="${INPUT_ISSUE_LABEL:-c9k-digest}"
 RUN_ID="${INPUT_RUN_ID:-}"
 FAIL_ON_FINDINGS="${INPUT_FAIL_ON_FINDINGS:-false}"
 
-echo "🔍 Causinator 9000 — Analyzing CI failures for ${REPO}"
+echo "🔍 Causinator 9000: Analyzing CI failures for ${REPO}"
 echo "   Lookback: ${HOURS}h | Min confidence: ${MIN_CONFIDENCE}%"
 
 # ── Authenticate gh CLI ──────────────────────────────────────────────────
@@ -70,7 +70,7 @@ try:
     if isinstance(pr, dict) and pr.get('number'):
         print(pr['number'])
         sys.exit(0)
-    # workflow_run trigger — find the PR associated with the head branch
+    # workflow_run trigger, find the PR associated with the head branch
     wr = event.get('workflow_run', {})
     if wr:
         head_branch = wr.get('head_branch', '')
@@ -124,7 +124,7 @@ if [ "$CREATE_ISSUE" = "true" ]; then
     else
         echo "   Creating new digest issue"
         gh issue create --repo "$REPO" \
-            --title "🔍 C9K CI Failure Digest — $(date -u +%Y-%m-%d)" \
+            --title "🔍 C9K CI Failure Digest: $(date -u +%Y-%m-%d)" \
             --body-file /tmp/diagnosis.md \
             --label "$ISSUE_LABEL" 2>/dev/null || true
     fi
@@ -143,6 +143,6 @@ if [ "$FAIL_ON_FINDINGS" = "true" ] && [ "$DIAG_COUNT" -gt 0 ] 2>/dev/null; then
     exit 1
 fi
 
-echo "✅ Analysis complete — ${ALERT_COUNT} alert groups found"
+echo "✅ Analysis complete, ${ALERT_COUNT} alert groups found"
 
 kill $ENGINE_PID 2>/dev/null || true

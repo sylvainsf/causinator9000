@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ─────────────────────────────────────────────────────────────────────────
-# Causinator 9000 — Policy Violation Demo
+# Causinator 9000: Policy Violation Demo
 #
 # This script sets up a clean demo showing how deny policies are detected
 # as root causes. It has two phases:
@@ -33,7 +33,7 @@ LOCATION=eastus
 
 phase1() {
     echo "╔══════════════════════════════════════════════════════════╗"
-    echo "║  Causinator 9000 — Policy Violation Demo (Phase 1)     ║"
+    echo "║  Causinator 9000: Policy Violation Demo (Phase 1)     ║"
     echo "╚══════════════════════════════════════════════════════════╝"
     echo ""
 
@@ -110,7 +110,7 @@ print(f'  {len(groups)} groups total')
 
 phase2() {
     echo "╔══════════════════════════════════════════════════════════╗"
-    echo "║  Causinator 9000 — Policy Violation Demo (Phase 2)     ║"
+    echo "║  Causinator 9000: Policy Violation Demo (Phase 2)     ║"
     echo "╚══════════════════════════════════════════════════════════╝"
     echo ""
 
@@ -181,7 +181,7 @@ print(f'  {len(groups)} groups total')
     echo "═══ Phase 2 Complete ═══"
     echo "  Dashboard: open $ENGINE"
     echo ""
-    echo "  Look for the PolicyViolation alert card — it should trace"
+    echo "  Look for the PolicyViolation alert card, it should trace"
     echo "  to the 'StorHard-DenyPubAcc-V3' deny policy with high confidence."
     echo ""
     echo "  The causal path: DenyPolicy → StorageAccount → DeploymentFailed"

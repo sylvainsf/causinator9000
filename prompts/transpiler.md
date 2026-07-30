@@ -18,12 +18,12 @@ Column definitions:
 
 | Column (nodes) | Meaning |
 |---|---|
-| `id` | Unique slug — use the resource `name` from the ARM template |
+| `id` | Unique slug, use the resource `name` from the ARM template |
 | `label` | Human-readable display name |
 | `class` | Causinator 9000 resource class (see Class Taxonomy below) |
 | `region` | Azure region if determinable, else NULL |
 | `rack_id` | Rack identifier if present in tags/properties, else NULL |
-| `properties` | JSONB — preserve the original ARM `type`, any tags, and metadata |
+| `properties` | JSONB, preserve the original ARM `type`, any tags, and metadata |
 
 | Column (edges) | Meaning |
 |---|---|
@@ -31,7 +31,7 @@ Column definitions:
 | `source_id` | The upstream / causal-parent node |
 | `target_id` | The downstream / dependent node |
 | `edge_type` | One of: `containment`, `dependency`, `connection` |
-| `properties` | JSONB — why this edge exists (e.g., `{"source": "dependsOn"}`) |
+| `properties` | JSONB, why this edge exists (e.g., `{"source": "dependsOn"}`) |
 
 ## Parsing Rules
 
@@ -94,7 +94,7 @@ The ARM template only describes resources the user declared. Real failures
 often originate in **shared physical infrastructure that is invisible in the
 template**. You MUST reason about what latent (unobserved) causal parents
 exist and insert them into the graph. Without these nodes, the Bayesian
-solver cannot "explain away" correlated failures — it would treat 50
+solver cannot "explain away" correlated failures, it would treat 50
 simultaneous VM crashes as 50 independent events instead of recognizing a
 single shared-cause (P ≈ 0.001^50 vs. P ≈ 0.6).
 
@@ -109,7 +109,7 @@ a latent `ToRSwitch` node as their shared physical parent.
 - **Edges:** `containment` from the ToR node → each child compute resource.
 - **Reasoning:** A ToR switch failure causes simultaneous network loss for
   every resource on that rack. This is the canonical "explaining away"
-  pattern — observing 50 correlated failures makes the single-switch
+  pattern, observing 50 correlated failures makes the single-switch
   hypothesis overwhelmingly likely.
 
 ### Availability Zones
@@ -136,7 +136,7 @@ references or naming patterns), insert a latent `SubnetGateway` node.
 
 ### Implicit Platform Dependencies
 Radius environments often imply shared platform services that are not
-explicitly declared — DNS resolution, certificate authorities, identity
+explicitly declared, DNS resolution, certificate authorities, identity
 providers (AAD/Entra), container registries. If the environment
 configuration or resource properties reference these services (even
 indirectly), insert a latent node for each.

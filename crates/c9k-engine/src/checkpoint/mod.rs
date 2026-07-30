@@ -1,6 +1,6 @@
 // Copyright (c) 2026 Sylvain Niles. MIT License.
 
-//! Checkpoint Manager — Bincode serialization of solver state.
+//! Checkpoint Manager: Bincode serialization of solver state.
 //!
 //! Writes a checkpoint after each mutation batch is fully processed.
 //! On startup, the engine can optionally load a prior checkpoint.

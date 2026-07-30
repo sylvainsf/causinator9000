@@ -4,7 +4,7 @@
 
 Integrate Causinator 9000 into [Backstage](https://backstage.io) as a plugin
 so that development teams can see root-cause analysis for CI failures and
-infrastructure incidents directly in their service pages — without leaving
+infrastructure incidents directly in their service pages, without leaving
 the portal they already use.
 
 Backstage's existing GitHub Actions plugin shows *what* failed. C9K answers
@@ -86,10 +86,10 @@ If `c9k/node-id` is omitted, the plugin derives it from the repo slug.
 1. PR triggers CI. Tests fail.
 2. Developer opens the service page in Backstage.
 3. Diagnosis tab shows:
-   - `CodeChange (commit abc123)` — 91% confidence
-   - `FlakyTestRun` — 78% confidence (competing cause)
+   - `CodeChange (commit abc123)`: 91% confidence
+   - `FlakyTestRun`: 78% confidence (competing cause)
 4. If the flaky-test score is higher, the card says "Likely a pre-existing
-   flake — this test has failed on 3 other commits this week."
+   flake, this test has failed on 3 other commits this week."
 5. Developer can click through to the specific failing test and its history.
 
 **Acceptance criteria:**
@@ -105,8 +105,8 @@ If `c9k/node-id` is omitted, the plugin derives it from the repo slug.
 **Flow:**
 1. Engineer opens the Backstage "Incidents" page (or a sidebar widget).
 2. Alert groups from C9K are shown as cards:
-   - "Azure OIDC outage — 5 services affected — 89% confidence"
-   - "Runner image update — 3 services affected — 85% confidence"
+   - "Azure OIDC outage, 5 services affected, 89% confidence"
+   - "Runner image update, 3 services affected, 85% confidence"
 3. Each card expands to show the member jobs/services.
 4. Engineer clicks through to the C9K web UI for full graph visualization.
 
@@ -140,7 +140,7 @@ mechanism would be needed.
 ## Phase 2: GitHub Actions Plugin Enhancement
 
 **Goal:** Enrich the existing Backstage GitHub Actions plugin with C9K
-diagnosis data inline — so developers don't need to switch to the Diagnosis
+diagnosis data inline, so developers don't need to switch to the Diagnosis
 tab for routine CI failures.
 
 ### User Stories
@@ -157,7 +157,7 @@ tab for routine CI failures.
 3. Clicking the badge expands to show the full diagnosis.
 
 **Acceptance criteria:**
-- Badge is non-intrusive — doesn't clutter the run list.
+- Badge is non-intrusive, doesn't clutter the run list.
 - Only appears for runs that C9K has analyzed.
 
 #### US-6: Developer triggers on-demand analysis of a specific run
@@ -168,7 +168,7 @@ tab for routine CI failures.
 **Flow:**
 1. Developer clicks "Analyze with C9K" button on a failed run.
 2. Backstage backend calls C9K to ingest that run.
-3. Diagnosis appears after ingestion completes (typically 5–15 seconds).
+3. Diagnosis appears after ingestion completes (typically 5 to 15 seconds).
 
 **Acceptance criteria:**
 - Button is only shown for failed runs.
@@ -276,7 +276,7 @@ backstage-plugin/
 
 - **Backend proxies read-only endpoints only.** The backend plugin exposes
   `/health`, `/diagnosis`, `/diagnosis/all`, `/alert-groups`, and
-  `/neighborhood`. Write operations (ingestion, mutations) are not proxied —
+  `/neighborhood`. Write operations (ingestion, mutations) are not proxied,
   they happen via the MCP server or CLI, not through Backstage.
 
 - **Filtering by repo annotation.** The DiagnosisTab reads the entity's
@@ -285,7 +285,7 @@ backstage-plugin/
   This means the tab works even when the engine has data for multiple repos.
 
 - **No CausalPath component yet.** The plan included a visual causal chain
-  component. This is deferred — the RootCauseCard shows the causal path as
+  component. This is deferred: the RootCauseCard shows the causal path as
   text for now. A visual component with clickable nodes can be added later.
 
 - **`react-use` for async hooks.** The DiagnosisTab uses `useAsync` from

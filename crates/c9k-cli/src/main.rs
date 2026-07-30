@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Parser)]
 #[command(
     name = "c9k",
-    about = "Causinator 9000 CLI — Reactive Causal Inference Engine"
+    about = "Causinator 9000 CLI: Reactive Causal Inference Engine"
 )]
 struct Cli {
     /// Engine base URL
@@ -235,7 +235,7 @@ fn validate_cpts(classes: &[ClassHeuristic]) -> Vec<String> {
             };
             if lr < 1.0 {
                 warnings.push(format!(
-                    "{}.{} → {}: LR = {lr:.2} (< 1.0 means mutation PREVENTS signal — is this intended?)",
+                    "{}.{} → {}: LR = {lr:.2} (< 1.0 means mutation PREVENTS signal, is this intended?)",
                     class.class, cpt.mutation, cpt.signal
                 ));
             }
@@ -408,7 +408,7 @@ async fn main() -> Result<()> {
                             .collect();
                         let min = lrs.iter().cloned().fold(f64::INFINITY, f64::min);
                         let max = lrs.iter().cloned().fold(0.0_f64, f64::max);
-                        format!("LR {min:.0}×–{max:.0}×")
+                        format!("LR {min:.0}×-{max:.0}×")
                     };
                     println!(
                         "  {} ({} entries, {lr_range})",

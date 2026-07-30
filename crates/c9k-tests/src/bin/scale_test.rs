@@ -1,6 +1,6 @@
 // Copyright (c) 2026 Sylvain Niles. MIT License.
 
-//! Scale test — measures memory usage and inference latency as graph size increases.
+//! Scale test: measures memory usage and inference latency as graph size increases.
 //!
 //! Uses the Rust topology builder to generate realistic Azure infrastructure
 //! at increasing scales, loads via POST /api/graph/load, then measures:
@@ -145,7 +145,7 @@ async fn main() -> Result<()> {
         .timeout(std::time::Duration::from_secs(300))
         .build()?;
 
-    println!("Causinator 9000 — Scale & Memory Test");
+    println!("Causinator 9000: Scale & Memory Test");
     println!("═══════════════════════════════════════════════════════════════════════════════════");
     println!();
 

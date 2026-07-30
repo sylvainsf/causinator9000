@@ -102,7 +102,7 @@ def test_fanout():
     banner("Test 1 ─ Fan-out: 1 Upstream Mutation → 100 Downstream Diagnoses")
     info("A single SecretRotation on kv-eastus-01 (KeyVault).")
     info("Then diagnose 100 downstream pods that depend on it.")
-    info("KeyVault → Pod is a direct dependency edge — the solver must")
+    info("KeyVault → Pod is a direct dependency edge, the solver must")
     info("walk the ancestor chain and match the KV's CPT to the pod's signals.")
     print()
 
@@ -141,11 +141,11 @@ def test_fanout():
     # Verdict
     print()
     if p95 < 50:
-        good(f"p95 = {p95:.1f} ms — fan-out handled efficiently")
+        good(f"p95 = {p95:.1f} ms, fan-out handled efficiently")
     elif p95 < 100:
-        warn(f"p95 = {p95:.1f} ms — acceptable but shows ancestor-walk cost")
+        warn(f"p95 = {p95:.1f} ms, acceptable but shows ancestor-walk cost")
     else:
-        bad(f"p95 = {p95:.1f} ms — ancestor walk is expensive at scale")
+        bad(f"p95 = {p95:.1f} ms, ancestor walk is expensive at scale")
 
     return p95
 
@@ -216,11 +216,11 @@ def test_concurrent():
 
     print()
     if qps > 500:
-        good(f"{qps:.0f} qps — lock contention is negligible")
+        good(f"{qps:.0f} qps, lock contention is negligible")
     elif qps > 100:
-        warn(f"{qps:.0f} qps — some lock contention visible")
+        warn(f"{qps:.0f} qps, some lock contention visible")
     else:
-        bad(f"{qps:.0f} qps — heavy lock contention, consider RwLock or sharding")
+        bad(f"{qps:.0f} qps, heavy lock contention, consider RwLock or sharding")
 
     return p95
 
@@ -279,11 +279,11 @@ def test_large_window():
 
     print()
     if p95 < 50:
-        good(f"p95 = {p95:.1f} ms — 20k active events handled efficiently")
+        good(f"p95 = {p95:.1f} ms, 20k active events handled efficiently")
     elif p95 < 100:
-        warn(f"p95 = {p95:.1f} ms — active-set scanning starting to show")
+        warn(f"p95 = {p95:.1f} ms, active-set scanning starting to show")
     else:
-        bad(f"p95 = {p95:.1f} ms — active-set needs indexing (HashMap by node_id)")
+        bad(f"p95 = {p95:.1f} ms, active-set needs indexing (HashMap by node_id)")
 
     return p95
 
@@ -363,11 +363,11 @@ def test_flood():
 
     print()
     if p95 < 50:
-        good(f"p95 = {p95:.1f} ms — concurrent inject + diagnose works well")
+        good(f"p95 = {p95:.1f} ms, concurrent inject + diagnose works well")
     elif p95 < 100:
-        warn(f"p95 = {p95:.1f} ms — some contention between inject and diagnose")
+        warn(f"p95 = {p95:.1f} ms, some contention between inject and diagnose")
     else:
-        bad(f"p95 = {p95:.1f} ms — significant contention under sustained load")
+        bad(f"p95 = {p95:.1f} ms, significant contention under sustained load")
 
     return p95
 
@@ -395,7 +395,7 @@ def summary(results):
     if all_pass:
         good("All stress tests passed")
     else:
-        warn("Some tests exceeded targets — see details above")
+        warn("Some tests exceeded targets, see details above")
 
 # ── Main ──────────────────────────────────────────────────────────────────
 

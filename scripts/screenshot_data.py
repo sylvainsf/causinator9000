@@ -3,7 +3,7 @@
 Seed data for the alert-groups screenshot.
 
 Creates 2 simultaneous incidents that produce 8 HTTP_500 alerts, collapsing
-into 2 incident groups — demonstrating root-cause grouping vs signal-type grouping.
+into 2 incident groups, demonstrating root-cause grouping vs signal-type grouping.
 
 The key scenario: both incidents produce the SAME signal (HTTP_500) within a
 5-minute window on pods in the same region. Naive monitoring groups them as one
@@ -28,8 +28,8 @@ Run this, then take the screenshot:
 Screenshot to take:
   → docs/screenshots/alert-groups.png
   Shows 2 collapsed incident groups in the left panel, BOTH showing HTTP_500:
-    [4 pods] ds-centralus-app015 (BlockDeviceReadOnly) — all HTTP_500
-    [4 pods] aks-centralus-app016 (Deployment)         — all HTTP_500
+    [4 pods] ds-centralus-app015 (BlockDeviceReadOnly), all HTTP_500
+    [4 pods] aks-centralus-app016 (Deployment)        , all HTTP_500
 
   This highlights: "8 alerts, same signal type, but 2 independent incidents."
 """
@@ -98,14 +98,14 @@ def main():
         print("  Naive grouping: 1 big incident (all 500s).")
         print("  Causal grouping: 2 separate incidents (disk RO vs bad deploy).")
     elif len(groups) == 1:
-        print("\n✗ Only 1 group — the engine merged them. Check CPTs or edges.")
+        print("\n✗ Only 1 group, the engine merged them. Check CPTs or edges.")
     else:
         print(f"\n? Expected 2 groups, got {len(groups)}. Check topology.")
 
     print(f"""
 Screenshot instructions:
   1. Open http://localhost:8080/
-  2. You should see 2 incident groups in the left panel — both HTTP_500
+  2. You should see 2 incident groups in the left panel, both HTTP_500
   3. Note they have different root causes despite identical signal types
   4. Take screenshot → docs/screenshots/alert-groups.png
 """)

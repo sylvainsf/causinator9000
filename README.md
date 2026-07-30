@@ -26,6 +26,7 @@ Built in Rust. Sub-200µs inference at p95 on a 225,000-node graph (roughly five
 ## Table of Contents
 
 - [Using the GitHub Action](#using-the-github-action)
+- [In the Security Sector](#in-the-security-sector)
 - [How It Works](#how-it-works)
 - [Architecture](#architecture)
 - [Quick Start](#quick-start)
@@ -134,12 +135,24 @@ Because CPTs are just YAML, this knowledge is **reviewable, versioned, and share
 Uses **likelihood-ratio (LR) Bayesian inference**: for each (mutation, signal) pair, computes $LR = P(signal \mid mutation) / P(signal \mid no\\ mutation)$ from the resource's **CPT** (Conditional Probability Table), then updates a causal prior via Bayes' theorem. An `ImageUpdate → CrashLoopBackOff` CPT of [0.75, 0.03] gives LR = 25× → 96.2% posterior confidence.
 
 Key features:
-- **Per-class temporal decay** — recent mutations score higher; each resource class has its own half-life (Container: 15 min, DNS: 360 min, DenyPolicy: 30 days)
-- **Upstream propagation** — traces mutations through the DAG with 8% hop attenuation
-- **Competing causes** — ranks multiple candidate mutations; **latent nodes** (unobserved shared dependencies like GHCR, Azure OIDC, flaky test infrastructure) compete with code changes
-- **Explaining away** — correlated failures on shared infrastructure converge to a single root cause
+- **Per-class temporal decay**: recent mutations score higher; each resource class has its own half-life (Container: 15 min, DNS: 360 min, DenyPolicy: 30 days)
+- **Upstream propagation**: traces mutations through the DAG with 8% hop attenuation
+- **Competing causes**: ranks multiple candidate mutations; **latent nodes** (unobserved shared dependencies like GHCR, Azure OIDC, flaky test infrastructure) compete with code changes
+- **Explaining away**: correlated failures on shared infrastructure converge to a single root cause
 
 → [Full inference documentation](docs/inference.md)
+
+## In the Security Sector
+
+Security incidents are change-driven: a policy edit, a rotated-but-not-propagated secret, a poisoned image, an opened port. That is exactly the question the engine answers, "which recent change caused this symptom?", so pointing it at security telemetry (audit logs, IAM events, cloud-config changes, registry pushes) instead of infrastructure telemetry needs no new machinery. Security events are just more mutations and signals flowing over the same dependency graph, scored by the same solver. Three of its properties matter disproportionately here.
+
+**Cutting through alert storms.** A single compromised service account or one weakened role can trip hundreds of downstream detections. A SIEM correlates by *signal* ("spike in `AccessDenied`") and files one giant, ambiguous incident, or hundreds of tiny ones. The engine instead groups by *root cause*: it walks each of those 300 `AccessDenied` events upstream and finds they all trace to one `PolicyChange` on one role, so the SOC gets **one incident with one owner** instead of 300 tickets. This is the same explaining-away and root-cause grouping shown in the [alert-groups demo](#alert-groups), pointed at security signals.
+
+**Blast-radius mapping on compromise.** When a secret leaks or a credential is exposed, the urgent question is "what did it touch?" Model the compromised resource (a KeyVault, a managed identity, a registry image) as the changed node, and every downstream service that consumed it is already an edge away in the dependency graph. The solver traces each affected service back to that node with an explicit causal path, turning "which of our systems are exposed?" into a ranked list with a defensible trail, not a week of manual audit. It is the [KeyVault-to-pods scenario](#dashboard-seeding) the engine already demonstrates, reused as an exposure map.
+
+**Supply-chain and shared-dependency attacks.** The engine already models unobserved shared dependencies (a container registry, an OIDC provider, CI runner infrastructure) as **latent nodes** that compete with code changes as explanations. A poisoned base image, a compromised runner, or a malicious transitive dependency therefore surfaces as a *single* latent root cause explaining alerts across many otherwise-unrelated services, collapsing what would look like dozens of independent investigations into one.
+
+Across all three, the same design choices pay off: the solver's low false-positive stance (it reports confidence 0 rather than guessing) fights alert fatigue, and every conclusion comes with an auditable causal path suitable for an incident write-up or compliance evidence. The engine complements a SIEM or EDR rather than replacing it: it is the causal-reasoning layer that turns the detections you already collect into ranked, explained root causes.
 
 ## Using the GitHub Action
 
@@ -279,9 +292,9 @@ based on the GitHub event type and branch:
 | `release` | `schedule`/`dispatch` on non-default branch | Routed to `latent://release-validation/{branch}` instead of blaming a commit |
 
 **Options:**
-- `--exclude-workflow "Name"` — skip specific workflows (repeatable)
-- `--hours N` — lookback window
-- `--fast` — classify from step names only (skip log downloads)
+- `--exclude-workflow "Name"`: skip specific workflows (repeatable)
+- `--hours N`: lookback window
+- `--fast`: classify from step names only (skip log downloads)
 
 **Known limitations and future work:**
 
@@ -289,15 +302,15 @@ The current source adapter is a monolithic Python script that handles fetching,
 classification, graph construction, and engine communication. This should be
 refactored into a modular pipeline:
 
-1. **Fetcher module** — downloads runs and logs from the GitHub API. Should be
+1. **Fetcher module**: downloads runs and logs from the GitHub API. Should be
    swappable for other CI systems (GitLab CI, Jenkins, CircleCI, Azure DevOps).
-2. **Classifier module** — maps error logs to signal types. Currently uses
+2. **Classifier module**: maps error logs to signal types. Currently uses
    regex patterns; should support pluggable classifiers (LLM-based, ML-based,
    or project-specific rule files).
-3. **Graph builder module** — constructs nodes, edges, mutations, and signals.
+3. **Graph builder module**: constructs nodes, edges, mutations, and signals.
    The causal domain logic, commit ancestry, and flaky rate computation belong
    here.
-4. **Engine client module** — sends the constructed graph to the C9K engine.
+4. **Engine client module**: sends the constructed graph to the C9K engine.
    Currently uses urllib; should be a shared client used by all source adapters.
 
 This modular approach would allow:
@@ -309,7 +322,7 @@ This modular approach would allow:
 
 ## CPTs and Inference
 
-**Conditional Probability Tables (CPTs)** encode causal relationships between mutations and signals. Each CPT entry says: "if this mutation happened, how likely is this signal? And how likely is the signal without the mutation?" The ratio of these two values is the **likelihood ratio (LR)** — the core number driving inference.
+**Conditional Probability Tables (CPTs)** encode causal relationships between mutations and signals. Each CPT entry says: "if this mutation happened, how likely is this signal? And how likely is the signal without the mutation?" The ratio of these two values is the **likelihood ratio (LR)**, the core number driving inference.
 
 CPTs are organized as modular YAML layers in `config/heuristics/`:
 
@@ -338,10 +351,10 @@ Permanent alert suppression via `config/alert-rules.yaml`:
 rules:
   - signal_type: ChecklistMissing
     action: suppress
-    reason: "Shown in PR UI — not an infrastructure concern"
+    reason: "Shown in PR UI, not an infrastructure concern"
   - max_confidence: 0.05
     action: low
-    reason: "Below 5% — background noise"
+    reason: "Below 5%: background noise"
 ```
 
 Match on signal type, resource class, node ID pattern (regex), confidence range. UI dismiss button for runtime suppression.
@@ -362,7 +375,7 @@ cd causinator9000
 make install                       # installs to /usr/local/bin
 ```
 
-The binary includes all standard heuristics compiled in — no config files
+The binary includes all standard heuristics compiled in, no config files
 needed. Just run `c9k-engine` from any directory.
 
 ### Run the engine
@@ -409,7 +422,7 @@ If you're working on C9K itself or want the full data ingestion pipeline:
 # Clone and configure
 git clone https://github.com/sylvainsf/causinator9000.git
 cd causinator9000
-make env-init                      # create .env from template — edit with your values
+make env-init                      # create .env from template, edit with your values
 make build-release                 # build optimized binary
 
 # Start the engine
@@ -477,21 +490,21 @@ cargo run --release --bin c9k-scale-test                         # 225k nodes, p
 
 ## Web Dashboard
 
-The engine serves a zero-build web dashboard at **http://localhost:8080/** when running. Built with [Cytoscape.js](https://js.cytoscape.org/) — a single HTML file, no npm, no build step.
+The engine serves a zero-build web dashboard at **http://localhost:8080/** when running. Built with [Cytoscape.js](https://js.cytoscape.org/): a single HTML file, no npm, no build step.
 
 ### Alert Tree View
 
-The default view shows only the nodes involved in active alerts, laid out as discrete causal trees using the `dagre` hierarchical layout. Each cluster represents one alert and its causal context — the affected node, its upstream ancestors, and the root cause path.
+The default view shows only the nodes involved in active alerts, laid out as discrete causal trees using the `dagre` hierarchical layout. Each cluster represents one alert and its causal context: the affected node, its upstream ancestors, and the root cause path.
 
 ![Alert tree view showing causal clusters](docs/screenshots/alert-trees.png)
 
 *Alert trees for 4 active incidents: a KeyVault secret rotation affecting 3 pods (1-hop), a CertAuthority rotation propagating through Gateway → AKS → Pod (3-hop), an IdentityProvider policy change (2-hop), and a direct ImageUpdate crash.*
 
 **Node colors:**
-- 🔴 **Red** — Alert: node has both an active signal and a matching mutation
-- 🟠 **Orange** — Signal: node has a degradation signal but no mutation on it directly
-- 🟡 **Yellow** — Mutation: node has a recent mutation but no signal (potential cause)
-- ⚪ **Gray** — Normal: no active evidence
+- 🔴 **Red** (Alert): node has both an active signal and a matching mutation
+- 🟠 **Orange** (Signal): node has a degradation signal but no mutation on it directly
+- 🟡 **Yellow** (Mutation): node has a recent mutation but no signal (potential cause)
+- ⚪ **Gray** (Normal): no active evidence
 
 ### Alert Cards
 
@@ -510,10 +523,10 @@ The left panel lists all active alerts as cards, sorted by confidence (default) 
 Clicking a node or alert card opens the detail panel on the right, showing:
 
 - **Confidence score** with percentage
-- **Root cause** — the mutation identified as the most likely cause
-- **Causal path** — clickable chain from root cause to affected node (e.g., `ca-westeurope → appgw-westeurope-app010 → aks-westeurope-app010 → pod-westeurope-app010-01`)
-- **Competing causes** — ranked alternatives with individual confidence bars
-- **Show Neighborhood** button — switches to a detailed local subgraph view
+- **Root cause**: the mutation identified as the most likely cause
+- **Causal path**: clickable chain from root cause to affected node (e.g., `ca-westeurope → appgw-westeurope-app010 → aks-westeurope-app010 → pod-westeurope-app010-01`)
+- **Competing causes**: ranked alternatives with individual confidence bars
+- **Show Neighborhood** button: switches to a detailed local subgraph view
 
 ![Node detail panel](docs/screenshots/node-detail.png)
 
@@ -521,7 +534,7 @@ Clicking a node or alert card opens the detail panel on the right, showing:
 
 ### Neighborhood View
 
-Click "Neighborhood" in the top bar or the "Show Neighborhood" button in the detail panel to see a 2-hop subgraph around the selected node, automatically laid out with the `dagre` algorithm. This view shows the full dependency context — upstream causes and downstream effects.
+Click "Neighborhood" in the top bar or the "Show Neighborhood" button in the detail panel to see a 2-hop subgraph around the selected node, automatically laid out with the `dagre` algorithm. This view shows the full dependency context: upstream causes and downstream effects.
 
 ![Neighborhood view](docs/screenshots/neighborhood.png)
 
@@ -529,18 +542,18 @@ Click "Neighborhood" in the top bar or the "Show Neighborhood" button in the det
 
 ### Alert Groups
 
-When multiple alerts share a common root cause, the dashboard collapses them into **incident groups** — one per root cause — with a count badge and expandable member list.
+When multiple alerts share a common root cause, the dashboard collapses them into **incident groups** (one per root cause) with a count badge and expandable member list.
 
 The critical insight: **grouping is by root cause, not by signal type.** Consider two services on the same AKS cluster, both returning `HTTP_500` within a 5-minute window. Traditional monitoring sees "elevated 500s" and creates one big incident. The engine looks upstream and identifies two completely independent root causes:
 
-- **Group A** (4 pods): `ds-centralus-app015` — the managed disk backing app015's SQL database went read-only (`BlockDeviceReadOnly`). All pods querying that store start 500ing. → Storage team.
-- **Group B** (4 pods): `aks-centralus-app016` — a deployment pushed a new container image with a bug (`Deployment`). All pods restart with the bad code and 500. → Dev team rollback.
+- **Group A** (4 pods): `ds-centralus-app015`, the managed disk backing app015's SQL database went read-only (`BlockDeviceReadOnly`). All pods querying that store start 500ing. → Storage team.
+- **Group B** (4 pods): `aks-centralus-app016`, a deployment pushed a new container image with a bug (`Deployment`). All pods restart with the bad code and 500. → Dev team rollback.
 
 Same symptom. Different causes. Different response teams. Naive signal-type grouping merges them into one incident, hiding the fact that two independent failures need two independent responses.
 
 ![Alert groups collapsed by shared root cause](docs/screenshots/alert-groups.png)
 
-*8 HTTP_500 alerts from 2 simultaneous incidents, correctly separated into 2 groups. Both groups show the same signal type — the engine distinguishes them by tracing each pod's 500 upstream through the causal graph to find the actual root cause.*
+*8 HTTP_500 alerts from 2 simultaneous incidents, correctly separated into 2 groups. Both groups show the same signal type, but the engine distinguishes them by tracing each pod's 500 upstream through the causal graph to find the actual root cause.*
 
 To seed the alert groups demo:
 
@@ -550,7 +563,7 @@ python3 scripts/screenshot_data.py
 
 ### Temporal Window Control
 
-The temporal window (default: 24 hours) controls how far back the solver looks for candidate mutations. Adjust it in real time using the input in the top bar — type a value in minutes and click "Set." The change takes effect immediately for all subsequent diagnoses.
+The temporal window (default: 24 hours) controls how far back the solver looks for candidate mutations. Adjust it in real time using the input in the top bar: type a value in minutes and click "Set." The change takes effect immediately for all subsequent diagnoses.
 
 ### Dashboard Seeding
 
@@ -698,7 +711,7 @@ Diagnosis latency stays at ~0.2 ms (200 microseconds) from 200 nodes to 225,000 
 # All 4 stress tests
 cargo run --release --bin c9k-load-test
 
-# Scale test — progressive topology scaling with memory measurement
+# Scale test: progressive topology scaling with memory measurement
 cargo run --release --bin c9k-scale-test
 
 # Multi-region scale test (1-5 Azure production regions, up to 225k nodes)
@@ -711,11 +724,11 @@ cargo run --release --bin c9k-scale-test -- --preset multi-region
 | Concurrent (64 threads × 1000 queries) | p95 = 1.7 ms, **44,168 qps** |
 | Large window (20k active events) | p95 = 0.4 ms |
 | Sustained flood (30s inject + diagnose) | p95 = 1.5 ms, 3,203 diag/s |
-| Memory scaling | ~2.7 KB/node — 225k nodes fits in 611 MB |
+| Memory scaling | ~2.7 KB/node, 225k nodes fits in 611 MB |
 
 ### Topology Builder
 
-Generate realistic Azure infrastructure topologies at any scale — pure Rust, no SQL, no files:
+Generate realistic Azure infrastructure topologies at any scale: pure Rust, no SQL, no files:
 
 ```rust
 use c9k_tests::topology::TopologyBuilder;

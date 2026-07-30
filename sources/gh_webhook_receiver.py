@@ -124,7 +124,7 @@ def post_engine(path: str, payload: dict) -> dict | None:
 # ── Event handlers ──────────────────────────────────────────────────────
 
 def handle_workflow_run(payload: dict) -> None:
-    """Handle workflow_run event — the main event for CI failures."""
+    """Handle workflow_run event, the main event for CI failures."""
     action = payload.get("action", "")
     run = payload.get("workflow_run", {})
     repo_full = payload.get("repository", {}).get("full_name", "")
@@ -230,7 +230,7 @@ def handle_workflow_run(payload: dict) -> None:
 
 
 def handle_workflow_job(payload: dict) -> None:
-    """Handle workflow_job event — gives us individual job + step details."""
+    """Handle workflow_job event, gives us individual job + step details."""
     action = payload.get("action", "")
     job = payload.get("workflow_job", {})
 

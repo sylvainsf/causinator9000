@@ -11,7 +11,7 @@ interface RouterOptions {
 export function createRouter({ logger, baseUrl }: RouterOptions) {
   const router = Router();
 
-  // Proxy helper — forwards GET requests to the C9K engine.
+  // Proxy helper, forwards GET requests to the C9K engine.
   async function proxy(
     enginePath: string,
     req: Request,

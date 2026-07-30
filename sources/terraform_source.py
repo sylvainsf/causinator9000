@@ -181,7 +181,7 @@ def parse_tf_state(state: dict, type_filter: list[str] | None = None) -> dict:
     """
     version = state.get("version", 0)
     if version < 4:
-        print(f"WARNING: Terraform state version {version} — expected v4. May not parse correctly.",
+        print(f"WARNING: Terraform state version {version}, expected v4. May not parse correctly.",
               file=sys.stderr)
 
     all_nodes = []
@@ -205,7 +205,7 @@ def parse_tf_state(state: dict, type_filter: list[str] | None = None) -> dict:
 
         cls = AZURERM_TYPE_MAP.get(tf_type, tf_type.split("_", 1)[-1].title() if "_" in tf_type else tf_type)
 
-        # Skip association resources — process them as edges later
+        # Skip association resources, process them as edges later
         if cls == "_association":
             associations.append(resource)
             continue

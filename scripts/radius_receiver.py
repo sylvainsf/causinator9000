@@ -3,7 +3,7 @@
 Causinator 9000 Radius Webhook Receiver
 
 Receives Radius deployment webhooks and writes mutation rows to PostgreSQL.
-This is a bridge script — not part of the engine.
+This is a bridge script, not part of the engine.
 
 Usage:
   pip install fastapi uvicorn psycopg[binary]

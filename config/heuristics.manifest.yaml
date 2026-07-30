@@ -8,7 +8,7 @@
 #   - Individual CPT entries (keyed by mutation + signal) are replaced if
 #     the later layer redefines them; otherwise new entries are appended.
 #
-# This enables "lean patching" — a private layer only needs to specify
+# This enables "lean patching", a private layer only needs to specify
 # the exact overrides it wants (e.g. a single weight change), and all
 # other values are inherited from earlier layers.
 #

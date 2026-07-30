@@ -55,7 +55,7 @@ The **likelihood ratio** is `0.75 / 0.03 = 25×`. Higher LR = stronger causal li
     - [0.20, 0.999]
 ```
 
-**Moderate (LR 5–20×):**
+**Moderate (LR 5 to 20×):**
 ```yaml
 - mutation: ConfigChange
   signal: error_rate
@@ -64,7 +64,7 @@ The **likelihood ratio** is `0.75 / 0.03 = 25×`. Higher LR = stronger causal li
     - [0.35, 0.96]
 ```
 
-**Weak (LR 2–5×):**
+**Weak (LR 2 to 5×):**
 ```yaml
 - mutation: ScaleEvent
   signal: memory_rss
@@ -75,7 +75,7 @@ The **likelihood ratio** is `0.75 / 0.03 = 25×`. Higher LR = stronger causal li
 
 **Rules of thumb:**
 - Each row sums to 1.0
-- `P(signal|mutation)` ≥ `P(signal|no mutation)` — otherwise the mutation *prevents* the signal
+- `P(signal|mutation)` ≥ `P(signal|no mutation)`, otherwise the mutation *prevents* the signal
 - LR > 100× = near-certain (firmware crash), LR < 3× = barely useful
 - Start at LR ≈ 10× and adjust from observed behavior
 
@@ -102,7 +102,7 @@ layers:
     optional: true
 ```
 
-Later layers override earlier ones with **lean patching** — only specify the fields you want to change.
+Later layers override earlier ones with **lean patching**: only specify the fields you want to change.
 
 ## Included Classes
 

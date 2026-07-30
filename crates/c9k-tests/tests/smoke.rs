@@ -1,6 +1,6 @@
 // Copyright (c) 2026 Sylvain Niles. MIT License.
 
-//! Smoke Tests — Rust port of scripts/smoke_test.py
+//! Smoke Tests: Rust port of scripts/smoke_test.py
 //!
 //! Quick validation that the engine is running, accepts events, and
 //! produces diagnoses. These tests require a running engine instance.
@@ -21,7 +21,7 @@ async fn smoke_health_check() {
 
     assert_eq!(health.status, "ok");
     println!(
-        "Engine: v{} — {} nodes, {} edges",
+        "Engine: v{}, {} nodes, {} edges",
         health.version, health.nodes, health.edges
     );
     println!(

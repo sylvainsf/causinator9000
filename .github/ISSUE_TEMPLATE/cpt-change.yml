@@ -53,10 +53,10 @@ body:
     attributes:
       label: Type of misdiagnosis
       options:
-        - "False positive — C9K blamed a commit that was innocent"
-        - "False negative — C9K missed the real root cause"
-        - "Wrong confidence — right cause but confidence too high/low"
-        - "Wrong grouping — failures grouped incorrectly"
+        - "False positive: C9K blamed a commit that was innocent"
+        - "False negative: C9K missed the real root cause"
+        - "Wrong confidence: right cause but confidence too high/low"
+        - "Wrong grouping: failures grouped incorrectly"
         - "Other"
     validations:
       required: true

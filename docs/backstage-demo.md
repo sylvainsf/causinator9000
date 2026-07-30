@@ -210,9 +210,9 @@ This starts both the frontend (http://localhost:3000) and backend
 3. Click on the service to open its entity page.
 4. Click the **Diagnosis** tab.
 5. You should see:
-   - **Correlated Failure Groups** — failures sharing a common root cause
+   - **Correlated Failure Groups**: failures sharing a common root cause
      grouped into cards with member counts.
-   - **Root Cause Analysis** — individual diagnoses sorted by confidence,
+   - **Root Cause Analysis**: individual diagnoses sorted by confidence,
      each showing the root cause type, confidence bar, causal path, and
      competing causes.
 
@@ -220,7 +220,7 @@ This starts both the frontend (http://localhost:3000) and backend
 
 1. Find a diagnosis where a `CodeChange` and `FlakyTestRun` are competing
    causes.
-2. Point out the confidence scores — if `FlakyTestRun` is close to or
+2. Point out the confidence scores, if `FlakyTestRun` is close to or
    higher than `CodeChange`, the failure is likely a pre-existing flake.
 3. Show the causal path: `commit → job` for code changes vs
    `latent://flaky-tests → job` for flakes.
@@ -240,7 +240,7 @@ This starts both the frontend (http://localhost:3000) and backend
    python3 sources/gh_actions_source.py \
      --repo <your-org>/todo-app --hours 1 --fast
    ```
-3. Refresh the Diagnosis tab — new failures appear with root-cause
+3. Refresh the Diagnosis tab, new failures appear with root-cause
    analysis already computed.
 
 ## Troubleshooting

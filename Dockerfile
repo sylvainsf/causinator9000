@@ -1,4 +1,4 @@
-# Causinator 9000 — Multi-stage build
+# Causinator 9000: Multi-stage build
 # Stage 1: Build the Rust engine binary (Debian for reliable cross-compilation)
 # Stage 2: Slim Alpine runtime with engine + Python sources + MCP server
 

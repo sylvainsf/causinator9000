@@ -4,7 +4,7 @@ Azure Resource Graph → Causinator 9000 GraphPayload source adapter.
 
 Extracts infrastructure topology from an Azure subscription (or management group)
 using Azure Resource Graph queries via the `az` CLI. Requires a logged-in
-`az login` session — no SDK dependencies, no service principals needed for dev.
+`az login` session, no SDK dependencies, no service principals needed for dev.
 
 Usage:
   # All resources in current subscription
@@ -562,7 +562,7 @@ def build_graph(subscriptions: list[str] | None = None,
 def main():
     parser = argparse.ArgumentParser(
         description="Extract Azure infrastructure topology into Causinator 9000 GraphPayload format.",
-        epilog="Requires `az login` — uses your current CLI session credentials.",
+        epilog="Requires `az login`, uses your current CLI session credentials.",
     )
     parser.add_argument(
         "--subscription", "-s", action="append", dest="subscriptions",
@@ -570,7 +570,7 @@ def main():
     )
     parser.add_argument(
         "--management-group", "-m",
-        help="Management group ID — queries all subscriptions in the hierarchy.",
+        help="Management group ID, queries all subscriptions in the hierarchy.",
     )
     parser.add_argument(
         "--resource-group", "-g", action="append", dest="resource_groups",

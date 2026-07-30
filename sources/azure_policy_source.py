@@ -11,7 +11,7 @@ These are highly specific, highly weighted latent causes: when a deployment
 fails because a deny policy blocked it, the engine traces it directly to
 the policy (very high confidence) rather than blaming a code change.
 
-Uses `az` CLI — requires `az login`.
+Uses `az` CLI, requires `az login`.
 
 Usage:
   python3 sources/azure_policy_source.py

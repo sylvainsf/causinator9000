@@ -37,7 +37,7 @@ def classify_actual(errors):
         return 'lint'
     if re.search(r'build.*fail|compile|npm ERR', text, re.I):
         return 'build_failure'
-    # Runner provisioning — before azure_auth to avoid false positives
+    # Runner provisioning, before azure_auth to avoid false positives
     if re.search(r'Current runner version.*Runner Image Provisioner|Hosted Compute Agent', text, re.I):
         if not re.search(r'--- FAIL:|FAIL\s+Test|Error:|error:', text, re.I):
             return 'runner_failure'

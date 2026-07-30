@@ -1,4 +1,4 @@
-# Causinator 9000 — Public repos for CPT calibration
+# Causinator 9000: Public repos for CPT calibration
 #
 # Active open-source repos with GitHub Actions CI.
 # Used by scripts/calibrate_cpts.py to learn empirical CPT values.

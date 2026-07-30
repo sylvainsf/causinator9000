@@ -1,6 +1,6 @@
 // Copyright (c) 2026 Sylvain Niles. MIT License.
 
-//! Drasi Integration — Embedded continuous query engine via drasi-lib
+//! Drasi Integration: Embedded continuous query engine via drasi-lib
 //!
 //! Sets up:
 //! - PostgreSQL CDC source (watches mutations, signals tables)
@@ -13,7 +13,7 @@ use anyhow::{Context, Result};
 use drasi_index_rocksdb::RocksDbIndexProvider;
 use drasi_lib::{DrasiLib, Query};
 use drasi_reaction_application::ApplicationReaction;
-// FIX 1: We only need PostgresSourceBuilder — it has a .build() that returns
+// FIX 1: We only need PostgresSourceBuilder, it has a .build() that returns
 // the source directly. No need to import PostgresReplicationSource separately.
 use drasi_source_postgres::{PostgresSourceBuilder, TableKeyConfig};
 // FIX 3: Import the result types so we can pattern-match on CQ output.
@@ -85,12 +85,12 @@ pub async fn init_drasi(
     solver: SolverHandle,
 ) -> Result<(DrasiLib, tokio::task::JoinHandle<()>)> {
     // FIX 1 & 2: PostgresSourceBuilder::new() requires an `id` argument.
-    // In Rust, all function parameters are mandatory — there are no optional
+    // In Rust, all function parameters are mandatory, there are no optional
     // or default args like Python/TypeScript. The id names this source within
     // DrasiLib so queries can reference it via .from_source("pg-source").
     //
     // FIX 2: The builder's .build() returns Result<PostgresReplicationSource>
-    // directly — it constructs the source in one step. Our original code was
+    // directly, it constructs the source in one step. Our original code was
     // incorrectly calling build() then passing the result to a second
     // constructor. The builder IS the constructor.
     let pg_source = PostgresSourceBuilder::new("pg-source")
@@ -102,7 +102,7 @@ pub async fn init_drasi(
         .with_tables(vec!["mutations".to_string(), "signals".to_string()])
         .with_slot_name(&config.slot_name)
         .with_publication_name(&config.publication_name)
-        // Tell Drasi which column is the PK for each table — without this,
+        // Tell Drasi which column is the PK for each table, without this,
         // the PG WAL decoder can't derive element IDs from replication events.
         .with_table_keys(vec![
             TableKeyConfig {
@@ -155,7 +155,7 @@ pub async fn init_drasi(
     // 5. Start all components
     drasi.start().await.context("starting DrasiLib")?;
 
-    tracing::info!("Drasi runtime started — watching PostgreSQL for mutations and signals");
+    tracing::info!("Drasi runtime started, watching PostgreSQL for mutations and signals");
 
     // 6. Spawn reaction consumer task
     let consumer_handle = tokio::spawn(consume_results(handle, solver));
@@ -180,16 +180,16 @@ fn json_f64(data: &serde_json::Value, key: &str) -> Option<f64> {
 /// Background task: reads CQ results from the ApplicationReaction and
 /// feeds them into the Bayesian solver.
 ///
-/// FIX 3: QueryResult is NOT a serde_json::Value — it's a struct with fields:
+/// FIX 3: QueryResult is NOT a serde_json::Value, it's a struct with fields:
 ///   - query_id: String (which CQ produced this)
 ///   - results: Vec<ResultDiff> (the actual changes)
 ///   - timestamp, metadata, profiling
 ///
 /// ResultDiff is an enum:
-///   - Add { data: serde_json::Value }    — new row matched the CQ
-///   - Delete { data: serde_json::Value }  — row no longer matches
-///   - Update { data, before, after }     — row changed but still matches
-///   - Noop                               — no change
+///   - Add { data: serde_json::Value }: new row matched the CQ
+///   - Delete { data: serde_json::Value }: row no longer matches
+///   - Update { data, before, after }: row changed but still matches
+///   - Noop: no change
 ///
 /// We pattern-match on query_id to know whether it's a mutation or signal,
 /// then extract fields from the `data` Value inside each ResultDiff::Add.
@@ -271,5 +271,5 @@ async fn consume_results(
         }
     }
 
-    tracing::warn!("Drasi reaction consumer ended — subscription closed");
+    tracing::warn!("Drasi reaction consumer ended, subscription closed");
 }

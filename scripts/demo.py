@@ -92,14 +92,14 @@ def show(d, ms):
 # ── Preflight ─────────────────────────────────────────────────────────────
 
 def preflight():
-    banner("Causinator 9000 — Reactive Causal Inference Engine")
+    banner("Causinator 9000: Reactive Causal Inference Engine")
     head("Preflight")
     h = health()
     if not h:
         bad(f"Engine not responding at {ENGINE}")
         print(f"\n    Start: {B}RUST_LOG=info ./target/release/c9k-engine{R}\n")
         sys.exit(1)
-    good(f"Engine v{h['version']} — {h['nodes']:,} nodes, {h['edges']:,} edges")
+    good(f"Engine v{h['version']}, {h['nodes']:,} nodes, {h['edges']:,} edges")
     print()
 
 # ── Scenario 1 ────────────────────────────────────────────────────────────
@@ -133,9 +133,9 @@ def scenario_blue_green_memory_leak():
 
     print()
     if d["confidence"] > 0.80:
-        good(f"{B}{d['confidence']*100:.1f}%{R} confidence — deploy correctly identified as cause of memory leak")
+        good(f"{B}{d['confidence']*100:.1f}%{R} confidence, deploy correctly identified as cause of memory leak")
     elif d["confidence"] > 0.50:
-        good(f"{d['confidence']*100:.1f}% confidence — moderate signal, deployment likely the cause")
+        good(f"{d['confidence']*100:.1f}% confidence, moderate signal, deployment likely the cause")
     else:
         warn(f"Confidence only {d['confidence']*100:.1f}%")
     pause()
@@ -169,7 +169,7 @@ def scenario_firmware_fleet_update():
 
     print()
     if d["confidence"] > 0.95:
-        good(f"{B}{d['confidence']*100:.1f}%{R} confidence — firmware update is near-certain cause")
+        good(f"{B}{d['confidence']*100:.1f}%{R} confidence, firmware update is near-certain cause")
     else:
         warn(f"Confidence {d['confidence']*100:.1f}%")
     pause()
@@ -179,7 +179,7 @@ def scenario_firmware_fleet_update():
 def scenario_true_negative():
     banner("Scenario 3 ─ True Negative: Noise Without Any Mutations")
     info("Random AccessDenied_403 errors appear on ctr-eastus-05-02-01.")
-    info("No deployments, no config changes — nothing in the mutation table.")
+    info("No deployments, no config changes, nothing in the mutation table.")
     info("Expected: solver reports 0% confidence, no root cause.")
     pause()
     clear()
@@ -197,7 +197,7 @@ def scenario_true_negative():
 
     print()
     if d["confidence"] < 0.01 and not d.get("root_cause"):
-        good("No root cause — noise correctly dismissed")
+        good("No root cause, noise correctly dismissed")
     else:
         warn(f"Unexpected: confidence={d['confidence']*100:.1f}%")
     pause()
@@ -275,7 +275,7 @@ def scenario_explaining_away():
     rc = d.get("root_cause") or ""
     cc = d.get("competing_causes", [])
     if "ImageUpdate" in rc and len(cc) > 1:
-        good(f"ImageUpdate identified as root cause — SecretRotation explained away")
+        good(f"ImageUpdate identified as root cause, SecretRotation explained away")
     elif "ImageUpdate" in rc:
         good(f"ImageUpdate correctly identified")
     else:
@@ -316,9 +316,9 @@ def perf():
 
     print()
     if p95 < 100:
-        good(f"p95 = {p95:.1f} ms < 100 ms — {BGG}{WH}{B} PASS {R}")
+        good(f"p95 = {p95:.1f} ms < 100 ms, {BGG}{WH}{B} PASS {R}")
     else:
-        bad(f"p95 = {p95:.1f} ms ≥ 100 ms — {BGR}{WH}{B} FAIL {R}")
+        bad(f"p95 = {p95:.1f} ms ≥ 100 ms, {BGR}{WH}{B} FAIL {R}")
     pause()
 
 # ── Scenario 6: SSL Rotation Cascade ─────────────────────────────────────
@@ -357,7 +357,7 @@ def scenario_ssl_cascade():
     rc = d.get("root_cause") or ""
     cc = d.get("competing_causes", [])
     if len(cc) >= 2:
-        good(f"Two competing causes scored — both cert rotation and config change considered")
+        good(f"Two competing causes scored, both cert rotation and config change considered")
         for cid, conf in cc:
             tag = " ◀ direct" if "ConfigChange" in cid else " (upstream, hop-penalized)" if "Certificate" in cid else ""
             info(f"  {cid}: {conf*100:.1f}%{tag}")
@@ -402,12 +402,12 @@ def scenario_keyvault_blast():
     d0, _ = diag(targets[0])
     rc = d0.get("root_cause") or ""
     if "kv-eastus" in rc:
-        good("All containers trace back to the KeyVault rotation — shared root cause!")
+        good("All containers trace back to the KeyVault rotation, shared root cause!")
     else:
         info(f"Root cause: {rc}")
     pause()
 
-# ── Scenario 8: Temporal Decay — Stale Deploy ────────────────────────────
+# Scenario 8: Temporal Decay, Stale Deploy────
 
 def scenario_temporal_decay():
     banner("Scenario 8 ─ Temporal Decay: Recent vs. Stale Mutation")
@@ -456,7 +456,7 @@ def scenario_temporal_decay():
     cc = d.get("competing_causes", [])
     if len(cc) >= 2:
         fresh_entry = [c for c in cc if "mut-fresh" in c[0] or c[0] == cc[0][0]]
-        good(f"Two candidates scored — temporal decay differentiates them")
+        good(f"Two candidates scored, temporal decay differentiates them")
         for cid, conf in cc:
             marker = " (fresh)" if "fresh" in cid else " (stale)" if "stale" in cid else ""
             info(f"  {cid}{marker}: {conf*100:.1f}%")
@@ -470,7 +470,7 @@ def scenario_gateway_cascade():
     banner("Scenario 9 ─ Gateway Cert Rotation → 3 Services Down")
     info("A CertificateRotation fires on gw-westeurope-01 (Gateway).")
     info("Three containers behind it all show TLSError.")
-    info("No mutations on any container — the root cause is purely upstream.")
+    info("No mutations on any container, the root cause is purely upstream.")
     info("")
     info("Expected: solver traces the causal path Gateway → Container")
     info("and identifies the cert rotation as the shared root cause.")
@@ -502,7 +502,7 @@ def scenario_gateway_cascade():
     rc = d.get("root_cause") or ""
     path = d.get("causal_path", [])
     if "gw-westeurope" in rc:
-        good(f"Upstream Gateway identified as root cause — propagation working!")
+        good(f"Upstream Gateway identified as root cause, propagation working!")
         if len(path) > 1:
             good(f"Causal path: {' → '.join(path)}")
     else:
@@ -517,7 +517,7 @@ def scenario_two_ages():
     info("Container B (eastus-08-00-00) got ImageUpdate 2 min ago.")
     info("Both now show error_rate spikes.")
     info("")
-    info("Same CPT, same LR — but temporal decay means the recent deploy")
+    info("Same CPT, same LR, but temporal decay means the recent deploy")
     info("gets a higher causal prior (0.47) vs. the stale one (0.13).")
     info("Expected: Container B's diagnosis has higher confidence.")
     pause()
@@ -559,9 +559,9 @@ def scenario_two_ages():
     print()
     cA, cB = dA["confidence"], dB["confidence"]
     if cB > cA:
-        good(f"Fresh deploy ({cB*100:.1f}%) > stale deploy ({cA*100:.1f}%) — temporal decay working!")
+        good(f"Fresh deploy ({cB*100:.1f}%) > stale deploy ({cA*100:.1f}%), temporal decay working!")
     elif cA == cB:
-        info(f"Both scored equally ({cA*100:.1f}%) — temporal decay may not be reaching the comparison")
+        info(f"Both scored equally ({cA*100:.1f}%), temporal decay may not be reaching the comparison")
     else:
         warn(f"Stale ({cA*100:.1f}%) scored higher than fresh ({cB*100:.1f}%)?")
     pause()
@@ -577,7 +577,7 @@ def summary():
 
     print(f"""
     {D}Demonstrated:{R}
-    {GR}✓{R} Likelihood-ratio Bayesian inference (90–99% on matching CPTs)
+    {GR}✓{R} Likelihood-ratio Bayesian inference (90-99% on matching CPTs)
     {GR}✓{R} True negative: 0% confidence when no mutations exist
     {GR}✓{R} Red herring rejection: ignores unrelated changes in other regions
     {GR}✓{R} Explaining away: competing mutations ranked by CPT match quality

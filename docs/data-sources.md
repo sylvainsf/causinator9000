@@ -2,9 +2,9 @@
 
 Causinator 9000 ingests data from multiple sources that provide three types of information:
 
-- **Topology** — nodes (infrastructure resources) and edges (dependency/containment relationships) that form the causal graph
-- **Mutations** — changes to infrastructure (deployments, config updates, scaling events) that are potential root causes
-- **Signals** — observed symptoms (errors, timeouts, health degradation) that indicate something is wrong
+- **Topology**: nodes (infrastructure resources) and edges (dependency/containment relationships) that form the causal graph
+- **Mutations**: changes to infrastructure (deployments, config updates, scaling events) that are potential root causes
+- **Signals**: observed symptoms (errors, timeouts, health degradation) that indicate something is wrong
 
 ## Source Adapters
 
@@ -18,7 +18,7 @@ Causinator 9000 ingests data from multiple sources that provide three types of i
 | Azure Event Grid | `sources/eventgrid_receiver.py` | Real-time | Mutations + Signals | Event Grid subscription |
 | Kubernetes | `sources/k8s_source.py` | Both | Topology + Mutations + Signals | `kubectl` context |
 | Terraform State | `sources/terraform_source.py` | Polling | Topology (nodes + edges) | Local `.tfstate` |
-| Merge Utility | `sources/merge.py` | — | Combines GraphPayloads | — |
+| Merge Utility | `sources/merge.py` | n/a | Combines GraphPayloads | n/a |
 
 ## Makefile Targets
 
@@ -47,7 +47,7 @@ make ingest-k8s-dry
 
 ## Mutations (Changes)
 
-Mutations represent things that changed — the potential root causes.
+Mutations represent things that changed, the potential root causes.
 
 ### From Azure Resource Changes
 | Mutation Type | Source | What Changed |
@@ -93,7 +93,7 @@ Mutations represent things that changed — the potential root causes.
 
 ## Signals (Symptoms)
 
-Signals represent observed symptoms — what went wrong.
+Signals represent observed symptoms, what went wrong.
 
 ### Infrastructure Signals
 | Signal Type | Source | Meaning |

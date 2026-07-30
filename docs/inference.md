@@ -59,20 +59,20 @@ CertAuthority → Gateway → AKS → Pod (3 hops)
 
 Latent nodes represent unobserved shared infrastructure:
 
-- **ToR Switches** — shared network fabric
-- **Availability Zones** — physical isolation boundaries
-- **Power Domains** — electrical fault domains
-- **GHCR** — container registry availability
-- **GitHub Actions Infrastructure** — runner availability
-- **FlakyTest** — competing cause for non-deterministic test failures
-- **DenyPolicy** — Azure deny-effect policies blocking deployments
+- **ToR Switches**: shared network fabric
+- **Availability Zones**: physical isolation boundaries
+- **Power Domains**: electrical fault domains
+- **GHCR**: container registry availability
+- **GitHub Actions Infrastructure**: runner availability
+- **FlakyTest**: competing cause for non-deterministic test failures
+- **DenyPolicy**: Azure deny-effect policies blocking deployments
 
-Without latent nodes, 50 simultaneous VM failures appear as 50 independent events. With a shared ToR switch, the solver recognizes a single root cause — the *explaining away* pattern.
+Without latent nodes, 50 simultaneous VM failures appear as 50 independent events. With a shared ToR switch, the solver recognizes a single root cause, the *explaining away* pattern.
 
 ## Competing Causes
 
 When multiple candidate mutations could explain the same signal, the solver scores each independently and ranks them. The diagnosis shows:
-- **Root cause** — highest-scoring candidate
-- **Competing causes** — all candidates with scores, ranked
+- **Root cause**: highest-scoring candidate
+- **Competing causes**: all candidates with scores, ranked
 
 Example: A `TestFailure` signal has both a `CodeChange` commit (LR=24×) and a `FlakyTestRun` latent (LR=11.7×) as upstream causes. The code change wins at 92.3% vs flaky at 84.7%.

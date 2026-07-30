@@ -1,4 +1,4 @@
-# Causinator 9000 Private Heuristic Layer — Radius Project
+# Causinator 9000 Private Heuristic Layer: Radius Project
 #
 # Project-specific CPTs and signals for the project-radius/radius repo.
 # These are lean patches on top of the core ci-pipelines.yaml layer.
@@ -21,7 +21,7 @@
 
 - class: CIJob
   cpts:
-    # PR checklist enforcement — very high LR because the PR itself
+    # PR checklist enforcement, very high LR because the PR itself
     # is the direct and only possible cause
     - mutation: CodeChange
       signal: ChecklistMissing
@@ -51,7 +51,7 @@
         - [0.40, 0.04]
         - [0.60, 0.96]
 
-# Radius long-running test cluster — higher flaky rate due to
+# Radius long-running test cluster, higher flaky rate due to
 # shared infrastructure and 24/7 operation
 - class: FlakyTest
   cpts:

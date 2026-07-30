@@ -2,14 +2,14 @@
 
 The C9K MCP (Model Context Protocol) server lets AI agents interact with the
 Causinator 9000 causal inference engine. It can ingest CI failure data, run
-diagnoses, and verify predictions — all from within an AI chat session.
+diagnoses, and verify predictions, all from within an AI chat session.
 
 ## Quick Start
 
 ### Native binary (recommended)
 
 The engine binary includes a built-in MCP server mode. No Docker, no Python,
-no token setup — it uses your existing `gh` CLI authentication.
+no token setup, it uses your existing `gh` CLI authentication.
 
 Add to `.vscode/mcp.json` in your project:
 
@@ -88,12 +88,12 @@ Once configured, you can interact with C9K through chat:
 > | commit://dapr/dapr/dd3d5570 (CodeChange) | 90% | 3 |
 > | ...
 >
-> **You:** Verify the dd3d5570 group — is it actually a code problem?
+> **You:** Verify the dd3d5570 group, is it actually a code problem?
 >
 > **Agent:** *(calls `c9k_commit_info` for dd3d5570, then `c9k_verify_run` for each run)*
 >
 > Commit dd3d5570: "Fix flaky TestStartInternalCallbackSpan sampling rate test"
-> The unit test failures are TestCircuitBreaker_ConsecutiveFailures — a different
+> The unit test failures are TestCircuitBreaker_ConsecutiveFailures, a different
 > test from what the commit modified. This looks like a pre-existing flake that
 > the commit inherited, not caused.
 
@@ -116,7 +116,7 @@ jobs:
       - uses: actions/checkout@v4
       - name: Run tests
         run: make test
-        # Tests may fail — that's what we're analyzing
+        # Tests may fail, that's what we're analyzing
 
   diagnose:
     runs-on: ubuntu-latest
@@ -260,7 +260,7 @@ docker run -d \
 ### Fast Ingestion
 
 The extension uses `--fast` mode by default (no log downloads, classifies
-from step names). This makes ingestion **~20x faster** — a full 48h analysis
+from step names). This makes ingestion **~20x faster**, a full 48h analysis
 of a repo like dapr/dapr completes in ~5 seconds instead of ~3 minutes.
 
 For deeper analysis, the webhook handler continuously ingests failures
@@ -282,7 +282,7 @@ The MCP server speaks JSON-RPC over stdio. When a tool is called:
 |----------|---------|-------------|
 | `C9K_ENGINE_URL` | `http://127.0.0.1:8080` | Engine API URL |
 | `C9K_DRASI_ENABLED` | `false` | Enable Drasi CDC engine (needs PostgreSQL) |
-| `GITHUB_TOKEN` | — | GitHub token for `gh` CLI authentication |
+| `GITHUB_TOKEN` | n/a | GitHub token for `gh` CLI authentication |
 | `C9K_APP_DIR` | auto-detected | Path to the app directory (for finding sources/) |
 
 ## Building the Image Locally

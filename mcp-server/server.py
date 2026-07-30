@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Causinator 9000 MCP Server — Model Context Protocol interface.
+Causinator 9000 MCP Server: Model Context Protocol interface.
 
 Exposes C9K engine capabilities as MCP tools so AI agents can:
   - Ingest GitHub Actions failures, Terraform state, K8s clusters
@@ -129,7 +129,7 @@ async def list_tools() -> list[Tool]:
         Tool(
             name="c9k_alert_groups",
             description=(
-                "Get correlated alert groups — failures grouped by shared root cause. "
+                "Get correlated alert groups, failures grouped by shared root cause. "
                 "Shows the root cause, confidence, and number of affected jobs."
             ),
             inputSchema={"type": "object", "properties": {}, "required": []},
@@ -211,7 +211,7 @@ async def list_tools() -> list[Tool]:
         ),
         Tool(
             name="c9k_neighborhood",
-            description="Get the causal neighborhood around a node — its upstream causes and downstream effects.",
+            description="Get the causal neighborhood around a node, its upstream causes and downstream effects.",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -359,7 +359,7 @@ def _diagnose_all(args: dict) -> str:
         rc = d.get("root_cause", "?")
         conf = d.get("confidence", 0)
         competing = d.get("competing_causes", [])
-        comp_str = ", ".join(f"{c} ({p:.0%})" for c, p in competing[:3]) if competing else "—"
+        comp_str = ", ".join(f"{c} ({p:.0%})" for c, p in competing[:3]) if competing else "-"
         lines.append(f"| {conf:.0%} | {target} | {rc} | {comp_str} |")
 
     return "\n".join(lines)
@@ -424,7 +424,7 @@ def _verify_run(args: dict) -> str:
     if not jobs:
         return f"No failed jobs found in run {run_id}."
 
-    lines = [f"## Run {run_id} — {len(jobs)} failed jobs\n"]
+    lines = [f"## Run {run_id}: {len(jobs)} failed jobs\n"]
 
     for job in jobs[:5]:  # Limit to 5 jobs
         job_name = job["name"]

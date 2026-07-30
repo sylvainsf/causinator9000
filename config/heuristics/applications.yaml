@@ -1,4 +1,4 @@
-# Causinator 9000 Heuristic Layer — Applications & Environments
+# Causinator 9000 Heuristic Layer: Applications & Environments
 #
 # CPTs for application deployments and environment configuration.
 #
@@ -37,7 +37,7 @@
 # a very long half-life. Re-emitted on each ingestion run to stay fresh.
 #
 # When a deployment fails with PolicyViolation, and a deny policy exists
-# upstream with an edge to the resource, the LR is extremely high — the
+# upstream with an edge to the resource, the LR is extremely high, the
 # policy is almost certainly the cause.
 
 - class: DenyPolicy

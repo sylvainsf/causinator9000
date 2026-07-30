@@ -3,7 +3,7 @@
 Causinator 9000 Azure Monitor Webhook Receiver
 
 Receives Azure Monitor Action Group webhooks and writes signal rows to PostgreSQL.
-This is a bridge script — not part of the engine.
+This is a bridge script, not part of the engine.
 
 Usage:
   pip install fastapi uvicorn psycopg[binary]

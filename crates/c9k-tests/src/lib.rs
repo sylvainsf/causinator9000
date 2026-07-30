@@ -1,6 +1,6 @@
 // Copyright (c) 2026 Sylvain Niles. MIT License.
 
-//! Causinator 9000 Test Utilities — shared helpers for HTTP integration and load tests.
+//! Causinator 9000 Test Utilities: shared helpers for HTTP integration and load tests.
 //!
 //! This crate provides common HTTP client wrappers, topology builders,
 //! and test helpers for testing the Causinator 9000 engine.

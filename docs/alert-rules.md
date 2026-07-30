@@ -8,7 +8,7 @@ Alert rules control which alerts are shown, suppressed, or de-prioritized. Defin
 rules:
   - signal_type: ChecklistMissing
     action: suppress
-    reason: "Shown in PR UI — not an infrastructure concern"
+    reason: "Shown in PR UI, not an infrastructure concern"
 ```
 
 ## Match Fields
@@ -70,6 +70,6 @@ The suppressed signals bar at the bottom of the alerts panel shows runtime suppr
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
-| `/api/alerts/suppress` | POST | `{"signal_type": "..."}` — suppress at runtime |
-| `/api/alerts/unsuppress` | POST | `{"signal_type": "..."}` — remove runtime suppression |
+| `/api/alerts/suppress` | POST | `{"signal_type": "..."}`, suppress at runtime |
+| `/api/alerts/unsuppress` | POST | `{"signal_type": "..."}`, remove runtime suppression |
 | `/api/alerts/suppressed` | GET | List currently suppressed signal types |

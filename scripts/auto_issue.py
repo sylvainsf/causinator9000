@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Causinator 9000 — Auto-Issue helper.
+Causinator 9000: Auto-Issue helper.
 
 Consumes the JSON report emitted by `c9k-engine report --format json` and
 manages GitHub issues for the alert groups it contains. Designed to be invoked
@@ -20,7 +20,7 @@ Behaviour summary:
 
   * Copilot assignment: high-confidence `commit://` and `broken://` groups get
     Copilot added as an assignee. `latent://flaky-tests` groups never get
-    Copilot — flakiness is owned by a separate (yet-to-be-built) flaky-trend
+    Copilot, flakiness is owned by a separate (yet-to-be-built) flaky-trend
     feature; for now, flaky issues are commented and closed automatically.
 
   * Stale groups (issues whose root cause no longer appears in the latest
@@ -221,7 +221,7 @@ def find_cross_tool_duplicates(
                 continue
             labels = {lbl.get("name") for lbl in issue.get("labels", [])}
             if our_label in labels:
-                # That's one of ours — handled by the c9k dedup path.
+                # That's one of ours, handled by the c9k dedup path.
                 continue
             found[num] = issue
     return list(found.values())
@@ -263,13 +263,13 @@ def build_issue_body(
     parts.append(f"<!-- {CONFIDENCE_MARKER}: {confidence_pct} -->")
     parts.append("")
     parts.append("## Root cause")
-    parts.append(f"**{_format_rc_for_humans(rc_id, repo)}** — {rc_class}, {confidence_pct}% confidence")
+    parts.append(f"**{_format_rc_for_humans(rc_id, repo)}**, {rc_class}, {confidence_pct}% confidence")
 
     commit = group.get("commit") or {}
     if commit:
         msg = (commit.get("message") or "").splitlines()[0] if commit.get("message") else ""
         author = commit.get("author") or "unknown"
-        parts.append(f"_Author:_ `{author}` — _Subject:_ {msg!r}")
+        parts.append(f"_Author:_ `{author}`, _Subject:_ {msg!r}")
         files = commit.get("files") or []
         if files:
             parts.append("")
@@ -279,7 +279,7 @@ def build_issue_body(
 
     if branch:
         if pr:
-            parts.append(f"_Branch:_ `{branch}` — PR [#{pr.get('number')}]({pr.get('url')})")
+            parts.append(f"_Branch:_ `{branch}`, PR [#{pr.get('number')}]({pr.get('url')})")
         else:
             parts.append(f"_Branch:_ `{branch}`")
 
@@ -291,9 +291,9 @@ def build_issue_body(
         run_id = m.get("run_id") or "?"
         sigs = ", ".join(m.get("signal_types") or [])
         if url:
-            parts.append(f"- [`{run_id}`/{job}]({url}) — {sigs}")
+            parts.append(f"- [`{run_id}`/{job}]({url}), {sigs}")
         else:
-            parts.append(f"- {job} — {sigs}")
+            parts.append(f"- {job}, {sigs}")
 
     parts.append("")
     parts.append("## Insight from c9k")
@@ -311,7 +311,7 @@ def build_issue_body(
             "may be duplicates of this root cause. Close them once this is fixed:"
         )
         for d in cross_tool_dupes:
-            parts.append(f"- #{d['number']} — {d['title']}")
+            parts.append(f"- #{d['number']}, {d['title']}")
 
     parts.append("")
     parts.append("---")
@@ -668,7 +668,7 @@ def process_group(
             )
         comment = (
             f"Detected {member_count} flaky-test failures (confidence {int(group['confidence']*100)}%). "
-            "Closing automatically — flakiness is tracked separately and is not "
+            "Closing automatically, flakiness is tracked separately and is not "
             "Copilot's responsibility to fix one-by-one. See the c9k digest issue "
             "for the full flakiness picture."
         )
@@ -683,7 +683,7 @@ def process_group(
                 title=title,
                 note=f"flaky group, member_count={member_count}",
             )
-        # No existing issue — don't even create one for flaky.
+        # No existing issue, don't even create one for flaky.
         return Action(
             **common,
             kind="skip",
@@ -749,7 +749,7 @@ def process_group(
     comment_issue(
         repo,
         number,
-        f"_{last_run_label}_ — still detected. Member count: {member_count}, "
+        f"_{last_run_label}_, still detected. Member count: {member_count}, "
         f"confidence {int(group['confidence']*100)}%.",
         args.dry_run,
     )
@@ -794,7 +794,7 @@ def auto_close_resolved_issues(
             repo,
             issue["number"],
             "completed",
-            f"_{last_run_label}_ — Causinator 9000 no longer detects this root cause "
+            f"_{last_run_label}_, Causinator 9000 no longer detects this root cause "
             "above the configured thresholds. Closing as resolved. If failures recur, "
             "the issue will be reopened automatically.",
             args.dry_run,
@@ -815,9 +815,9 @@ def auto_close_resolved_issues(
 
 def render_summary(plan: Plan, repo: str, dry_run: bool, args: argparse.Namespace | None = None) -> str:
     lines: list[str] = []
-    header = "## Causinator 9000 — Auto-Issue Outcomes"
+    header = "## Causinator 9000: Auto-Issue Outcomes"
     if dry_run:
-        header += " (DRY RUN — no changes made)"
+        header += " (DRY RUN, no changes made)"
     lines.append(header)
     lines.append("")
     if not plan.actions:

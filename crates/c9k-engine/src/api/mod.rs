@@ -1,6 +1,6 @@
 // Copyright (c) 2026 Sylvain Niles. MIT License.
 
-//! REST API — Axum HTTP endpoints for Causinator 9000 diagnostics + web UI.
+//! REST API: Axum HTTP endpoints for Causinator 9000 diagnostics + web UI.
 
 use std::sync::Arc;
 

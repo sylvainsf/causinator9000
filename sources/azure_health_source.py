@@ -13,7 +13,7 @@ Two data sources in one script:
 Together these close the loop: ResourceChanges tells us what *changed* (mutations),
 HealthResources tells us what's *broken* (signals). The engine connects them.
 
-Uses `az` CLI — requires `az login`.
+Uses `az` CLI, requires `az login`.
 
 Usage:
   # Ingest both health signals and resource changes (last 24h)

@@ -41,7 +41,7 @@ uuid = { version = "1.21.0", features = ["v4", "serde"] }
 # YAML
 serde_yaml_ng = "0.10.0"
 
-# Drasi (embedded CQ engine — all from same git rev to avoid version conflicts)
+# Drasi (embedded CQ engine, all from same git rev to avoid version conflicts)
 drasi-lib =                  { git = "https://github.com/drasi-project/drasi-core.git", branch = "main" }
 drasi-core =                 { git = "https://github.com/drasi-project/drasi-core.git", branch = "main" }
 drasi-source-postgres =      { git = "https://github.com/drasi-project/drasi-core.git", branch = "main" }

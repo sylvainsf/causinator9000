@@ -1,6 +1,6 @@
 // Copyright (c) 2026 Sylvain Niles. MIT License.
 
-//! MCP server mode — `c9k-engine mcp`
+//! MCP server mode: `c9k-engine mcp`
 //!
 //! Pure Rust, no Python, no external scripts. Uses `gh` CLI for GitHub API.
 
@@ -132,7 +132,7 @@ impl C9kMcpServer {
         }
     }
 
-    #[tool(description = "Get correlated alert groups — failures grouped by shared root cause")]
+    #[tool(description = "Get correlated alert groups, failures grouped by shared root cause")]
     fn c9k_alert_groups(&self) -> String {
         match self.solver.alert_groups() {
             Ok(g) if g.is_empty() => "No alert groups.".to_string(),
@@ -185,7 +185,7 @@ impl C9kMcpServer {
 impl ServerHandler for C9kMcpServer {
     fn get_info(&self) -> ServerInfo {
         ServerInfo::new(ServerCapabilities::builder().enable_tools().build()).with_instructions(
-            "Causinator 9000 — Bayesian causal inference engine for CI/CD failure diagnosis. \
+            "Causinator 9000: Bayesian causal inference engine for CI/CD failure diagnosis. \
                  Use c9k_ingest_github to load failures, then c9k_diagnose_all or c9k_alert_groups \
                  to analyze root causes.",
         )

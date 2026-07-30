@@ -119,7 +119,7 @@ class TestHealthStateMapping:
         assert HEALTH_STATE_SIGNAL["Unknown"] == ("HealthUnknown", "info")
 
     def test_available_no_signal(self):
-        # Available means healthy — no signal should be emitted
+        # Available means healthy, no signal should be emitted
         assert HEALTH_STATE_SIGNAL.get("Available") is None
 
 

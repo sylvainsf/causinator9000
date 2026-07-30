@@ -77,7 +77,7 @@ export function RootCauseCard({ diagnosis }: RootCauseCardProps) {
 
   const subheader = isHealthy
     ? diagnosis.target_node
-    : `${pct}% confidence — ${diagnosis.target_node}`;
+    : `${pct}% confidence, ${diagnosis.target_node}`;
 
   return (
     <Card className={classes.card} variant="outlined">

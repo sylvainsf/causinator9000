@@ -95,7 +95,7 @@ def describe_root_cause(rc: str, node_props: dict, node_labels: dict,
         if author:
             parts.append(f"by {author}")
         if msg:
-            parts.append(f"— {msg}")
+            parts.append(f"- {msg}")
         elif mut_label:
             parts.append(f"({mut_label})")
         return " ".join(parts)
@@ -148,7 +148,7 @@ def main():
     try:
         health = engine_get("health")
     except Exception:
-        print("## ⚠️ Causinator 9000 — Engine Unavailable")
+        print("## ⚠️ Causinator 9000: Engine Unavailable")
         print("The C9K engine could not be reached.")
         return
 
@@ -156,7 +156,7 @@ def main():
     signals = health.get("active_signals", 0)
 
     if signals == 0:
-        print("## ✅ Causinator 9000 — No Failures Detected")
+        print("## ✅ Causinator 9000: No Failures Detected")
         print(f"No CI failures found for `{args.repo}` in the lookback window.")
         return
 
@@ -256,7 +256,7 @@ def main():
         for d, c in sorted(domain_counts.items(), key=lambda x: DOMAIN_ORDER.index(x[0]) if x[0] in DOMAIN_ORDER else 99)
     )
 
-    print(f"## 🔍 Causinator 9000 — CI Failure Analysis")
+    print(f"## 🔍 Causinator 9000: CI Failure Analysis")
     print()
     print(f"**{total} failures** diagnosed above {args.min_confidence}% confidence "
           f"| {mutations} mutations | {signals} signals")
@@ -294,7 +294,7 @@ def main():
                 for s in steps:
                     if s not in failed_context:
                         failed_context.append(s)
-            domain_str = ", ".join(sorted(domains - {"unknown"})) or "—"
+            domain_str = ", ".join(sorted(domains - {"unknown"})) or "-"
             runs_str = format_run_links(members, node_props)
             context_str = ", ".join(failed_context[:3])
             if len(failed_context) > 3:

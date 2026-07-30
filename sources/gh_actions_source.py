@@ -3,7 +3,7 @@
 GitHub Actions → Causinator 9000 causal graph adapter (v3).
 
 Correct causal model:
-  - NODES are failed jobs (the unit of observation — "this specific thing broke")
+  - NODES are failed jobs (the unit of observation, "this specific thing broke")
   - SIGNALS are the classified failure type on the job node
   - MUTATIONS go on the upstream cause:
       Code failures → commit node (the code change caused it)
@@ -45,7 +45,7 @@ ENGINE = os.environ.get("C9K_ENGINE_URL", "http://localhost:8080")
 
 ERROR_PATTERNS = [
     # (regex on error lines + step names, signal_type)
-    # Order matters — first match wins. More specific patterns first.
+    # Order matters, first match wins. More specific patterns first.
     (r"AADSTS\d+|federated identity|Login failed.*az.*exit code|auth-type|Login to Azure.*fail|azure.login.*fail|AZURE_.*not set|azure.*credentials.*error",
      "AzureAuthFailure"),
     (r"ErrImagePull|ImagePullBackOff|image.*pull.*fail",
@@ -94,7 +94,7 @@ ERROR_PATTERNS = [
     (r"Generating tests for.*devcontainer|devcontainers",
      "DevContainerTestFailure"),
     (r"Process completed with exit code",
-     "TestFailure"),  # generic — tests are the most common non-specific failure
+     "TestFailure"),  # generic, tests are the most common non-specific failure
 ]
 
 # Workflow-level patterns: when the error doesn't match anything specific,
@@ -374,7 +374,7 @@ def classify_error(error_lines: list[str], failed_steps: list[str],
                 return signal_type
     # Workflow-level fallback: if the workflow name suggests a non-test
     # purpose (release, deploy, publish), classify as WorkflowConfigFailure
-    # rather than TestFailure — the user can investigate the workflow config.
+    # rather than TestFailure, the user can investigate the workflow config.
     wf_lower = workflow_name.lower()
     for keyword, signal_type in WORKFLOW_FALLBACK_SIGNALS.items():
         if keyword in wf_lower:
@@ -388,7 +388,7 @@ def detect_mutation_type(commit_info: dict, event: str) -> str:
     msg_lower = msg.lower()
     author = commit_info.get("author", "").lower()
 
-    # Empty/retrigger commits — not a real code change
+    # Empty/retrigger commits, not a real code change
     if re.match(r'^(empty commit|retrigger|re-trigger|retry|re-run|trigger ci|ci retry)\s*$',
                 msg_lower.strip()):
         return "CIRetrigger"
@@ -762,7 +762,7 @@ def process_failures(repo: str, runs: list[dict], engine: str,
                 if domain == "release":
                     # Release-validation: run targets a non-default branch
                     # (release tag, old branch).  The HEAD commit is a known
-                    # release, not a recent change — route to a latent node
+                    # release, not a recent change, route to a latent node
                     # so failures are attributed to environment drift / latent
                     # bugs rather than blaming the pinned SHA.
                     release_latent = f"latent://release-validation/{branch}"
@@ -981,7 +981,7 @@ def main():
     parser.add_argument("--dry-run", action="store_true",
                         help="Show classification without ingesting")
     parser.add_argument("--fast", action="store_true",
-                        help="Skip log downloads — classify from step names only (~20x faster)")
+                        help="Skip log downloads, classify from step names only (~20x faster)")
     parser.add_argument("--exclude-workflow", action="append", default=[],
                         help="Workflow name to exclude (repeatable)")
     args = parser.parse_args()

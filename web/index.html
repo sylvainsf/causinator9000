@@ -220,12 +220,12 @@ body { font-family: -apple-system, 'Segoe UI', sans-serif;
 </div>
 
 <div class="statusbar">
-  <span id="sNodes">—</span>
-  <span id="sEdges">—</span>
-  <span id="sMuts">—</span>
-  <span id="sSigs">—</span>
+  <span id="sNodes">-</span>
+  <span id="sEdges">-</span>
+  <span id="sMuts">-</span>
+  <span id="sSigs">-</span>
   <span style="flex:1"></span>
-  <span id="sView">—</span>
+  <span id="sView">-</span>
 </div>
 
 </div>
@@ -340,7 +340,7 @@ function layoutAllTrees() {
   });
 
   if (components.length <= 1) {
-    // Single component — just dagre
+    // Single component, just dagre
     cy.layout({
       name: 'dagre', rankDir: 'TB', nodeSep: 50, rankSep: 70, padding: 30,
       stop: () => cy.fit(50)
@@ -607,7 +607,7 @@ async function fetchSuppressed() {
 function toggleGroup(rootCause) {
   if (expandedGroups.has(rootCause)) {
     expandedGroups.delete(rootCause);
-    // Unfocus — show all nodes again
+    // Unfocus, show all nodes again
     focusedGroup = null;
     if (cy) {
       cy.batch(() => {
@@ -635,7 +635,7 @@ function focusGraphOnGroup(rootCause) {
   if (group.causal_path) group.causal_path.forEach(id => memberIds.add(id));
   if (group.members) group.members.forEach(m => memberIds.add(m.node_id));
 
-  // Find matching nodes — try exact match first, then partial match
+  // Find matching nodes, try exact match first, then partial match
   let seedNodes = cy.nodes().filter(n => memberIds.has(n.id()));
   if (seedNodes.length === 0) {
     // Try partial match (node IDs might have cluster- prefix)
@@ -875,7 +875,7 @@ function focusIsland(islandId) {
   await loadAlertGraph();
   setInterval(refresh, 5000);
   // Graph only reloads on explicit user action (view switch, alert click)
-  // — no auto-reload that would reset zoom/pan position
+  // no auto-reload that would reset zoom/pan position
 })();
 </script>
 </body>

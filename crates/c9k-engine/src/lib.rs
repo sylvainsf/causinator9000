@@ -1,6 +1,6 @@
 // Copyright (c) 2026 Sylvain Niles. MIT License.
 
-//! Causinator 9000 Engine — Reactive Causal Inference Engine for cloud infrastructure.
+//! Causinator 9000 Engine: Reactive Causal Inference Engine for cloud infrastructure.
 //!
 //! This library provides the core Bayesian solver, REST API, checkpoint persistence,
 //! and Drasi CDC integration for causal root-cause analysis.
@@ -12,7 +12,7 @@ pub mod ingest;
 pub mod mcp;
 pub mod solver;
 
-/// Embedded heuristic YAML files — compiled into the binary.
+/// Embedded heuristic YAML files, compiled into the binary.
 pub mod embedded_heuristics {
     pub const CONTAINERS: &str = include_str!("../../../config/heuristics/containers.yaml");
     pub const COMPUTE: &str = include_str!("../../../config/heuristics/compute.yaml");

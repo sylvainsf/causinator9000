@@ -80,7 +80,7 @@ def get_nodes(cur, class_filter=None, rack_filter=None, limit=None):
 def scenario_tor_failure():
     """
     Simulate a ToR switch failure: 100 heartbeat-loss signals simultaneously
-    from all VMs on a single rack. No mutation — this is a latent cause.
+    from all VMs on a single rack. No mutation, this is a latent cause.
     """
     print("=== Scenario: ToR Switch Failure ===")
     with get_conn() as conn:

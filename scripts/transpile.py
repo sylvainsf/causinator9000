@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Causinator 9000 Graph Transpiler — ARM JSON → LLM → PostgreSQL + blueprint.bin
+Causinator 9000 Graph Transpiler: ARM JSON → LLM → PostgreSQL + blueprint.bin
 
 Usage:
   python scripts/transpile.py --input arm-template.json
@@ -8,7 +8,7 @@ Usage:
 
 Requires:
   pip install openai        (only for --input mode)
-  psql must be on PATH      (uses psql subprocess — no psycopg needed)
+  psql must be on PATH      (uses psql subprocess, no psycopg needed)
 """
 
 import argparse
@@ -249,7 +249,7 @@ def export_blueprint() -> None:
 def generate_synthetic() -> None:
     """
     Generate a 10k-node synthetic Azure topology for stress testing.
-    Bypasses LLM — procedurally generates SQL and pipes to psql.
+    Bypasses LLM, procedurally generates SQL and pipes to psql.
 
     Structure:
     - 10 regions
@@ -289,7 +289,7 @@ def generate_synthetic() -> None:
         edge_count += 1
 
         # ── Per-region shared infrastructure ──────────────────────────
-        # Gateway (application gateway / ingress) — upstream of containers
+        # Gateway (application gateway / ingress), upstream of containers
         gw_id = f"gw-{region}-01"
         stmts.append(
             f"INSERT INTO nodes (id, label, class, region, rack_id, properties) "
@@ -297,7 +297,7 @@ def generate_synthetic() -> None:
         )
         node_count += 1
 
-        # KeyVault — stores secrets consumed by containers
+        # KeyVault, stores secrets consumed by containers
         kv_id = f"kv-{region}-01"
         stmts.append(
             f"INSERT INTO nodes (id, label, class, region, rack_id, properties) "
@@ -742,7 +742,7 @@ def main():
     if dropped:
         print(f"Dropped {len(dropped)} edges to break cycles")
     else:
-        print("DAG validation passed — no cycles detected")
+        print("DAG validation passed, no cycles detected")
 
     export_blueprint()
 

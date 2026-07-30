@@ -1,6 +1,6 @@
 // Copyright (c) 2026 Sylvain Niles. MIT License.
 
-//! GitHub Actions ingestion — pure Rust, no Python.
+//! GitHub Actions ingestion: pure Rust, no Python.
 //!
 //! Uses `gh` CLI for GitHub API access (inherits host auth).
 //! Fast mode: classifies from job/step names only, no log downloads.
@@ -245,7 +245,7 @@ fn trigger_type(event: &str, head_branch: &str, default_branch: &str) -> &'stati
 /// pushes). Including them in repo-wide nightly reports makes the output
 /// dominated by a handful of contributors' iteration noise.
 ///
-/// Dependabot PRs are kept because nobody is iterating on them — a failure
+/// Dependabot PRs are kept because nobody is iterating on them, a failure
 /// on a Dependabot branch is a real signal about how a dependency bump
 /// affects the project.
 fn is_user_pr_run(event: &str, head_branch: &str, default_branch: &str) -> bool {
@@ -499,7 +499,7 @@ fn gh_command(args: &[&str]) -> Result<String> {
         .args(args)
         .env("GH_PAGER", "cat")
         .output()
-        .context("gh CLI not found — install from https://cli.github.com")?;
+        .context("gh CLI not found, install from https://cli.github.com")?;
     if !output.status.success() {
         let err = String::from_utf8_lossy(&output.stderr);
         anyhow::bail!("gh failed: {err}");
@@ -762,8 +762,8 @@ pub struct IngestResult {
 #[derive(Debug, Clone, Default)]
 pub struct IngestOptions {
     /// When `true`, runs from contributor PR branches (non-Dependabot
-    /// `pull_request`/`pull_request_target`) are ingested. Default `false`
-    /// — they are dropped at ingestion to keep nightly reports focused on
+    /// `pull_request`/`pull_request_target`) are ingested. Default `false`;
+    /// they are dropped at ingestion to keep nightly reports focused on
     /// repo-wide health rather than individual contributors' iteration.
     pub include_user_prs: bool,
 }
@@ -986,7 +986,7 @@ pub fn ingest_github_with_options(
         let sha8 = &run.head_sha[..8.min(run.head_sha.len())];
         let wf = &run.workflow_name;
 
-        // Skip policy/validation workflows — these are author errors, not diagnosable
+        // Skip policy/validation workflows, these are author errors, not diagnosable
         if is_policy_workflow(wf) {
             skipped_policy += 1;
             continue;

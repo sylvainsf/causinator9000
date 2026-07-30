@@ -1,6 +1,6 @@
 // Copyright (c) 2026 Sylvain Niles. MIT License.
 
-//! Causinator 9000 Load Test Suite — Rust port of scripts/load_test.py
+//! Causinator 9000 Load Test Suite: Rust port of scripts/load_test.py
 //!
 //! Four stress tests that probe the engine's performance boundaries:
 //!
@@ -147,7 +147,7 @@ fn banner(title: &str) {
 
 async fn test_fanout(cli: &Cli) -> Result<f64> {
     banner(&format!(
-        "Test 1 — Fan-out: 1 Upstream Mutation → {} Downstream Diagnoses",
+        "Test 1: Fan-out: 1 Upstream Mutation → {} Downstream Diagnoses",
         cli.fan_pods
     ));
 
@@ -212,13 +212,13 @@ async fn test_fanout(cli: &Cli) -> Result<f64> {
 
     let verdict = if stats.p95_ms < cli.threshold_fan {
         println!(
-            "\n    ✓ p95 = {:.1} ms — fan-out handled efficiently",
+            "\n    ✓ p95 = {:.1} ms, fan-out handled efficiently",
             stats.p95_ms
         );
         "PASS"
     } else {
         println!(
-            "\n    ✗ p95 = {:.1} ms — exceeds threshold ({} ms)",
+            "\n    ✗ p95 = {:.1} ms, exceeds threshold ({} ms)",
             stats.p95_ms, cli.threshold_fan
         );
         "FAIL"
@@ -232,7 +232,7 @@ async fn test_fanout(cli: &Cli) -> Result<f64> {
 
 async fn test_concurrent(cli: &Cli) -> Result<f64> {
     banner(&format!(
-        "Test 2 — Concurrent: {} Threads × {} Queries",
+        "Test 2: Concurrent: {} Threads × {} Queries",
         cli.threads, cli.queries_per_thread
     ));
 
@@ -311,13 +311,13 @@ async fn test_concurrent(cli: &Cli) -> Result<f64> {
 
     let verdict = if stats.p95_ms < cli.threshold_concurrent {
         println!(
-            "\n    ✓ p95 = {:.1} ms — lock contention is negligible",
+            "\n    ✓ p95 = {:.1} ms, lock contention is negligible",
             stats.p95_ms
         );
         "PASS"
     } else {
         println!(
-            "\n    ✗ p95 = {:.1} ms — exceeds threshold ({} ms)",
+            "\n    ✗ p95 = {:.1} ms, exceeds threshold ({} ms)",
             stats.p95_ms, cli.threshold_concurrent
         );
         "FAIL"
@@ -331,7 +331,7 @@ async fn test_concurrent(cli: &Cli) -> Result<f64> {
 
 async fn test_large_window(cli: &Cli) -> Result<f64> {
     banner(&format!(
-        "Test 3 — Large Window: {}k Mutations + {}k Signals",
+        "Test 3: Large Window: {}k Mutations + {}k Signals",
         cli.window_mutations / 1000,
         cli.window_signals / 1000
     ));
@@ -407,13 +407,13 @@ async fn test_large_window(cli: &Cli) -> Result<f64> {
 
     let verdict = if stats.p95_ms < cli.threshold_window {
         println!(
-            "\n    ✓ p95 = {:.1} ms — large window handled efficiently",
+            "\n    ✓ p95 = {:.1} ms, large window handled efficiently",
             stats.p95_ms
         );
         "PASS"
     } else {
         println!(
-            "\n    ✗ p95 = {:.1} ms — exceeds threshold ({} ms)",
+            "\n    ✗ p95 = {:.1} ms, exceeds threshold ({} ms)",
             stats.p95_ms, cli.threshold_window
         );
         "FAIL"
@@ -427,7 +427,7 @@ async fn test_large_window(cli: &Cli) -> Result<f64> {
 
 async fn test_flood(cli: &Cli) -> Result<f64> {
     banner(&format!(
-        "Test 4 — Sustained Flood: Inject + Diagnose for {}s",
+        "Test 4: Sustained Flood: Inject + Diagnose for {}s",
         cli.flood_duration_secs
     ));
 
@@ -549,13 +549,13 @@ async fn test_flood(cli: &Cli) -> Result<f64> {
 
     let verdict = if stats.p95_ms < cli.threshold_flood {
         println!(
-            "\n    ✓ p95 = {:.1} ms — concurrent inject + diagnose works well",
+            "\n    ✓ p95 = {:.1} ms, concurrent inject + diagnose works well",
             stats.p95_ms
         );
         "PASS"
     } else {
         println!(
-            "\n    ✗ p95 = {:.1} ms — exceeds threshold ({} ms)",
+            "\n    ✗ p95 = {:.1} ms, exceeds threshold ({} ms)",
             stats.p95_ms, cli.threshold_flood
         );
         "FAIL"
@@ -582,7 +582,7 @@ fn print_summary(results: &[(&str, f64, f64)]) {
     if all_pass {
         println!("    ✓ All stress tests passed");
     } else {
-        println!("    ⚠ Some tests exceeded targets — see details above");
+        println!("    ⚠ Some tests exceeded targets, see details above");
     }
 }
 
@@ -597,7 +597,7 @@ async fn main() -> Result<()> {
     let health = client
         .health()
         .await
-        .context("Engine not responding — is it running?")?;
+        .context("Engine not responding, is it running?")?;
     println!("✓ Engine: {} nodes, {} edges", health.nodes, health.edges);
 
     let mut results: Vec<(&str, f64, f64)> = Vec::new();

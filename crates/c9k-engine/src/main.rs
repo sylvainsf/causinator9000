@@ -433,7 +433,7 @@ async fn main() -> Result<()> {
 
         // Format report
         if diagnoses.is_empty() {
-            println!("## Causinator 9000 — No Failures Detected\n");
+            println!("## Causinator 9000: No Failures Detected\n");
             println!(
                 "No CI failures found for `{repo}` in the last {hours}h above {:.0}% confidence.",
                 min_confidence * 100.0
@@ -441,7 +441,7 @@ async fn main() -> Result<()> {
             return Ok(());
         }
 
-        println!("## Causinator 9000 — CI Failure Analysis\n");
+        println!("## Causinator 9000: CI Failure Analysis\n");
         println!(
             "**{} failures** diagnosed above {:.0}% confidence | {} nodes | {} edges | {} mutations | {} signals\n",
             diagnoses.len(),
@@ -673,7 +673,7 @@ async fn main() -> Result<()> {
                 Some((drasi_lib, consumer_handle))
             }
             Err(e) => {
-                tracing::warn!(error = %e, "Drasi initialization failed — running without CDC. \
+                tracing::warn!(error = %e, "Drasi initialization failed, running without CDC. \
                     Set C9K_DRASI_ENABLED=false to suppress this warning.");
                 None
             }

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Quick smoke test — verifies the engine is running, accepts events, and
+Quick smoke test: verifies the engine is running, accepts events, and
 produces diagnoses.
 
 Usage:
@@ -23,7 +23,7 @@ def main():
         print(f"FAIL: Engine not responding at {ENGINE} ({e})")
         sys.exit(1)
 
-    print(f"Engine: v{h['version']} — {h['nodes']:,} nodes, {h['edges']:,} edges")
+    print(f"Engine: v{h['version']}, {h['nodes']:,} nodes, {h['edges']:,} edges")
     print(f"Active: {h['active_mutations']} mutations, {h['active_signals']} signals")
 
     if h["nodes"] == 0:
@@ -62,7 +62,7 @@ def main():
     elif d["confidence"] > 0.0:
         print(f"\nPARTIAL: Diagnosis produced but confidence is low ({conf:.1f}%).")
     else:
-        print("\nWARN: Confidence is 0% — check that the topology includes ctr-eastus-00-00-00.")
+        print("\nWARN: Confidence is 0%, check that the topology includes ctr-eastus-00-00-00.")
 
     # 6. Clear
     requests.post(f"{ENGINE}/api/clear", timeout=5)

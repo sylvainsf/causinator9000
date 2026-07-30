@@ -1,6 +1,6 @@
 // Copyright (c) 2026 Sylvain Niles. MIT License.
 
-//! Bayesian Solver — Variable Elimination on petgraph
+//! Bayesian Solver: Variable Elimination on petgraph
 //!
 //! Core inference engine for Causinator 9000. Maintains a causal DAG (petgraph),
 //! applies CPTs from the heuristic registry, and runs Variable Elimination
@@ -96,10 +96,10 @@ pub struct PriorConfig {
     /// Half-life of temporal decay in minutes. Controls how quickly a
     /// mutation's causal prior decays over time for this resource class.
     ///
-    /// Fast classes (Container, ToRSwitch): 15-30 min — deploy issues show up immediately.
-    /// Medium classes (AKSCluster, Gateway): 60-120 min — propagation takes a while.
-    /// Slow classes (DNS, CertAuthority, KeyVault): 240-480 min — TTLs and rotation delays.
-    /// Storage classes (SqlDatabase, Disk): 120-240 min — cascading IO failures.
+    /// Fast classes (Container, ToRSwitch): 15-30 min, deploy issues show up immediately.
+    /// Medium classes (AKSCluster, Gateway): 60-120 min, propagation takes a while.
+    /// Slow classes (DNS, CertAuthority, KeyVault): 240-480 min, TTLs and rotation delays.
+    /// Storage classes (SqlDatabase, Disk): 120-240 min, cascading IO failures.
     #[serde(default = "default_half_life")]
     pub decay_half_life_minutes: f64,
 }
@@ -225,7 +225,7 @@ struct ManifestLayer {
 }
 
 /// A class entry in a heuristic layer file.
-/// `default_prior` is optional to support lean patching — omit it to
+/// `default_prior` is optional to support lean patching, omit it to
 /// inherit from an earlier layer.
 #[derive(Debug, Clone, Deserialize)]
 struct LayerClassEntry {
@@ -407,7 +407,7 @@ pub struct SolverSnapshot {
 }
 
 /// Structured graph payload for loading/exporting via API.
-/// This is the primary format for programmatic graph management —
+/// This is the primary format for programmatic graph management,
 /// no SQL, no files, just JSON in and out.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GraphPayload {
@@ -1009,7 +1009,7 @@ struct SolverState {
     active_mutations: Vec<Mutation>,
     /// Active signals within the temporal window
     active_signals: Vec<Signal>,
-    /// Suppressed signal types — alerts matching these are hidden
+    /// Suppressed signal types, alerts matching these are hidden
     suppressed_signals: std::collections::HashSet<String>,
     /// Alert rules from config/alert-rules.yaml
     alert_rules: AlertRulesConfig,
@@ -1065,7 +1065,7 @@ impl SolverState {
     //
     // The key insight: when we observe a degradation signal on a node, the
     // question is NOT "what's the background probability this node fails?"
-    // (that's the prior — typically 0.5%). The question is:
+    // (that's the prior, typically 0.5%). The question is:
     //
     //   "Given that we SEE a symptom, how likely is each candidate mutation
     //    to have caused it?"
@@ -1831,7 +1831,7 @@ impl SolverState {
                 continue;
             }
 
-            // Outgoing (downstream) — capped
+            // Outgoing (downstream), capped
             let mut child_count = 0;
             for edge in self.graph.edges_directed(current, Direction::Outgoing) {
                 if child_count >= max_neighbors_per_node {
@@ -1844,7 +1844,7 @@ impl SolverState {
                 }
             }
 
-            // Incoming (upstream) — all parents (usually few)
+            // Incoming (upstream), all parents (usually few)
             for edge in self.graph.edges_directed(current, Direction::Incoming) {
                 if visited.len() >= max_total_nodes {
                     break;
@@ -1992,12 +1992,12 @@ impl SolverState {
         // cross-boundary causation:
         //
         // 1. The signaled node
-        // 2. Full ancestor chain — walk ALL the way up via incoming edges,
+        // 2. Full ancestor chain, walk ALL the way up via incoming edges,
         //    but only include ancestors that either (a) have an active
         //    mutation, or (b) are on the path between a mutated ancestor
         //    and the signaled node. This shows CertAuthority → Gateway →
         //    AKS → Pod chains when the CA has a mutation.
-        // 3. Direct children of the signaled node (capped at 5) — for
+        // 3. Direct children of the signaled node (capped at 5), for
         //    context on what's downstream of the failure.
         // 4. The causal path from the solver's diagnosis.
         //
@@ -2049,7 +2049,7 @@ impl SolverState {
                 }
             }
 
-            // Also include direct parents (even if they don't have mutations —
+            // Also include direct parents (even if they don't have mutations
             // they provide structural context)
             for edge in self.graph.edges_directed(start_idx, Direction::Incoming) {
                 let parent = edge.source();
@@ -2059,7 +2059,7 @@ impl SolverState {
                     .or_insert_with(|| cluster_id.clone());
             }
 
-            // 3. Direct children (capped) — what's downstream of the failure
+            // 3. Direct children (capped), what's downstream of the failure
             for (child_count, edge) in self
                 .graph
                 .edges_directed(start_idx, Direction::Outgoing)
@@ -2768,7 +2768,7 @@ mod tests {
         });
         let _diag_direct = state.diagnose("ctr-1").unwrap();
 
-        // Now also add an upstream mutation — it should score lower
+        // Now also add an upstream mutation, it should score lower
         state.active_mutations.push(Mutation {
             id: "m-upstream".into(),
             node_id: "tor-1".into(),
@@ -2806,7 +2806,7 @@ mod tests {
     fn test_no_mutation_no_root_cause() {
         let mut state = make_test_graph();
 
-        // Signal but no mutation — should be noise
+        // Signal but no mutation, should be noise
         state.active_signals.push(Signal {
             id: "s1".into(),
             node_id: "ctr-1".into(),
@@ -2935,7 +2935,7 @@ mod tests {
             }],
         );
 
-        // Override layer — only override one CPT
+        // Override layer, only override one CPT
         merge_layer(
             &mut heuristics,
             vec![LayerClassEntry {

@@ -12,10 +12,10 @@ Two modes:
     Run as a background process via make watch-k8s.
 
 Usage:
-  # Snapshot mode — ingest current cluster state
+  # Snapshot mode, ingest current cluster state
   python3 sources/k8s_source.py --context radlrtest00-aks
 
-  # Watch mode — stream events in real-time
+  # Watch mode, stream events in real-time
   python3 sources/k8s_source.py --context radlrtest00-aks --watch
 
   # Specific namespaces
@@ -297,7 +297,7 @@ def process_k8s_event(cluster: str, event: dict):
     # Check if this is a signal (Warning event or known failure)
     if reason in EVENT_SIGNAL_MAP:
         sig_type, severity = EVENT_SIGNAL_MAP[reason]
-        print(f"  SIGNAL: {sig_type} on {node_id} — {message[:80]}", file=sys.stderr)
+        print(f"  SIGNAL: {sig_type} on {node_id}, {message[:80]}", file=sys.stderr)
 
         # Ensure node exists
         post_engine("graph/merge", {"nodes": [{

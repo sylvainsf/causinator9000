@@ -112,7 +112,7 @@ impl TopologyBuilder {
         self
     }
 
-    /// Minimal topology — just physical infra, no apps.
+    /// Minimal topology, just physical infra, no apps.
     pub fn minimal() -> Self {
         Self::new()
             .regions(1)
@@ -140,7 +140,7 @@ impl TopologyBuilder {
             .pods_per_app(6)
     }
 
-    /// Realistic Azure region — models a single region at production scale.
+    /// Realistic Azure region, models a single region at production scale.
     ///
     /// Structure:
     /// - 3 availability zones, 2 power domains each
@@ -165,7 +165,7 @@ impl TopologyBuilder {
     }
 
     /// Multiple Azure regions at production scale.
-    /// Each region is an `azure_region()` — 3 regions gives ~150k nodes.
+    /// Each region is an `azure_region()`, 3 regions gives ~150k nodes.
     pub fn azure_multi_region(regions: usize) -> Self {
         Self::new()
             .regions(regions)
@@ -187,7 +187,7 @@ impl TopologyBuilder {
             let region = &self.region_names[r];
             let _props = serde_json::json!({});
 
-            // Latent: PowerDomain — 2 per region (redundant power)
+            // Latent: PowerDomain, 2 per region (redundant power)
             let pd1_id = format!("latent-power-{region}-1");
             let pd2_id = format!("latent-power-{region}-2");
             nodes.push(node(
@@ -205,7 +205,7 @@ impl TopologyBuilder {
                 None,
             ));
 
-            // Latent: AvailabilityZones — 3 per region
+            // Latent: AvailabilityZones, 3 per region
             let az_ids: Vec<String> = (1..=3).map(|z| format!("latent-az-{region}-{z}")).collect();
             for (i, az_id) in az_ids.iter().enumerate() {
                 nodes.push(node(
@@ -220,7 +220,7 @@ impl TopologyBuilder {
                 edges.push(edge(pd, az_id, "containment"));
             }
 
-            // Platform services — multiple instances for realism
+            // Platform services, multiple instances for realism
             if self.include_platform_services {
                 // 3 KeyVaults (secrets, certs, app-keys)
                 for kv_idx in 1..=3 {

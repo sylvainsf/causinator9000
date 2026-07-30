@@ -207,7 +207,7 @@ jobs:
 The job summary will contain a table like:
 
 ```
-## Causinator 9000 — Auto-Issue Outcomes (DRY RUN — no changes made)
+## Causinator 9000: Auto-Issue Outcomes (DRY RUN, no changes made)
 
 | Action | Count |
 |---|---|
@@ -284,7 +284,7 @@ When on, for each c9k root-cause group the action:
    grouped this with a shared root cause).`
 
 If you want the linking but not the closing, leave
-`close-cross-tool-duplicates: 'false'` (the default) — links are added
+`close-cross-tool-duplicates: 'false'` (the default), links are added
 to the c9k issue body unconditionally.
 
 #### Success criteria for resolution

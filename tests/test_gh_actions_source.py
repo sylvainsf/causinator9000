@@ -4,7 +4,7 @@ Tests for GitHub Actions source adapter.
 Tests are organized in three tiers:
   1. Classification (pure functions, no I/O)
   2. Event processing (mocked subprocess/HTTP)
-  3. Integration (requires running engine — skipped in CI)
+  3. Integration (requires running engine, skipped in CI)
 
 To add tests for a new source adapter (e.g., AWS CloudTrail):
   1. Copy this file as tests/test_aws_cloudtrail_source.py
@@ -171,7 +171,7 @@ class TestMutationTypeDetection:
         assert detect_mutation_type(info, "push") == "CodeChange"
 
     def test_scheduled_run(self):
-        # detect_mutation_type doesn't check event type — it only looks at message/author
+        # detect_mutation_type doesn't check event type, it only looks at message/author
         # The GH source handles ScheduledRun at a higher level
         info = {"message": "some commit", "author": "dev"}
         assert detect_mutation_type(info, "schedule") == "CodeChange"
