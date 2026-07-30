@@ -6,21 +6,26 @@
 
 Causinator 9000 answers the causal question directly. Feed it your dependency graph, recent **mutations** (changes to infrastructure), and degradation **signals** (observed symptoms), and it computes the probability that each change caused each symptom, traces the causal path upstream through your dependency graph, and ranks the competing suspects by confidence.
 
-It works across the domains where changes and failures actually live:
+Nothing about the engine is tied to a particular cloud, or even to the cloud at all. It reasons over any dependency graph you can describe, so the same solver works across the domains where changes and failures actually live:
 
-- **Azure infrastructure**: a KeyVault secret rotation propagating to the pods that consumed it
 - **Kubernetes**: an `ImageUpdate` traced to `CrashLoopBackOff` at 96% confidence
 - **CI/CD**: a red nightly build attributed to the offending commit rather than a flaky-test latent cause
+- **Cloud infrastructure** (Azure, AWS, GCP, or on-prem): a secret rotation propagating to the services that consumed it
 - **Cross-boundary incidents**: eight `HTTP_500` alerts correctly split into two independent root causes for two different teams
+
+The engine ships with ready-made adapters for Azure, Kubernetes, GitHub Actions, and Terraform, but those are just producers writing rows: any system that can describe nodes, edges, and changes can drive it.
 
 The solver never guesses. No change in the window means confidence 0. No causal match means a weak signal. It is built to say *"I don't know"* rather than manufacture a false positive.
 
-Built in Rust. Sub-200µs inference at p95 on a 225,000-node graph (roughly five full Azure production regions: on the order of 750 server racks, 2,500 applications, and the tens of thousands of pods, VMs, and network devices beneath them). Two moving parts: **PostgreSQL** as the event store and an **embedded Drasi** change feed. No sidecars, no message queue, no external services.
+Built in Rust. Sub-200µs inference at p95 on a 225,000-node graph (roughly five full cloud regions: on the order of 750 server racks, 2,500 applications, and the tens of thousands of pods, VMs, and network devices beneath them). Two moving parts: **PostgreSQL** as the event store and an **embedded Drasi** change feed. No sidecars, no message queue, no external services.
 
 **Dig deeper:** [how inference works](docs/inference.md) · [the CI GitHub Action](docs/action.md) · [data sources](docs/data-sources.md) · [writing CPTs](docs/cpts.md)
 
+> **Just want CI failure reports? You don't need any of the infrastructure below.** Causinator also ships as a [GitHub Action on the Marketplace](https://github.com/marketplace/actions/causinator-9000-ci-diagnosis) that runs entirely inside GitHub Actions (no database, no server, no cloud account, no API keys beyond the built-in `GITHUB_TOKEN`). Drop one workflow into your repo and get a nightly, weekly, or per-PR Bayesian root-cause report on your CI failures. Jump to [Using the GitHub Action](#using-the-github-action) for copy-paste workflows and configuration.
+
 ## Table of Contents
 
+- [Using the GitHub Action](#using-the-github-action)
 - [How It Works](#how-it-works)
 - [Architecture](#architecture)
 - [Quick Start](#quick-start)
@@ -136,9 +141,34 @@ Key features:
 
 → [Full inference documentation](docs/inference.md)
 
-## GitHub Action
+## Using the GitHub Action
 
-Get a weekly CI failure report with Bayesian root-cause analysis. No Docker, no API keys.
+The fastest way to try Causinator, and the only mode that needs **zero infrastructure**. Everything runs inside GitHub Actions: no database, no server, no cloud account, no Docker image, and no API keys beyond the `GITHUB_TOKEN` every workflow already has. Under the hood the action downloads a ~15MB precompiled `c9k-engine` binary, ingests your recent CI failures via the GitHub API, classifies each one (test, lint, build, timeout, auth, and so on), runs the same Bayesian inference described above, and writes a root-cause report that groups failures by cause, attributes each to a commit, a broken workflow, or a flaky-test latent cause, and ranks them by confidence.
+
+Installed from the [GitHub Marketplace](https://github.com/marketplace/actions/causinator-9000-ci-diagnosis) as `Causinator 9000 CI Diagnosis`.
+
+### Nightly failure report (job summary)
+
+The simplest setup: a scheduled run that posts the diagnosis to the workflow's Summary tab every morning. Nothing is created or commented on, so it needs no extra permissions.
+
+```yaml
+# .github/workflows/c9k-nightly.yml
+name: C9K Nightly
+on:
+  schedule:
+    - cron: '0 6 * * *'   # every day at 06:00 UTC
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: sylvainsf/causinator9000@v1
+        with:
+          hours: '24'      # look back over the last day
+```
+
+### Weekly digest issue
+
+A rolling issue that gets a new comment each week, giving you a running history of CI health. Requires `issues: write`.
 
 ```yaml
 # .github/workflows/c9k-weekly.yml
@@ -157,10 +187,51 @@ jobs:
           create-issue: 'true'
 ```
 
-The report groups failures by root cause, with confidence scores and signal classification.
-Also available as a nightly job summary or PR comment on failure.
+### Comment on failed PRs
 
--> [Full action documentation](docs/action.md)
+Trigger after your CI workflow finishes and post the diagnosis as a PR comment so authors see why their build broke. Requires `pull-requests: write`.
+
+```yaml
+# .github/workflows/c9k-pr.yml
+name: C9K PR Diagnosis
+on:
+  workflow_run:
+    workflows: ["CI"]        # replace with your CI workflow name
+    types: [completed]
+permissions:
+  pull-requests: write
+jobs:
+  diagnose:
+    if: ${{ github.event.workflow_run.conclusion == 'failure' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: sylvainsf/causinator9000@v1
+        with:
+          hours: '48'
+          post-comment: 'true'
+```
+
+### Configuration
+
+Common inputs (all optional):
+
+| Input | Default | Description |
+|-------|---------|-------------|
+| `hours` | `168` | Lookback window in hours (168 = one week; use `24` for nightly) |
+| `min-confidence` | `50` | Minimum confidence (0-100) for a finding to appear in the report |
+| `create-issue` | `false` | Create or update a rolling digest issue |
+| `issue-label` | `c9k-digest` | Label applied to the digest issue |
+| `post-comment` | `false` | Post the diagnosis as a PR comment |
+| `repo` | current repo | Analyze a different repo (needs a token with `actions:read` on it) |
+| `github-token` | `${{ github.token }}` | Token for API access and posting |
+| `version` | `latest` | Pin a specific `c9k-engine` release |
+| `include-user-prs` | `false` | Include contributor PR-branch failures (noisy; off by default) |
+
+Outputs: `report` (the markdown report) and `alert-count` (number of root-cause groups found), for use in later steps.
+
+**Auto-issue mode** is an opt-in advanced mode that files one deduplicated, assignable issue per detected root cause (with optional Copilot assignment, flaky-test auto-close, and a dry-run preview). It has its own set of `auto-issue-*` inputs. See the full guide for the workflow and every flag.
+
+→ [Full action documentation](docs/action.md)
 
 ## Data Sources
 
