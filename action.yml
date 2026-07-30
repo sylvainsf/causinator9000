@@ -24,13 +24,17 @@ inputs:
     required: false
     default: 'false'
   create-issue:
-    description: 'Create or update a digest issue (true/false, default: false)'
+    description: 'Open a fresh dated digest issue each run; older ones auto-close after the retention window (true/false, default: false)'
     required: false
     default: 'false'
   issue-label:
     description: 'Label for digest issues (default: c9k-digest)'
     required: false
     default: 'c9k-digest'
+  digest-retention-days:
+    description: 'Auto-close untouched digest issues older than this many days (default: 14, i.e. the previous two weeks)'
+    required: false
+    default: '14'
   github-token:
     description: 'GitHub token for API access and posting comments'
     required: false
@@ -51,7 +55,7 @@ inputs:
 
   # ── Auto-issue mode (opt-in, additive) ───────────────────────────────
   # When enabled, c9k files (and dedup-updates) one GitHub issue per
-  # detected root cause, instead of (or in addition to) a single rolling
+  # detected root cause, instead of (or in addition to) the per-run
   # digest. Designed to be safe-by-default: never runs on PR triggers,
   # never assigns Copilot to flaky-test groups, and offers a dry-run mode.
   auto-issue:
@@ -271,7 +275,7 @@ runs:
           "${FLAGS[@]}" \
           | tee -a "$GITHUB_STEP_SUMMARY"
 
-    - name: Create or update digest issue
+    - name: Create digest issue and prune old ones
       # Digest-issue mode is intentionally NEVER triggered by pull_request events.
       # Filing or commenting on issues from PR-triggered runs would let any
       # contributor's PR mutate repo-wide issue state. Restrict to schedule,
@@ -286,6 +290,7 @@ runs:
       run: |
         REPO="${{ inputs.repo }}"
         LABEL="${{ inputs.issue-label }}"
+        RETENTION_DAYS="${{ inputs.digest-retention-days }}"
 
         gh label create "$LABEL" --repo "$REPO" \
           --description "Causinator 9000 CI failure digest" \
@@ -305,16 +310,24 @@ runs:
           } >> "$DIGEST_BODY"
         fi
 
-        EXISTING=$(gh issue list --repo "$REPO" \
-          --label "$LABEL" --state open \
-          --json number --limit 1 --jq '.[0].number' 2>/dev/null || echo "")
+        # Always open a FRESH dated issue for this run. Each nightly/weekly
+        # report is its own issue; we never append to a previous one.
+        gh issue create --repo "$REPO" \
+          --title "Causinator 9000 CI Failure Digest: $(date -u +%Y-%m-%d)" \
+          --body-file "$DIGEST_BODY" \
+          --label "$LABEL" 2>/dev/null || true
 
-        if [ -n "$EXISTING" ]; then
-          gh issue comment "$EXISTING" --repo "$REPO" \
-            --body-file "$DIGEST_BODY" 2>/dev/null || true
-        else
-          gh issue create --repo "$REPO" \
-            --title "Causinator 9000 CI Failure Digest: $(date -u +%Y-%m-%d)" \
-            --body-file "$DIGEST_BODY" \
-            --label "$LABEL" 2>/dev/null || true
-        fi
+        # Prune: auto-close digest issues older than the retention window so
+        # nobody has to clean them up by hand. Issues a human has engaged
+        # with (comments or assignees) are left untouched. jq's `length` on a
+        # number returns that number, so the comment check works whether gh
+        # reports `comments` as a count or as an array.
+        STALE=$(RETENTION_DAYS="$RETENTION_DAYS" gh issue list --repo "$REPO" \
+          --label "$LABEL" --state open \
+          --json number,createdAt,comments,assignees --limit 200 \
+          --jq '(env.RETENTION_DAYS|tonumber) as $d | .[] | select((.comments|length)==0 and (.assignees|length)==0 and ((.createdAt|fromdateiso8601) < (now - ($d*86400)))) | .number' 2>/dev/null || echo "")
+
+        for n in $STALE; do
+          gh issue close "$n" --repo "$REPO" \
+            --comment "Auto-closed by Causinator 9000: this digest is more than ${RETENTION_DAYS} days old and has been superseded by newer reports. Reopen it if you still need it." 2>/dev/null || true
+        done

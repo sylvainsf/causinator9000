@@ -37,8 +37,8 @@ jobs:
           issue-label: 'c9k-weekly'
 ```
 
-That's it. Every Monday you'll get a GitHub Issue with a failure analysis
-of the past week.
+That's it. Every Monday you'll get a new GitHub Issue with a failure analysis
+of the past week, and last-fortnight's digests close themselves.
 
 ## Usage patterns
 
@@ -46,8 +46,11 @@ of the past week.
 
 Best for: teams that want a regular overview of CI health.
 
-Creates (or updates) a single open issue each week. New runs append a
-comment to the existing issue so you get a history.
+Opens a **fresh dated issue every run**. Older digests auto-close once they pass
+the retention window (default 14 days), so you always have roughly the last two
+weeks of reports open and never have to clean them up by hand. A digest that
+someone has commented on or been assigned to is treated as "in use" and is left
+open. Nightly runs behave the same way.
 
 ```yaml
 name: C9K Weekly Digest
@@ -67,6 +70,12 @@ jobs:
           create-issue: 'true'
           issue-label: 'c9k-weekly'
 ```
+
+> **Pruning is per label.** On every digest run the action closes stale issues
+> that carry `issue-label`, regardless of which workflow created them. If you run
+> both a nightly and a weekly digest, give each a distinct `issue-label` (for
+> example `c9k-nightly` and `c9k-weekly`) so they prune independently, and set
+> `digest-retention-days` per workflow if you want different windows.
 
 ### Nightly job summary
 
@@ -251,7 +260,7 @@ jobs:
           assign-copilot: 'true'
           auto-close-flaky: 'true'
           auto-close-resolved: 'true'
-          # Combine with the digest mode for a single rolling overview
+          # Combine with the digest mode for a per-run overview
           # that also lists what was filed during this run:
           create-issue: 'true'
           issue-label: 'c9k-digest'
@@ -351,8 +360,9 @@ non-actionable signal at the per-issue level.
 | `hours` | `168` | Lookback window in hours (168 = 1 week) |
 | `min-confidence` | `50` | Minimum confidence threshold (0-100) |
 | `post-comment` | `false` | Post diagnosis as a PR comment |
-| `create-issue` | `false` | Create/update a single rolling digest issue (skipped on `pull_request` triggers) |
+| `create-issue` | `false` | Open a fresh dated digest issue each run; older ones auto-close after the retention window (skipped on `pull_request` triggers) |
 | `issue-label` | `c9k-digest` | Label for the digest issue |
+| `digest-retention-days` | `14` | Auto-close untouched digest issues older than this many days (the previous two weeks) |
 | `github-token` | `${{ github.token }}` | Token for API access |
 | `version` | `latest` | Engine version to download |
 | `auto-issue` | `false` | Enable per-root-cause auto-issue mode |

@@ -102,32 +102,39 @@ if [ "$POST_COMMENT" = "true" ] && [ -n "$PR_NUMBER" ]; then
     gh pr comment "$PR_NUMBER" --repo "$REPO" --body-file /tmp/diagnosis.md 2>/dev/null || true
 fi
 
-# ── Create or update digest issue (if enabled) ──────────────────────────
+# ── Create digest issue and prune old ones (if enabled) ─────────────────
 if [ "$CREATE_ISSUE" = "true" ]; then
-    echo "📝 Creating/updating digest issue with label '${ISSUE_LABEL}'..."
+    RETENTION_DAYS="${INPUT_DIGEST_RETENTION_DAYS:-14}"
+    echo "📝 Creating digest issue with label '${ISSUE_LABEL}' (auto-close after ${RETENTION_DAYS}d)..."
 
     # Ensure the label exists
     gh label create "$ISSUE_LABEL" --repo "$REPO" \
         --description "Causinator 9000 CI failure digest" \
         --color "D93F0B" 2>/dev/null || true
 
-    # Find existing open issue with this label
-    EXISTING_ISSUE=$(gh issue list --repo "$REPO" \
-        --label "$ISSUE_LABEL" --state open \
-        --json number --limit 1 2>/dev/null \
-        | python3 -c "import sys,json; d=json.load(sys.stdin); print(d[0]['number'] if d else '')" 2>/dev/null || echo "")
+    # Always open a fresh dated issue for this run. Each nightly/weekly
+    # report is its own issue; we never append to a previous one.
+    echo "   Creating new digest issue"
+    gh issue create --repo "$REPO" \
+        --title "🔍 C9K CI Failure Digest: $(date -u +%Y-%m-%d)" \
+        --body-file /tmp/diagnosis.md \
+        --label "$ISSUE_LABEL" 2>/dev/null || true
 
-    if [ -n "$EXISTING_ISSUE" ]; then
-        echo "   Updating existing issue #${EXISTING_ISSUE}"
-        gh issue comment "$EXISTING_ISSUE" --repo "$REPO" \
-            --body-file /tmp/diagnosis.md 2>/dev/null || true
-    else
-        echo "   Creating new digest issue"
-        gh issue create --repo "$REPO" \
-            --title "🔍 C9K CI Failure Digest: $(date -u +%Y-%m-%d)" \
-            --body-file /tmp/diagnosis.md \
-            --label "$ISSUE_LABEL" 2>/dev/null || true
-    fi
+    # Prune: auto-close digest issues older than the retention window so
+    # nobody has to clean them up by hand. Issues a human has engaged with
+    # (comments or assignees) are left untouched. jq's `length` on a number
+    # returns that number, so the comment check works whether gh reports
+    # `comments` as a count or as an array.
+    STALE=$(RETENTION_DAYS="$RETENTION_DAYS" gh issue list --repo "$REPO" \
+        --label "$ISSUE_LABEL" --state open \
+        --json number,createdAt,comments,assignees --limit 200 \
+        --jq '(env.RETENTION_DAYS|tonumber) as $d | .[] | select((.comments|length)==0 and (.assignees|length)==0 and ((.createdAt|fromdateiso8601) < (now - ($d*86400)))) | .number' 2>/dev/null || echo "")
+
+    for n in $STALE; do
+        echo "   Auto-closing stale digest issue #${n}"
+        gh issue close "$n" --repo "$REPO" \
+            --comment "Auto-closed by Causinator 9000: this digest is more than ${RETENTION_DAYS} days old and has been superseded by newer reports. Reopen it if you still need it." 2>/dev/null || true
+    done
 fi
 
 # ── Set outputs ──────────────────────────────────────────────────────────

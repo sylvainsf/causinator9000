@@ -181,7 +181,7 @@ jobs:
 
 ### Weekly digest issue
 
-A rolling issue that gets a new comment each week, giving you a running history of CI health. Requires `issues: write`.
+A fresh dated issue each week. Older digests auto-close after two weeks (the retention window is configurable via `digest-retention-days`), so nobody has to clean them up by hand; a digest someone has commented on or been assigned to is left open. Nightly reports work the same way. Requires `issues: write`.
 
 ```yaml
 # .github/workflows/c9k-weekly.yml
@@ -232,8 +232,9 @@ Common inputs (all optional):
 |-------|---------|-------------|
 | `hours` | `168` | Lookback window in hours (168 = one week; use `24` for nightly) |
 | `min-confidence` | `50` | Minimum confidence (0-100) for a finding to appear in the report |
-| `create-issue` | `false` | Create or update a rolling digest issue |
+| `create-issue` | `false` | Open a fresh digest issue each run; older ones auto-close after two weeks |
 | `issue-label` | `c9k-digest` | Label applied to the digest issue |
+| `digest-retention-days` | `14` | Auto-close untouched digest issues older than this many days |
 | `post-comment` | `false` | Post the diagnosis as a PR comment |
 | `repo` | current repo | Analyze a different repo (needs a token with `actions:read` on it) |
 | `github-token` | `${{ github.token }}` | Token for API access and posting |
